@@ -16,6 +16,10 @@
   const slideMeta = document.getElementById("slide-meta");
   const pvModeLabel = document.getElementById("pv-mode-label");
   const pvImageWrap = document.getElementById("pv-image-wrap");
+  const pvCarousel = document.getElementById("pv-carousel");
+  const pvCarouselState = document.getElementById("pv-carousel-state");
+  const btnPvCarouselPrev = document.getElementById("pv-carousel-prev");
+  const btnPvCarouselNext = document.getElementById("pv-carousel-next");
   const pvImage = document.getElementById("pv-image");
   const pvTitle = document.getElementById("pv-title");
   const helpDialog = document.getElementById("help-dialog");
@@ -53,13 +57,17 @@
   const btnTaskRenameCancel = document.getElementById("task-rename-cancel");
   const btnTaskRenameSave = document.getElementById("task-rename-save");
 
-  const audioTranscriptEl = document.getElementById("audio-transcript");
   const audioWorkbenchStatus = document.getElementById("audio-workbench-status");
   const audioPlayer = document.getElementById("audio-player");
   const btnAudioSave = document.getElementById("btn-audio-save");
-  const btnAudioGenerate = document.getElementById("btn-audio-generate");
+  const audioSegmentsDialog = document.getElementById("audio-segments-dialog");
+  const btnAudioSegmentsToolbar = document.getElementById("btn-audio-segments-toolbar");
+  const btnAudioOpenSegments = document.getElementById("btn-audio-open-segments");
+  const btnAudioSegmentAdd = document.getElementById("btn-audio-segment-add");
+  const btnAudioSegmentsSave = document.getElementById("btn-audio-segments-save");
   const audioGenSettingsDialog = document.getElementById("audio-gen-settings-dialog");
   const audioGenerateConfirmDialog = document.getElementById("audio-generate-confirm-dialog");
+  const audioGenerateConfirmSegLabel = document.getElementById("audio-generate-confirm-seg-label");
   const btnAudioGenSettings = document.getElementById("btn-audio-gen-settings");
   const externalSettingsDialog = document.getElementById("external-settings-dialog");
   const btnExternalSettings = document.getElementById("btn-external-settings");
@@ -85,10 +93,23 @@
 
   /** @type {string[]} */
   let audioTranscripts = [];
+  /** @type {string[][]} */
+  let audioTranscriptSegments = [];
+  let audioWorkspaceKind = "session";
+  /** @type {string} */
+  let audioWorkspaceKey = "";
+  /** @type {Record<string, string>} */
+  let audioGeneratedFiles = {};
+  let pendingAudioGenerateSegmentIndex = 0;
   /** @type {string | null} */
   let currentTaskId = null;
   /** 上传解析会话为 session；从已存任务打开为 stored */
   let previewMode = "session";
+
+  let pvMediaRequestId = 0;
+  /** @type {Array<{ url: string, caption: string }>} */
+  let pvCarouselFrames = [];
+  let pvCarouselIndex = 0;
 
   /** 与 /api/health 的 max_upload_mb 一致；默认 50MB 直至拉取到配置 */
   let maxUploadBytes = 50 * 1024 * 1024;
@@ -121,7 +142,7 @@
     '<svg class="task-row-icon-btn__svg" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>';
 
   var SVG_TASK_INFO =
-    '<svg class="task-row-icon-btn__svg" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.75"/><path d="M12 16v-4M12 8h.01" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+    '<svg class="task-row-icon-btn__svg" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M6 2c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6H6zm7 7V3.5L18.5 9H13z"/></svg>';
 
   /** @type {string | null} */
   var pendingDeleteId = null;
@@ -632,6 +653,9 @@
       audioTranscripts = slides.map(function () {
         return "";
       });
+      audioTranscriptSegments = slides.map(function () {
+        return [""];
+      });
       fileLabel.textContent = (data.filename || "已存任务") + " · 已存任务";
       if (imagesAvailable) {
         imagesBanner.classList.add("hidden");
@@ -734,6 +758,151 @@
     return d.innerHTML;
   }
 
+  function syncPvCarouselChrome() {
+    if (!pvCarousel || !pvCarouselState || !btnPvCarouselPrev || !btnPvCarouselNext) return;
+    var n = pvCarouselFrames.length;
+    if (n <= 1) {
+      pvCarousel.classList.add("pv-carousel--single");
+      btnPvCarouselPrev.disabled = true;
+      btnPvCarouselNext.disabled = true;
+    } else {
+      pvCarousel.classList.remove("pv-carousel--single");
+      btnPvCarouselPrev.disabled = pvCarouselIndex <= 0;
+      btnPvCarouselNext.disabled = pvCarouselIndex >= n - 1;
+    }
+    var cur = pvCarouselFrames[pvCarouselIndex];
+    if (n <= 1) {
+      pvCarouselState.textContent = cur ? cur.caption : "";
+    } else {
+      pvCarouselState.textContent = cur ? cur.caption + " · " + (pvCarouselIndex + 1) + "/" + n : "";
+    }
+  }
+
+  function applyPvCarouselFrame() {
+    var cur = pvCarouselFrames[pvCarouselIndex];
+    if (!cur || !pvImage) return;
+    pvImage.onerror = function () {
+      pvImage.alt = "预览图加载失败";
+    };
+    pvImage.src = cur.url;
+    pvImage.onload = function () {
+      pvImage.alt = cur.caption || "第 " + (selectedIndex + 1) + " 页";
+    };
+    syncPvCarouselChrome();
+  }
+
+  function goPvCarousel(delta) {
+    var n = pvCarouselFrames.length;
+    if (n <= 1) return;
+    pvCarouselIndex = Math.max(0, Math.min(n - 1, pvCarouselIndex + delta));
+    applyPvCarouselFrame();
+  }
+
+  async function updatePreviewMedia() {
+    if (!slides.length || !pvImageWrap) return;
+    var req = ++pvMediaRequestId;
+    var tid = currentTaskId || null;
+    var fullSrc = mainPreviewImageSrc();
+    var shapeCount = 0;
+    if (tid) {
+      try {
+        var res = await fetch(
+          "/api/tasks/" + encodeURIComponent(tid) + "/slide/" + selectedIndex + "/shapes",
+        );
+        if (res.ok) {
+          var j = await res.json();
+          shapeCount =
+            typeof j.count === "number"
+              ? j.count
+              : j.filenames && j.filenames.length
+                ? j.filenames.length
+                : 0;
+        }
+      } catch (_) {}
+    }
+    if (req !== pvMediaRequestId) return;
+
+    /** @type {Array<{ url: string, caption: string }>} */
+    var frames = [];
+    if (fullSrc) {
+      frames.push({ url: fullSrc, caption: "整页" });
+    }
+    var si;
+    if (tid && shapeCount > 0) {
+      for (si = 0; si < shapeCount; si++) {
+        frames.push({
+          url:
+            "/api/tasks/" +
+            encodeURIComponent(tid) +
+            "/slide/" +
+            selectedIndex +
+            "/shape/" +
+            si,
+          caption: "切图 " + (si + 1),
+        });
+      }
+    }
+
+    if (frames.length === 0) {
+      pvImageWrap.classList.add("hidden");
+      pvImage.removeAttribute("src");
+      if (pvCarouselState) pvCarouselState.textContent = "";
+      var hasPreviewBinding = previewMode === "stored" ? !!currentTaskId : !!sessionId;
+      if (imagesAvailable && hasPreviewBinding && selectedIndex >= previewCount) {
+        pvModeLabel.textContent = "本页暂无整页渲染图";
+        currentPreviewHelpText =
+          "渲染得到的 PNG 页数少于幻灯片页数，请仅参考下方文本；或检查 LibreOffice 导出是否完整。";
+      } else {
+        pvModeLabel.textContent = "文本解析预览（未生成整页渲染图）";
+        currentPreviewHelpText =
+          "无法生成整页预览图时仅显示抽取文本。若已安装 LibreOffice + Poppler 仍如此，请查看服务端日志。";
+      }
+      return;
+    }
+
+    var hasFull = !!fullSrc;
+    var nShapes = shapeCount;
+
+    if (hasFull && nShapes > 0) {
+      if (previewSource === "placeholder") {
+        pvModeLabel.textContent = "幻灯片预览（占位整页 · 可切换页内切图）";
+        currentPreviewHelpText =
+          "以下为 python-pptx 抽取的文本；整页图为服务端文本占位示意图。两侧箭头可切换到本页扣出的图片素材。安装 LibreOffice + Poppler 后可显示真实整页渲染图。";
+      } else {
+        pvModeLabel.textContent = "幻灯片预览（整页渲染 · 可切换页内切图）";
+        currentPreviewHelpText =
+          "以下为 python-pptx 抽取的文本。整页图为 LibreOffice 导出；页内切图为从文稿中抽出的内嵌图。使用两侧箭头可切换。";
+      }
+    } else if (hasFull) {
+      if (previewSource === "placeholder") {
+        pvModeLabel.textContent = "文本占位整页预览（Pillow 排版示意）";
+        currentPreviewHelpText =
+          "以下为 python-pptx 抽取的文本；上图由服务端根据文本生成的示意图，非像素级还原。安装 LibreOffice + Poppler 后可显示真实幻灯片渲染图。";
+      } else {
+        pvModeLabel.textContent = "幻灯片渲染图（服务端 LibreOffice → PNG）";
+        currentPreviewHelpText =
+          "以下为 python-pptx 抽取的文本，可与上图对照（复杂排版可能略有差异）。";
+      }
+    } else {
+      pvModeLabel.textContent = "页内切图预览（本页无整页 PNG）";
+      currentPreviewHelpText =
+        "本页没有整页 PNG 时仍可显示从文稿中扣出的图片素材。解析文本见下方。";
+    }
+
+    if (
+      frames.length > 1 &&
+      currentPreviewHelpText.indexOf("箭头") === -1 &&
+      currentPreviewHelpText.indexOf("切换") === -1
+    ) {
+      currentPreviewHelpText += " 使用两侧箭头在多条预览之间切换。";
+    }
+
+    pvCarouselFrames = frames;
+    pvCarouselIndex = 0;
+    pvImageWrap.classList.remove("hidden");
+    applyPvCarouselFrame();
+  }
+
   function renderPreview() {
     if (!slides.length) return;
     const s = slides[selectedIndex];
@@ -745,40 +914,7 @@
     metaParts.push("表 " + (s.table_count || 0));
     slideMeta.textContent = metaParts.join(" · ");
 
-    var imgSrc = mainPreviewImageSrc();
-    var hasPreviewBinding = previewMode === "stored" ? !!currentTaskId : !!sessionId;
-
-    if (imagesAvailable && imgSrc) {
-      if (previewSource === "placeholder") {
-        pvModeLabel.textContent = "文本占位整页预览（Pillow 排版示意）";
-        currentPreviewHelpText =
-          "以下为 python-pptx 抽取的文本；上图由服务端根据文本生成的示意图，非像素级还原。安装 LibreOffice + Poppler 后可显示真实幻灯片渲染图。";
-      } else {
-        pvModeLabel.textContent = "幻灯片渲染图（服务端 LibreOffice → PNG）";
-        currentPreviewHelpText =
-          "以下为 python-pptx 抽取的文本，可与上图对照（复杂排版可能略有差异）。";
-      }
-      pvImageWrap.classList.remove("hidden");
-      pvImage.onerror = function () {
-        pvImage.alt = "预览图加载失败";
-      };
-      pvImage.src = imgSrc;
-      pvImage.onload = function () {
-        pvImage.alt = "第 " + (selectedIndex + 1) + " 页";
-      };
-    } else if (imagesAvailable && hasPreviewBinding && selectedIndex >= previewCount) {
-      pvModeLabel.textContent = "本页暂无整页渲染图";
-      pvImageWrap.classList.add("hidden");
-      pvImage.removeAttribute("src");
-      currentPreviewHelpText =
-        "渲染得到的 PNG 页数少于幻灯片页数，请仅参考下方文本；或检查 LibreOffice 导出是否完整。";
-    } else {
-      pvModeLabel.textContent = "文本解析预览（未生成整页渲染图）";
-      pvImageWrap.classList.add("hidden");
-      pvImage.removeAttribute("src");
-      currentPreviewHelpText =
-        "无法生成整页预览图时仅显示抽取文本。若已安装 LibreOffice + Poppler 仍如此，请查看服务端日志。";
-    }
+    void updatePreviewMedia();
 
     pvTitle.textContent = s.title || "（无标题）";
 
@@ -975,7 +1111,7 @@
     var cfgEl = document.getElementById("audio-generate-confirm-config");
     var taEl = document.getElementById("audio-generate-confirm-transcript");
     if (cfgEl) cfgEl.textContent = formatMergedAudioGenForConfirm(merged);
-    if (taEl && audioTranscriptEl) taEl.value = audioTranscriptEl.value;
+    if (taEl && audioTranscriptEl) taEl.textContent = audioTranscriptEl.value;
     audioGenerateConfirmDialog.showModal();
   }
 
@@ -1091,6 +1227,9 @@
       audioTranscripts = slides.map(function () {
         return "";
       });
+      audioTranscriptSegments = slides.map(function () {
+        return [""];
+      });
       sessionId = data.session_id || null;
       imagesAvailable = !!data.images_available;
       previewCount = typeof data.preview_count === "number" ? data.preview_count : 0;
@@ -1157,6 +1296,10 @@
     currentFile = null;
     currentTaskId = null;
     audioTranscripts = [];
+    audioTranscriptSegments = [];
+    audioWorkspaceKind = "session";
+    audioWorkspaceKey = "";
+    audioGeneratedFiles = {};
     sessionId = null;
     imagesAvailable = false;
     previewCount = 0;
@@ -1619,6 +1762,28 @@
     });
   }
 
+  if (btnPvCarouselPrev) {
+    btnPvCarouselPrev.addEventListener("click", function () {
+      goPvCarousel(-1);
+    });
+  }
+  if (btnPvCarouselNext) {
+    btnPvCarouselNext.addEventListener("click", function () {
+      goPvCarousel(1);
+    });
+  }
+  if (pvCarousel) {
+    pvCarousel.addEventListener("keydown", function (e) {
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        goPvCarousel(-1);
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        goPvCarousel(1);
+      }
+    });
+  }
+
   document.querySelectorAll("[data-pv-text-drawer]").forEach(function (root) {
     var btn = root.querySelector("[data-pv-text-drawer-toggle]");
     if (!btn) return;
@@ -1629,6 +1794,13 @@
       if (region) region.setAttribute("aria-hidden", collapsed ? "true" : "false");
     });
   });
+
+  try {
+    var linkApiDocs = document.getElementById("link-api-docs");
+    if (linkApiDocs) {
+      linkApiDocs.href = new URL("/docs", window.location.origin).href;
+    }
+  } catch (_) {}
 
   refreshTaskList();
 })();

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import mimetypes
+from contextlib import asynccontextmanager
 import os
 import shutil
 import tempfile
@@ -17,11 +18,15 @@ from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
 from ppt_course_deal.audio_workspace_store import (
+    infer_slide_count,
     load_meta,
-    record_generated,
-    save_meta,
-    slide_audio_path,
+    normalize_transcript_segments,
+    record_generated_segment,
+    resolve_workspace_audio_path,
+    save_meta_for_workspace,
+    slide_segment_filename,
     slide_count_for_task,
+    workspace_root,
 )
 from ppt_course_deal.deck_sessions import create_session, get_session
 from ppt_course_deal.extract import parse_pptx_bytes
@@ -80,6 +85,87 @@ def get_max_upload_bytes() -> int:
     return get_max_upload_mb() * 1024 * 1024
 
 
+class TaskRenameBody(BaseModel):
+    filename: str = Field(min_length=1, max_length=200)
+
+
+class ExternalPutBody(BaseModel):
+    minimax: Optional[Dict[str, Any]] = None
+    agent: Optional[Dict[str, Any]] = None
+
+
+class AudioWorkspacePutBody(BaseModel):
+    task_id: Optional[str] = None
+    session_id: Optional[str] = None
+    slide_count: int = Field(ge=0, le=500)
+    transcripts: List[str] = Field(default_factory=list)
+    transcript_segments: Optional[List[List[str]]] = None
+
+
+class AudioGenerateBody(BaseModel):
+    task_id: Optional[str] = None
+    session_id: Optional[str] = None
+    slide_index: int = Field(ge=0, le=499)
+    segment_index: int = Field(default=0, ge=0, le=99)
+    minimax_overrides: Optional[Dict[str, Any]] = None
+
+
+_AUDIO_GEN_OVERRIDE_KEYS = frozenset(
+    {
+        "model",
+        "voice_id",
+        "language_boost",
+        "output_format",
+        "audio_format",
+        "sample_rate",
+        "bitrate",
+        "speed",
+        "vol",
+        "pitch",
+        "emotion",
+        "stream",
+        "group_id",
+    }
+)
+
+
+def _apply_minimax_generation_overrides(
+    base: Dict[str, Any],
+    raw: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """单次合成请求允许的字段覆盖（不含 api_key / api_base）。对应 MiniMax T2A OpenAPI。"""
+    if not raw:
+        return base
+    out = dict(base)
+    for k, v in raw.items():
+        if k not in _AUDIO_GEN_OVERRIDE_KEYS:
+            continue
+        if v is None:
+            continue
+        if k == "emotion" and (
+            v == "" or (isinstance(v, str) and not str(v).strip())
+        ):
+            out.pop("emotion", None)
+            continue
+        if k in ("sample_rate", "bitrate", "pitch"):
+            try:
+                out[k] = int(v)
+            except (TypeError, ValueError):
+                continue
+        elif k in ("speed", "vol"):
+            try:
+                out[k] = float(v)
+            except (TypeError, ValueError):
+                continue
+        elif k == "stream":
+            out[k] = bool(v)
+        elif k == "group_id":
+            out[k] = str(v).strip()
+        else:
+            out[k] = v
+    return out
+
+
 async def read_upload_body_capped(upload: UploadFile) -> bytes:
     """分块读取 multipart 正文，超过上限则拒绝，避免依赖单次 ``read()`` 的隐式上限。"""
     max_bytes = get_max_upload_bytes()
@@ -98,11 +184,25 @@ async def read_upload_body_capped(upload: UploadFile) -> bytes:
     return bytes(out)
 
 
+@asynccontextmanager
+async def _app_lifespan(app: FastAPI):
+    """启动时预生成 OpenAPI；失败则 ``/docs``、``GET /openapi.json`` 不可用。"""
+    try:
+        app.openapi()
+    except Exception:
+        logger.exception(
+            "OpenAPI schema 生成失败：Swagger UI（/docs）与 GET /openapi.json 将返回错误；"
+            "常见原因包括路由请求体参数命名为保留名 ``body``、或 Pydantic 模型未完全解析。"
+        )
+    yield
+
+
 def create_app() -> FastAPI:
     application = FastAPI(
         title="PPT 课程化重构",
         description="上传原始培训 PPTX，解析预览后生成适合录课的结构化 PPTX（MVP）",
         version="0.1.0",
+        lifespan=_app_lifespan,
     )
 
     @application.get("/api/health")
@@ -242,12 +342,12 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="任务不存在")
         return {"ok": True}
 
-    class TaskRenameBody(BaseModel):
-        filename: str = Field(min_length=1, max_length=200)
-
     @application.patch("/api/tasks/{task_id}")
-    def rename_task_api(task_id: str, body: TaskRenameBody) -> Dict[str, Any]:
-        name = body.filename.strip()
+    def rename_task_api(
+        task_id: str,
+        payload: TaskRenameBody,
+    ) -> Dict[str, Any]:
+        name = payload.filename.strip()
         if not name:
             raise HTTPException(status_code=400, detail="名称不能为空")
         ok = update_task_display_name(task_id, name)
@@ -400,77 +500,6 @@ def create_app() -> FastAPI:
             detail="请提供有效的 task_id（已存任务）或 session_id（当前预览会话）",
         )
 
-    class ExternalPutBody(BaseModel):
-        # Python 3.9 + Pydantic：避免 dict[...] | None 在类内求值失败
-        minimax: Optional[Dict[str, Any]] = None
-        agent: Optional[Dict[str, Any]] = None
-
-    class AudioWorkspacePutBody(BaseModel):
-        task_id: Optional[str] = None
-        session_id: Optional[str] = None
-        slide_count: int = Field(ge=0, le=500)
-        transcripts: List[str] = Field(default_factory=list)
-
-    _AUDIO_GEN_OVERRIDE_KEYS = frozenset(
-        {
-            "model",
-            "voice_id",
-            "language_boost",
-            "output_format",
-            "audio_format",
-            "sample_rate",
-            "bitrate",
-            "speed",
-            "vol",
-            "pitch",
-            "emotion",
-            "stream",
-            "group_id",
-        }
-    )
-
-    def _apply_minimax_generation_overrides(
-        base: Dict[str, Any],
-        raw: Optional[Dict[str, Any]],
-    ) -> Dict[str, Any]:
-        """单次合成请求允许的字段覆盖（不含 api_key / api_base）。对应 MiniMax T2A OpenAPI。"""
-        if not raw:
-            return base
-        out = dict(base)
-        for k, v in raw.items():
-            if k not in _AUDIO_GEN_OVERRIDE_KEYS:
-                continue
-            if v is None:
-                continue
-            if k == "emotion" and (
-                v == "" or (isinstance(v, str) and not str(v).strip())
-            ):
-                out.pop("emotion", None)
-                continue
-            if k in ("sample_rate", "bitrate", "pitch"):
-                try:
-                    out[k] = int(v)
-                except (TypeError, ValueError):
-                    continue
-            elif k in ("speed", "vol"):
-                try:
-                    out[k] = float(v)
-                except (TypeError, ValueError):
-                    continue
-            elif k == "stream":
-                out[k] = bool(v)
-            elif k == "group_id":
-                out[k] = str(v).strip()
-            else:
-                out[k] = v
-        return out
-
-    class AudioGenerateBody(BaseModel):
-        task_id: Optional[str] = None
-        session_id: Optional[str] = None
-        slide_index: int = Field(ge=0, le=499)
-        minimax_overrides: Optional[Dict[str, Any]] = None
-
     @application.get("/api/settings/external")
     def get_external_settings() -> Dict[str, Any]:
         raw = load_raw()
@@ -480,17 +509,19 @@ def create_app() -> FastAPI:
         }
 
     @application.put("/api/settings/external")
-    def put_external_settings(body: ExternalPutBody) -> Dict[str, Any]:
+    def put_external_settings(
+        payload: ExternalPutBody,
+    ) -> Dict[str, Any]:
         raw = load_raw()
-        if body.minimax is not None:
+        if payload.minimax is not None:
             raw["minimax"] = merge_minimax_update(
                 raw.get("minimax") or {},
-                dict(body.minimax),
+                dict(payload.minimax),
             )
-        if body.agent is not None:
+        if payload.agent is not None:
             raw["agent"] = merge_agent_update(
                 raw.get("agent") or {},
-                dict(body.agent),
+                dict(payload.agent),
             )
         save_raw(raw)
         return get_external_settings()
@@ -530,39 +561,63 @@ def create_app() -> FastAPI:
         while len(transcripts) < sc:
             transcripts.append("")
         transcripts = transcripts[:sc]
+        transcript_segments = normalize_transcript_segments(meta, sc)
         return {
             "kind": kind,
             "key": key,
             "slide_count": sc,
             "transcripts": transcripts,
+            "transcript_segments": transcript_segments,
             "generated_files": meta.get("generated_files") or {},
         }
 
     @application.put("/api/audio/workspace")
-    def put_audio_workspace(body: AudioWorkspacePutBody) -> Dict[str, Any]:
-        kind, key = _workspace_scope(body.task_id, body.session_id)
-        save_meta(kind, key, body.transcripts, body.slide_count)
+    def put_audio_workspace(
+        payload: AudioWorkspacePutBody,
+    ) -> Dict[str, Any]:
+        kind, key = _workspace_scope(payload.task_id, payload.session_id)
+        save_meta_for_workspace(
+            kind,
+            key,
+            payload.slide_count,
+            transcript_segments=payload.transcript_segments,
+            transcripts_flat=payload.transcripts,
+        )
         meta = load_meta(kind, key)
+        sc = payload.slide_count
         return {
             "ok": True,
-            "slide_count": body.slide_count,
+            "slide_count": payload.slide_count,
             "transcripts": meta.get("transcripts") or [],
+            "transcript_segments": normalize_transcript_segments(meta, sc),
         }
 
     @application.post("/api/audio/workspace/generate")
-    def generate_slide_audio(body: AudioGenerateBody) -> Dict[str, Any]:
-        kind, key = _workspace_scope(body.task_id, body.session_id)
+    def generate_slide_audio(
+        payload: AudioGenerateBody,
+    ) -> Dict[str, Any]:
+        kind, key = _workspace_scope(payload.task_id, payload.session_id)
         meta = load_meta(kind, key)
-        transcripts = list(meta.get("transcripts") or [])
-        if body.slide_index >= len(transcripts):
+        sc = max(
+            infer_slide_count(meta, kind, key),
+            payload.slide_index + 1,
+        )
+        segs = normalize_transcript_segments(meta, sc)
+        if payload.slide_index >= len(segs):
             raise HTTPException(status_code=400, detail="逐字稿尚未初始化该页")
-        text = (transcripts[body.slide_index] or "").strip()
+        rows = segs[payload.slide_index]
+        if payload.segment_index >= len(rows):
+            raise HTTPException(
+                status_code=400,
+                detail="该段逐字稿不存在，请在弹窗中添加段落并保存",
+            )
+        text = (rows[payload.segment_index] or "").strip()
         if not text:
-            raise HTTPException(status_code=400, detail="本页逐字稿为空，请先填写并保存")
+            raise HTTPException(status_code=400, detail="该段逐字稿为空，请先填写并保存")
 
         mm = _apply_minimax_generation_overrides(
             get_minimax_for_server_call(),
-            body.minimax_overrides,
+            payload.minimax_overrides,
         )
         try:
             audio_bytes = synthesize_to_mp3_bytes(mm, text)
@@ -571,16 +626,30 @@ def create_app() -> FastAPI:
         fmt = (mm.get("audio_format") or "mp3").lower()
         if fmt not in ("mp3", "pcm", "flac"):
             fmt = "mp3"
-        path = slide_audio_path(kind, key, body.slide_index, fmt)
+        filename = slide_segment_filename(
+            payload.slide_index,
+            payload.segment_index,
+            text,
+            fmt,
+        )
+        path = workspace_root(kind, key) / filename
         path.write_bytes(audio_bytes)
-        record_generated(kind, key, body.slide_index, path.name)
+        record_generated_segment(
+            kind,
+            key,
+            payload.slide_index,
+            payload.segment_index,
+            filename,
+        )
         return {
             "ok": True,
-            "slide_index": body.slide_index,
-            "filename": path.name,
+            "slide_index": payload.slide_index,
+            "segment_index": payload.segment_index,
+            "filename": filename,
             "url": (
                 f"/api/audio/workspace/file?kind={kind}&key={quote(key, safe='')}"
-                f"&slide_index={body.slide_index}"
+                f"&slide_index={payload.slide_index}"
+                f"&segment_index={payload.segment_index}"
             ),
         }
 
@@ -589,6 +658,7 @@ def create_app() -> FastAPI:
         kind: str = Query(...),
         key: str = Query(...),
         slide_index: int = Query(ge=0, le=499),
+        segment_index: int = Query(default=0, ge=0, le=99),
     ) -> FileResponse:
         if kind not in ("task", "session"):
             raise HTTPException(status_code=400, detail="kind 无效")
@@ -602,14 +672,15 @@ def create_app() -> FastAPI:
         fmt = (mm.get("audio_format") or "mp3").lower()
         if fmt not in ("mp3", "pcm", "flac"):
             fmt = "mp3"
-        path = slide_audio_path(kind, key, slide_index, fmt)
-        if not path.is_file():
+        path = resolve_workspace_audio_path(kind, key, slide_index, segment_index, fmt)
+        if path is None:
             raise HTTPException(status_code=404, detail="音频不存在，请先生成")
+        ext = path.suffix.lower().lstrip(".") or fmt
         media = {
             "mp3": "audio/mpeg",
             "pcm": "audio/pcm",
             "flac": "audio/flac",
-        }.get(fmt, "application/octet-stream")
+        }.get(ext, "application/octet-stream")
         return FileResponse(
             path,
             media_type=media,

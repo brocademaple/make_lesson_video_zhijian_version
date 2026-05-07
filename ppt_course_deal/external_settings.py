@@ -20,7 +20,7 @@ DEFAULT_MINIMAX: dict[str, Any] = {
     "model": "speech-2.8-hd",
     "voice_id": "Chinese (Mandarin)_Lyrical_Voice",
     "language_boost": "Chinese",
-    "output_format": "hex",
+    "output_format": "url",
     "audio_format": "mp3",
     "sample_rate": 32000,
     "bitrate": 128000,

@@ -682,6 +682,35 @@ body {
   white-space: nowrap;
 }
 
+/* 缩略图栏：返回上传首页（房子图标） */
+.rail-head__home {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
+}
+
+.rail-head__home:hover,
+.rail-head__home:focus-visible {
+  background: var(--accent-dim);
+  outline: none;
+}
+
+.rail-head__home-icon {
+  display: block;
+}
+
 .slide-picker {
   position: relative;
   flex: 0 0 auto;
@@ -898,6 +927,41 @@ body {
   gap: 0.25rem;
 }
 
+.toolbar-info__top {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.btn-audio-toolbar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.35rem;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text);
+  cursor: pointer;
+  line-height: 0;
+}
+
+.btn-audio-toolbar:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.btn-audio-toolbar:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.btn-audio-toolbar__svg {
+  display: block;
+}
+
 #slide-counter {
   font-size: 0.95rem;
   font-weight: 600;
@@ -953,12 +1017,89 @@ body {
   background: var(--pv-image-bg);
 }
 
-.pv-image-wrap img {
+.pv-carousel {
+  outline: none;
+}
+
+.pv-carousel:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent);
+  border-radius: 10px;
+}
+
+.pv-carousel__state {
+  margin: 0 0 0.45rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.35;
+  min-height: 1.2em;
+}
+
+.pv-carousel__frame {
+  position: relative;
+  display: block;
+}
+
+.pv-carousel__img-outer {
+  display: block;
+  width: 100%;
+}
+
+.pv-carousel__img-outer img {
   display: block;
   width: 100%;
   height: auto;
   max-height: min(62vh, 680px);
   object-fit: contain;
+}
+
+.pv-carousel__arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.35rem;
+  height: 2.35rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.pv-carousel__arrow:hover,
+.pv-carousel__arrow:focus-visible {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent);
+  outline: none;
+}
+
+.pv-carousel__arrow:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.pv-carousel__arrow--prev {
+  left: 0.4rem;
+}
+
+.pv-carousel__arrow--next {
+  right: 0.4rem;
+}
+
+.pv-carousel--single .pv-carousel__arrow {
+  display: none;
 }
 
 /* 当前页标题 / 文本块：可折叠面板（默认收起，突出音频区） */
@@ -1494,6 +1635,17 @@ body {
   color: var(--text);
 }
 
+.audio-workbench__hint {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin: 0 0 0.65rem;
+  line-height: 1.45;
+}
+
+.audio-workbench__open-row {
+  margin-bottom: 0.75rem;
+}
+
 .audio-workbench__label {
   display: block;
   font-size: 0.76rem;
@@ -1549,6 +1701,103 @@ body {
 .audio-workbench__status {
   font-size: 0.78rem;
   color: var(--muted);
+}
+
+/* 多段逐字稿弹窗 */
+.audio-segments-dialog {
+  width: min(96vw, 640px);
+  max-height: 92vh;
+}
+
+.audio-segments-dialog__panel {
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.audio-segments-dialog__body {
+  max-height: min(58vh, 520px);
+  overflow-y: auto;
+}
+
+.audio-segments-dialog__slide {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 0 0 0.35rem;
+}
+
+.audio-segments-dialog__hint {
+  margin-top: 0.35rem;
+}
+
+.audio-segments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.audio-segment-row {
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+.audio-segment-row__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.45rem;
+}
+
+.audio-segment-row__title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.audio-segment-row__textarea {
+  width: 100%;
+  min-height: 4rem;
+  padding: 0.55rem 0.65rem;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.audio-segment-row__textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.audio-segment-row__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.audio-segment-row__player {
+  flex: 1;
+  min-width: 160px;
+  height: 2rem;
+}
+
+.audio-segments-dialog__add {
+  margin-top: 0.25rem;
+}
+
+.audio-generate-confirm__seg {
+  font-weight: 500;
+  color: var(--muted);
+  font-size: 0.85em;
 }
 
 /* 外部 API 配置弹窗 */
@@ -1741,26 +1990,18 @@ body {
   margin-top: 0;
 }
 
-.audio-generate-confirm__pre {
+/* 确认弹窗内仅展示只读信息：灰色正文，不用输入框样式 */
+.audio-generate-confirm__body-text {
   margin: 0;
-  padding: 0.55rem 0.65rem;
-  font-size: 0.78rem;
-  line-height: 1.45;
+  padding: 0;
+  font-size: 0.82rem;
+  line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--card);
-  color: var(--text);
+  color: var(--muted);
   max-height: 12rem;
   overflow-y: auto;
   font-family: inherit;
-}
-
-.audio-generate-confirm__transcript {
-  max-height: 14rem;
-  resize: vertical;
-  min-height: 5rem;
 }
 
 @media (max-width: 520px) {
