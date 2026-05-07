@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from ppt_course.models import ContentBlock, SourceSlide
+from ppt_course_deal.models import ContentBlock, SourceSlide
 
 
 @runtime_checkable
@@ -18,6 +18,6 @@ class HeuristicAnalyzer:
     """默认实现：基于关键词与规则的启发式分类。"""
 
     def analyze(self, slide: SourceSlide) -> list[ContentBlock]:
-        from ppt_course.classify import classify_slide_text
+        from ppt_course_deal.classify import classify_slide_text
 
         return classify_slide_text(slide.raw_text)

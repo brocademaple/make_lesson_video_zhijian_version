@@ -4,11 +4,11 @@ import json
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from ppt_course.build_pptx import build_course_presentation, save_presentation
-from ppt_course.extract import guess_slide_title, load_presentation, slide_plain_text
-from ppt_course.extensions import HeuristicAnalyzer, SlideAnalyzer
-from ppt_course.models import CourseSlidePlan, SourceSlide, TransformResult
-from ppt_course.planner import plan_course_slides
+from ppt_course_deal.build_pptx import build_course_presentation, save_presentation
+from ppt_course_deal.extract import guess_slide_title, load_presentation, slide_plain_text
+from ppt_course_deal.extensions import HeuristicAnalyzer, SlideAnalyzer
+from ppt_course_deal.models import CourseSlidePlan, SourceSlide, TransformResult
+from ppt_course_deal.planner import plan_course_slides
 
 
 def transform_pptx(

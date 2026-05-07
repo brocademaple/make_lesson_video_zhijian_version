@@ -30,7 +30,48 @@ def find_soffice() -> Optional[str]:
 
 
 def find_pdftoppm() -> Optional[str]:
-    return shutil.which("pdftoppm")
+    w = shutil.which("pdftoppm")
+    if w:
+        return w
+    # IDE / launchd 启动的服务常不带 Homebrew 的 PATH，直接探测常见安装位置
+    if sys.platform == "darwin":
+        for p in (
+            Path("/opt/homebrew/bin/pdftoppm"),
+            Path("/usr/local/bin/pdftoppm"),
+        ):
+            if p.is_file():
+                return str(p)
+    if sys.platform == "win32":
+        win_poppler = Path(r"C:\poppler\Library\bin\pdftoppm.exe")
+        if win_poppler.is_file():
+            return str(win_poppler)
+    return None
+
+
+def describe_preview_render_env() -> dict:
+    """供 /api/health 与前端提示：整页 PNG 预览所需的系统依赖是否就绪。"""
+    soffice = find_soffice()
+    ppm = find_pdftoppm()
+    ready = bool(soffice and ppm)
+    parts: list[str] = []
+    if not soffice:
+        parts.append(
+            "LibreOffice（macOS：`brew install --cask libreoffice`；"
+            "安装后需能访问 /Applications/LibreOffice.app 内 soffice）"
+        )
+    if not ppm:
+        parts.append("Poppler（macOS：`brew install poppler`，提供 pdftoppm）")
+    hint = ""
+    if parts:
+        hint = "整页像素预览仍缺：" + "；".join(parts) + "。安装后请重启 Web 服务。"
+    return {
+        "ready": ready,
+        "libreoffice": bool(soffice),
+        "pdftoppm": bool(ppm),
+        "libreoffice_path": soffice,
+        "pdftoppm_path": ppm,
+        "install_hint_zh": hint or None,
+    }
 
 
 def _natural_png_sort(paths: list[Path]) -> list[Path]:

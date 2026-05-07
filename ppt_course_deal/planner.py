@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ppt_course.models import BlockKind, CourseSlidePlan, SourceSlide
+from ppt_course_deal.models import BlockKind, CourseSlidePlan, SourceSlide
 
 _SECTION_LABELS: dict[BlockKind, str] = {
     BlockKind.RULE: "规则要点",

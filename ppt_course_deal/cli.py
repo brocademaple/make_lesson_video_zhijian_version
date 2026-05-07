@@ -5,8 +5,8 @@ from typing import Optional
 
 import typer
 
-from ppt_course import __version__
-from ppt_course.pipeline import transform_pptx
+from ppt_course_deal import __version__
+from ppt_course_deal.pipeline import transform_pptx
 
 app = typer.Typer(
     name="ppt-course",
@@ -86,8 +86,21 @@ def cmd_serve(
         raise typer.Exit(1) from e
 
     typer.echo(f"Web UI：http://{host}:{port}/")
+    try:
+        from ppt_course_deal.slide_render import describe_preview_render_env
+
+        if not describe_preview_render_env().get("ready"):
+            typer.secho(
+                "提示：整页幻灯片预览需本机安装 LibreOffice 与 Poppler（pdftoppm）；"
+                "macOS 示例：brew install --cask libreoffice && brew install poppler，安装后重启服务。"
+                "详见 README「整页预览图」。",
+                fg=typer.colors.YELLOW,
+            )
+    except Exception:
+        pass
+
     uvicorn.run(
-        "ppt_course.web.app:app",
+        "ppt_course_deal.web.app:app",
         host=host,
         port=port,
         reload=reload,

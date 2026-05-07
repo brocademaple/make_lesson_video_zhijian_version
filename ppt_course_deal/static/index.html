@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PPT 解析与课程化</title>
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("ppt-theme");
+          document.documentElement.setAttribute(
+            "data-theme",
+            t === "light" || t === "dark" ? t : "dark"
+          );
+        } catch (e) {
+          document.documentElement.setAttribute("data-theme", "dark");
+        }
+      })();
+    </script>
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-row">
+            <span class="brand-title">PPT 课件工作台</span>
+            <button
+              type="button"
+              class="icon-help"
+              id="btn-help-product"
+              aria-label="产品使用说明"
+              title="使用说明"
+            >
+              <svg class="icon-help__svg" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.75" />
+                <path
+                  d="M12 16v-4M12 8h.01"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <button
+            type="button"
+            class="theme-toggle"
+            id="btn-theme-toggle"
+            aria-label="切换浅色模式"
+            title="浅色 / 深色"
+          >
+            <svg
+              class="theme-toggle__icon theme-toggle__icon--sun"
+              viewBox="0 0 24 24"
+              width="18"
+              height="18"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2" />
+              <path
+                d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+              />
+            </svg>
+            <svg
+              class="theme-toggle__icon theme-toggle__icon--moon hidden"
+              viewBox="0 0 24 24"
+              width="18"
+              height="18"
+              aria-hidden="true"
+            >
+              <path
+                d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="icon-toolbar"
+            id="btn-external-settings"
+            aria-label="外部 API 与集成配置"
+            title="外部 API（MiniMax 等）"
+          >
+            <svg class="icon-toolbar__svg" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <path
+                d="M4 14h2v2H4v-2zm0-6h2v4H4V8zm4 10h10v2H8v-2zm4-10h10v2H12V8zm0 6h10v4H12v-4z"
+                fill="currentColor"
+              />
+              <path
+                d="M6 6h2v2H6V6zm4 0h10v2H10V6zm0 12h10v2H10v-2z"
+                fill="currentColor"
+                opacity="0.35"
+              />
+            </svg>
+          </button>
+          <a class="link-doc" href="/docs" target="_blank" rel="noopener">API</a>
+        </div>
+      </header>
+
+      <div class="app-main" id="app-main">
+        <div class="sidebar-column" id="sidebar-column">
+          <aside class="sidebar-task-panel" id="sidebar-task-panel" aria-label="已存任务">
+            <section class="task-panel" aria-label="已存解析任务">
+              <div class="task-panel-head">
+                <div class="task-panel-title-row">
+                  <span class="task-panel-title">已存任务</span>
+                  <button
+                    type="button"
+                    class="icon-help icon-help--sm"
+                    id="btn-help-task-list"
+                    aria-label="已存任务说明"
+                    title="说明"
+                  >
+                    <svg class="icon-help__svg" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                      <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.75" />
+                      <path
+                        d="M12 16v-4M12 8h.01"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                      />
+                    </svg>
+                  </button>
+                </div>
+                <button type="button" class="btn btn-text" id="btn-refresh-tasks">刷新</button>
+              </div>
+              <ul class="task-list" id="task-list" role="list"></ul>
+            </section>
+          </aside>
+          <aside class="slide-rail hidden" id="slide-rail" aria-label="幻灯片列表">
+            <div class="rail-head">
+              <span id="file-label" class="file-label"></span>
+              <button type="button" class="btn btn-text" id="btn-change-file">更换文件</button>
+            </div>
+            <p class="warn-banner hidden" id="images-banner"></p>
+            <div class="slide-rail__scroll" id="slide-rail-scroll">
+              <ul class="slide-list slide-list--rail" id="slide-list" role="listbox" aria-label="幻灯片列表"></ul>
+            </div>
+          </aside>
+        </div>
+
+        <div class="main-column">
+          <section class="upload-panel" id="upload-panel">
+            <p class="preview-setup-banner hidden" id="preview-setup-banner" role="status"></p>
+            <div
+              class="dropzone"
+              id="dropzone"
+              tabindex="0"
+              role="button"
+              aria-label="上传区域"
+            >
+              <input
+                type="file"
+                id="file-input"
+                accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                hidden
+              />
+              <div class="dropzone-inner">
+                <span class="drop-icon" aria-hidden="true">📂</span>
+                <div class="drop-title-row">
+                  <p class="drop-title">上传培训用 .pptx</p>
+                  <button
+                    type="button"
+                    class="icon-help"
+                    id="btn-help-upload"
+                    aria-label="上传与解析流程说明"
+                    title="说明"
+                  >
+                    <svg class="icon-help__svg" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                      <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.75" />
+                      <path
+                        d="M12 16v-4M12 8h.01"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+            <p class="hint-cli">
+              <button type="button" class="icon-help" id="btn-help-cli" aria-label="命令行使用说明" title="说明">
+                <svg class="icon-help__svg" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.75" />
+                  <path
+                    d="M12 16v-4M12 8h.01"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                  />
+                </svg>
+              </button>
+              <span class="hint-cli__text"><code>ppt-course transform 输入.pptx</code></span>
+            </p>
+            <p class="error hidden" id="error-upload" role="alert"></p>
+          </section>
+
+          <section class="workspace hidden" id="workspace">
+        <main class="preview-area">
+          <div class="preview-toolbar">
+            <div class="toolbar-info">
+              <span id="slide-counter">第 — / — 页</span>
+              <span class="toolbar-meta" id="slide-meta"></span>
+            </div>
+            <div class="toolbar-actions">
+              <button type="button" class="btn btn-secondary" id="btn-transform" disabled>
+                生成课程化 PPTX
+              </button>
+            </div>
+          </div>
+
+          <div class="preview-body">
+            <div class="preview-surface" id="preview-surface">
+              <div class="preview-aspect preview-aspect--image">
+                <div class="preview-inner">
+                  <div class="pv-label-row">
+                    <p class="pv-label" id="pv-mode-label">预览</p>
+                    <button
+                      type="button"
+                      class="icon-help icon-help--sm"
+                      id="btn-help-preview"
+                      aria-label="本页预览区说明"
+                      title="说明"
+                    >
+                      <svg class="icon-help__svg" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                        <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.75" />
+                        <path
+                          d="M12 16v-4M12 8h.01"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                  <div class="pv-image-wrap hidden" id="pv-image-wrap">
+                    <img id="pv-image" alt="当前页幻灯片渲染图" />
+                  </div>
+                  <section class="pv-text-drawer" id="pv-text-drawer" data-pv-text-drawer aria-label="当前页解析文本">
+                    <button
+                      type="button"
+                      class="pv-text-drawer__toggle"
+                      id="btn-pv-text-drawer"
+                      data-pv-text-drawer-toggle
+                      aria-expanded="true"
+                      aria-controls="pv-text-drawer-panel"
+                    >
+                      <span class="pv-text-drawer__label">当前页解析文本</span>
+                      <span class="pv-text-drawer__chev" aria-hidden="true">▾</span>
+                    </button>
+                    <div class="pv-text-drawer__sizer" id="pv-text-drawer-panel">
+                      <div class="pv-text-drawer__clip">
+                        <div class="pv-text-drawer__content" role="region" aria-label="当前页解析正文" aria-hidden="false">
+                        <h2 class="pv-title" id="pv-title">—</h2>
+                        <div class="pv-blocks" id="pv-blocks"></div>
+                        <div class="pv-notes-wrap hidden" id="pv-notes-wrap">
+                          <p class="pv-notes-title">演讲者备注</p>
+                          <pre class="pv-notes" id="pv-notes"></pre>
+                        </div>
+                      </div>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section class="audio-workbench" id="audio-workbench" aria-label="音频工作台">
+                    <div class="audio-workbench__head">
+                      <span class="audio-workbench__title">音频工作台</span>
+                      <button type="button" class="btn btn-text" id="btn-audio-save">
+                        保存逐字稿
+                      </button>
+                    </div>
+                    <label class="audio-workbench__label" for="audio-transcript"
+                      >本页逐字稿（用于语音合成）</label
+                    >
+                    <textarea
+                      id="audio-transcript"
+                      class="audio-workbench__textarea"
+                      rows="5"
+                      placeholder="填写本页口播全文；切换页面前可先点「保存逐字稿」或直接使用「生成本页音频」（会自动保存）。"
+                    ></textarea>
+                    <div class="audio-workbench__actions">
+                      <button type="button" class="btn btn-secondary" id="btn-audio-generate">
+                        生成本页音频
+                      </button>
+                      <audio
+                        id="audio-player"
+                        class="audio-workbench__player hidden"
+                        controls
+                        preload="none"
+                      ></audio>
+                      <span class="audio-workbench__status" id="audio-workbench-status"></span>
+                    </div>
+                  </section>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <p class="status-line" id="status-line" aria-live="polite"></p>
+          <div class="result-banner hidden" id="result-banner">
+            <span id="result-stats"></span>
+            <a class="btn btn-ghost" id="download-link" href="#" download>再次下载</a>
+          </div>
+          <p class="error hidden" id="error-work" role="alert"></p>
+        </main>
+          </section>
+        </div>
+      </div>
+
+      <dialog class="external-settings-dialog" id="external-settings-dialog" aria-labelledby="external-settings-title">
+        <div class="external-settings-dialog__panel">
+          <header class="external-settings-dialog__head">
+            <h2 class="external-settings-dialog__title" id="external-settings-title">外部 API 配置</h2>
+            <form method="dialog">
+              <button type="submit" class="btn btn-text" aria-label="关闭">关闭</button>
+            </form>
+          </header>
+          <nav class="external-settings-dialog__tabs" role="tablist" aria-label="配置类别">
+            <button type="button" class="external-settings-dialog__tab is-active" role="tab" id="tab-minimax" aria-selected="true" data-settings-tab="minimax">
+              MiniMax 语音
+            </button>
+            <button type="button" class="external-settings-dialog__tab" role="tab" id="tab-agent" aria-selected="false" data-settings-tab="agent">
+              智能体（预留）
+            </button>
+          </nav>
+          <div class="external-settings-dialog__body">
+            <div class="settings-tab-panel" id="panel-minimax" role="tabpanel">
+              <p class="external-settings-dialog__hint">
+                用于「音频工作台」调用 MiniMax T2A HTTP（<code>/v1/t2a_v2</code>）。密钥仅存于本机数据目录。
+              </p>
+              <div class="field-grid">
+                <label class="field">
+                  <span class="field__label">API Base</span>
+                  <select id="cfg-mm-base" class="field__input">
+                    <option value="https://api.minimax.io">https://api.minimax.io（默认）</option>
+                    <option value="https://api-uw.minimax.io">https://api-uw.minimax.io（低延迟）</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="field__label">API Key</span>
+                  <input type="password" id="cfg-mm-key" class="field__input" autocomplete="off" placeholder="留空表示不修改已保存的密钥" />
+                </label>
+                <label class="field">
+                  <span class="field__label">Group ID（可选，部分账户需在查询参数携带）</span>
+                  <input type="text" id="cfg-mm-group" class="field__input" autocomplete="off" placeholder="可选" />
+                </label>
+                <label class="field">
+                  <span class="field__label">合成模型</span>
+                  <select id="cfg-mm-model" class="field__input">
+                    <option value="speech-2.8-hd">speech-2.8-hd</option>
+                    <option value="speech-2.8-turbo">speech-2.8-turbo</option>
+                    <option value="speech-2.6-hd">speech-2.6-hd</option>
+                    <option value="speech-2.6-turbo">speech-2.6-turbo</option>
+                    <option value="speech-02-hd">speech-02-hd</option>
+                    <option value="speech-02-turbo">speech-02-turbo</option>
+                    <option value="speech-01-hd">speech-01-hd</option>
+                    <option value="speech-01-turbo">speech-01-turbo</option>
+                  </select>
+                </label>
+                <label class="field field--wide">
+                  <span class="field__label">音色 voice_id</span>
+                  <input type="text" id="cfg-mm-voice" class="field__input" placeholder="如 Chinese (Mandarin)_Lyrical_Voice" />
+                </label>
+                <label class="field">
+                  <span class="field__label">语言增强 language_boost</span>
+                  <select id="cfg-mm-lang" class="field__input">
+                    <option value="Chinese">Chinese</option>
+                    <option value="English">English</option>
+                    <option value="Japanese">Japanese</option>
+                    <option value="Korean">Korean</option>
+                    <option value="auto">auto</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="field__label">音频格式</span>
+                  <select id="cfg-mm-audio-fmt" class="field__input">
+                    <option value="mp3">mp3</option>
+                    <option value="pcm">pcm</option>
+                    <option value="flac">flac</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="field__label">输出编码 output_format</span>
+                  <select id="cfg-mm-out-fmt" class="field__input">
+                    <option value="hex">hex（默认）</option>
+                    <option value="url">url</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="field__label">采样率 sample_rate</span>
+                  <select id="cfg-mm-sr" class="field__input">
+                    <option value="16000">16000</option>
+                    <option value="32000" selected>32000</option>
+                    <option value="44100">44100</option>
+                    <option value="48000">48000</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="field__label">语速 speed（0.5–2）</span>
+                  <input type="number" id="cfg-mm-speed" class="field__input" min="0.5" max="2" step="0.1" value="1" />
+                </label>
+                <label class="field">
+                  <span class="field__label">音量 vol（0–10）</span>
+                  <input type="number" id="cfg-mm-vol" class="field__input" min="0.1" max="10" step="0.1" value="1" />
+                </label>
+                <label class="field">
+                  <span class="field__label">音高 pitch（-12–12）</span>
+                  <input type="number" id="cfg-mm-pitch" class="field__input" min="-12" max="12" step="1" value="0" />
+                </label>
+                <label class="field">
+                  <span class="field__label">情绪 emotion（可选）</span>
+                  <select id="cfg-mm-emotion" class="field__input">
+                    <option value="">（自动）</option>
+                    <option value="happy">happy</option>
+                    <option value="calm">calm</option>
+                    <option value="fluent">fluent</option>
+                    <option value="whisper">whisper</option>
+                    <option value="sad">sad</option>
+                  </select>
+                </label>
+              </div>
+              <div class="external-settings-dialog__footer-actions">
+                <button type="button" class="btn btn-text" id="btn-mm-test">API 连通测试</button>
+                <span class="external-settings-dialog__test-msg" id="cfg-mm-test-msg"></span>
+              </div>
+            </div>
+            <div class="settings-tab-panel hidden" id="panel-agent" role="tabpanel">
+              <p class="external-settings-dialog__hint">
+                预留用于后续接入<strong>可自主规划与执行</strong>的智能体（如 Claude Code、自定义 Agent）。当前项目仍通过外部
+                Cursor / CLI 运行 Claude Code，此处仅作占位。
+              </p>
+              <label class="field field--wide">
+                <span class="field__label">占位说明</span>
+                <textarea id="cfg-agent-note" class="field__input" rows="4" placeholder="可记录计划接入的 Agent、Webhook、命令等…"></textarea>
+              </label>
+              <label class="field">
+                <span class="field__label">预留 provider</span>
+                <select id="cfg-agent-provider" class="field__input">
+                  <option value="none">未接入</option>
+                  <option value="claude_code">Claude Code（后续）</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <footer class="external-settings-dialog__footer">
+            <button type="button" class="btn btn-text" id="btn-settings-cancel">
+              取消
+            </button>
+            <button type="button" class="btn btn-secondary" id="btn-settings-save">保存</button>
+          </footer>
+        </div>
+      </dialog>
+
+      <dialog class="help-dialog" id="help-dialog" aria-labelledby="help-dialog-title">
+        <div class="help-dialog__panel">
+          <h2 class="help-dialog__title" id="help-dialog-title">说明</h2>
+          <div class="help-dialog__body" id="help-dialog-body"></div>
+          <form method="dialog" class="help-dialog__footer">
+            <button type="submit" class="btn btn-secondary">关闭</button>
+          </form>
+        </div>
+      </dialog>
+
+    </div>
+
+    <div id="task-delete-popconfirm" class="task-popconfirm hidden" aria-hidden="true" role="dialog" aria-modal="true">
+      <p class="task-popconfirm__msg">是否确认删除？</p>
+      <div class="task-popconfirm__actions">
+        <button type="button" class="btn btn-text" id="task-delete-cancel">取消</button>
+        <button type="button" class="btn btn-secondary task-popconfirm__danger" id="task-delete-confirm">
+          删除
+        </button>
+      </div>
+    </div>
+
+    <div id="task-rename-popover" class="task-rename-popover hidden" aria-hidden="true" role="dialog" aria-modal="true">
+      <p class="task-rename-popover__title">编辑任务名称</p>
+      <input type="text" id="task-rename-input" class="task-rename-popover__input" maxlength="200" autocomplete="off" />
+      <div class="task-rename-popover__actions">
+        <button type="button" class="btn btn-text" id="task-rename-cancel">取消</button>
+        <button type="button" class="btn btn-secondary" id="task-rename-save">保存</button>
+      </div>
+    </div>
+
+    <script src="/assets/app.js" defer></script>
+  </body>
+</html>

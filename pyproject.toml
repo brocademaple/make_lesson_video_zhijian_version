@@ -18,11 +18,11 @@ dependencies = [
 ]
 
 [project.scripts]
-ppt-course = "ppt_course.cli:main"
+ppt-course = "ppt_course_deal.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["ppt_course*"]
+include = ["ppt_course_deal*"]
 
 [tool.setuptools.package-data]
-ppt_course = ["static/*.html", "static/*.css", "static/*.js"]
+ppt_course_deal = ["static/*.html", "static/*.css", "static/*.js"]

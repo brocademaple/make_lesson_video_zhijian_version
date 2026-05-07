@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Iterable
 
-from ppt_course.models import BlockKind, ContentBlock
+from ppt_course_deal.models import BlockKind, ContentBlock
 
 # 启发式关键词（可后续替换为 LLM / Skill）
 _KEYWORDS: dict[BlockKind, tuple[str, ...]] = {

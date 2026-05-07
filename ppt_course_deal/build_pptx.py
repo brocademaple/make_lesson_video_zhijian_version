@@ -5,7 +5,7 @@ from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
 from pptx.util import Inches, Pt
 
-from ppt_course.models import CourseSlidePlan
+from ppt_course_deal.models import CourseSlidePlan
 
 _MARGIN = Inches(0.45)
 _TITLE_TOP = Inches(0.35)

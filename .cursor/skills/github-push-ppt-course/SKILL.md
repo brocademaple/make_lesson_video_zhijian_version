@@ -15,7 +15,7 @@ description: >-
 
 ## 提交前检查
 
-1. 阅读根目录 **`.gitignore`**，确认存在行：`ppt_course_data/`（及可选的 `ppt_course/user_data/`）。
+1. 阅读根目录 **`.gitignore`**，确认存在行：`ppt_course_data/`（及可选的 `ppt_course_deal/user_data/`、`ppt_course/user_data/` 等历史路径）。
 2. 执行 `git status`。若出现 `ppt_course_data` 下文件被 **staged**，执行  
    `git reset HEAD -- ppt_course_data`（或 `git restore --staged`）取消暂存，**不要**用 `-f` 把该目录强加入库。
 3. 若曾误提交过 `ppt_course_data`，需从跟踪中移除并保留本地文件：  

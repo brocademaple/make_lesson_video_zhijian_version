@@ -166,6 +166,32 @@ def delete_task(task_id: str) -> bool:
     return True
 
 
+def update_task_display_name(task_id: str, display_name: str) -> bool:
+    """更新 meta.json 中的展示名称（仅改显示文案，不移动磁盘上的 source.pptx）。"""
+    if not _validate_task_id(task_id):
+        return False
+    name = (display_name or "").strip()
+    if not name or len(name) > 200:
+        return False
+    meta_path = tasks_dir() / task_id / "meta.json"
+    if not meta_path.is_file():
+        return False
+    try:
+        data = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return False
+    data["filename"] = name
+    try:
+        meta_path.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except OSError:
+        return False
+    logger.info("已重命名任务展示名 %s → %s", task_id, name[:80])
+    return True
+
+
 def preview_png_path(task_id: str, slide_index: int) -> Path | None:
     if slide_index < 0 or not _validate_task_id(task_id):
         return None

@@ -8,6 +8,7 @@ build/
 .venv/
 venv/
 ppt_course/user_data/
+ppt_course_deal/user_data/
 ppt_course_data/
 .env
 *.pptx
