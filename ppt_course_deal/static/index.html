@@ -143,7 +143,7 @@
           <aside class="slide-rail hidden" id="slide-rail" aria-label="幻灯片列表">
             <div class="rail-head">
               <span id="file-label" class="file-label"></span>
-              <button type="button" class="btn btn-text" id="btn-change-file">更换文件</button>
+              <button type="button" class="btn btn-text" id="btn-change-file">返回首页</button>
             </div>
             <p class="warn-banner hidden" id="images-banner"></p>
             <div class="slide-rail__scroll" id="slide-rail-scroll">
@@ -479,6 +479,40 @@
               <button type="button" class="btn btn-text" id="btn-audio-gen-cancel">取消</button>
               <button type="button" class="btn btn-secondary" id="btn-audio-gen-save">保存合成参数</button>
             </div>
+          </footer>
+        </div>
+      </dialog>
+
+      <dialog
+        class="external-settings-dialog audio-generate-confirm-dialog"
+        id="audio-generate-confirm-dialog"
+        aria-labelledby="audio-generate-confirm-title"
+      >
+        <div class="external-settings-dialog__panel">
+          <header class="external-settings-dialog__head">
+            <h2 class="external-settings-dialog__title" id="audio-generate-confirm-title">确认生成本页音频</h2>
+            <form method="dialog">
+              <button type="submit" class="btn btn-text" aria-label="关闭">关闭</button>
+            </form>
+          </header>
+          <div class="external-settings-dialog__body">
+            <p class="external-settings-dialog__hint">
+              以下为当前合成参数（服务端外部配置与本机已保存合成偏好合并预览）与本页口播全文。确认无误后点击「开始生成」发起合成。
+            </p>
+            <h3 class="audio-generate-confirm__subtitle">合成参数</h3>
+            <pre id="audio-generate-confirm-config" class="audio-generate-confirm__pre" aria-label="合成参数预览"></pre>
+            <h3 class="audio-generate-confirm__subtitle">本页逐字稿</h3>
+            <textarea
+              id="audio-generate-confirm-transcript"
+              class="audio-workbench__textarea audio-generate-confirm__transcript"
+              readonly
+              rows="8"
+              aria-label="本页逐字稿预览"
+            ></textarea>
+          </div>
+          <footer class="external-settings-dialog__footer">
+            <button type="button" class="btn btn-text" id="btn-audio-generate-confirm-cancel">取消</button>
+            <button type="button" class="btn btn-secondary" id="btn-audio-generate-confirm-ok">开始生成</button>
           </footer>
         </div>
       </dialog>
