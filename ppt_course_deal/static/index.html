@@ -296,16 +296,21 @@
                       placeholder="填写本页口播全文；切换页面前可先点「保存逐字稿」或直接使用「生成本页音频」（会自动保存）。"
                     ></textarea>
                     <div class="audio-workbench__actions">
-                      <button type="button" class="btn btn-secondary" id="btn-audio-generate">
-                        生成本页音频
+                      <div class="audio-workbench__actions-main">
+                        <button type="button" class="btn btn-secondary" id="btn-audio-generate">
+                          生成本页音频
+                        </button>
+                        <audio
+                          id="audio-player"
+                          class="audio-workbench__player hidden"
+                          controls
+                          preload="none"
+                        ></audio>
+                        <span class="audio-workbench__status" id="audio-workbench-status"></span>
+                      </div>
+                      <button type="button" class="btn btn-text" id="btn-audio-gen-settings">
+                        进入音频生成设置
                       </button>
-                      <audio
-                        id="audio-player"
-                        class="audio-workbench__player hidden"
-                        controls
-                        preload="none"
-                      ></audio>
-                      <span class="audio-workbench__status" id="audio-workbench-status"></span>
                     </div>
                   </section>
                 </div>
@@ -323,6 +328,160 @@
           </section>
         </div>
       </div>
+
+      <button
+        type="button"
+        id="btn-workspace-task-drawer"
+        class="workspace-task-drawer-tab hidden"
+        aria-label="展开已存任务列表"
+        aria-expanded="false"
+        aria-controls="workspace-task-drawer-panel"
+      >
+        <span class="workspace-task-drawer-tab__chev workspace-task-drawer-tab__chev--open" aria-hidden="true">›</span>
+        <span class="workspace-task-drawer-tab__chev workspace-task-drawer-tab__chev--close hidden" aria-hidden="true">‹</span>
+      </button>
+      <div
+        id="workspace-task-drawer-backdrop"
+        class="workspace-task-drawer-backdrop"
+        aria-hidden="true"
+      ></div>
+      <aside
+        id="workspace-task-drawer-panel"
+        class="workspace-task-drawer-panel"
+        aria-label="已存任务"
+        aria-modal="false"
+        aria-hidden="true"
+        role="dialog"
+      >
+        <div class="workspace-task-drawer-panel__head">
+          <h2 class="workspace-task-drawer-panel__title">已存任务</h2>
+          <button type="button" class="btn btn-text" id="btn-workspace-task-drawer-close">关闭</button>
+        </div>
+        <ul class="task-list task-list--drawer" id="workspace-task-drawer-list" role="list"></ul>
+        <p class="workspace-task-drawer-panel__hint">刷新、删除或重命名请在上传首页左侧「已存任务」操作。</p>
+      </aside>
+
+      <dialog
+        class="external-settings-dialog audio-gen-settings-dialog"
+        id="audio-gen-settings-dialog"
+        aria-labelledby="audio-gen-settings-title"
+      >
+        <div class="external-settings-dialog__panel">
+          <header class="external-settings-dialog__head">
+            <h2 class="external-settings-dialog__title" id="audio-gen-settings-title">音频生成参数（MiniMax T2A）</h2>
+            <form method="dialog">
+              <button type="submit" class="btn btn-text" aria-label="关闭">关闭</button>
+            </form>
+          </header>
+          <div class="external-settings-dialog__body">
+            <p class="external-settings-dialog__hint">
+              对应 MiniMax 语音合成接口 <code>/v1/t2a_v2</code> 的请求体字段（不含密钥与 API Base）。此处保存的合成偏好写入浏览器
+              <code>localStorage</code>，仅在点击「生成本页音频」时作为单次请求的 <code>minimax_overrides</code> 传给服务端。
+              详见官方文档：
+              <a href="https://platform.minimax.io/docs/api-reference/speech-t2a-http" target="_blank" rel="noopener noreferrer"
+                >Speech T2A（HTTP）</a
+              >。
+            </p>
+            <div class="field-grid">
+              <label class="field">
+                <span class="field__label">Group ID（可选）</span>
+                <input type="text" id="audio-gen-group" class="field__input" autocomplete="off" placeholder="与外部配置一致时可留空" />
+              </label>
+              <label class="field">
+                <span class="field__label">合成模型 model</span>
+                <select id="audio-gen-model" class="field__input">
+                  <option value="speech-2.8-hd">speech-2.8-hd</option>
+                  <option value="speech-2.8-turbo">speech-2.8-turbo</option>
+                  <option value="speech-2.6-hd">speech-2.6-hd</option>
+                  <option value="speech-2.6-turbo">speech-2.6-turbo</option>
+                  <option value="speech-02-hd">speech-02-hd</option>
+                  <option value="speech-02-turbo">speech-02-turbo</option>
+                  <option value="speech-01-hd">speech-01-hd</option>
+                  <option value="speech-01-turbo">speech-01-turbo</option>
+                </select>
+              </label>
+              <label class="field field--wide">
+                <span class="field__label">音色 voice_id</span>
+                <input type="text" id="audio-gen-voice" class="field__input" placeholder="如 Chinese (Mandarin)_Lyrical_Voice" />
+              </label>
+              <label class="field">
+                <span class="field__label">语言增强 language_boost</span>
+                <select id="audio-gen-lang" class="field__input">
+                  <option value="Chinese">Chinese</option>
+                  <option value="English">English</option>
+                  <option value="Japanese">Japanese</option>
+                  <option value="Korean">Korean</option>
+                  <option value="auto">auto</option>
+                </select>
+              </label>
+              <label class="field">
+                <span class="field__label">音频格式 audio_setting.format</span>
+                <select id="audio-gen-audio-fmt" class="field__input">
+                  <option value="mp3">mp3</option>
+                  <option value="pcm">pcm</option>
+                  <option value="flac">flac</option>
+                </select>
+              </label>
+              <label class="field">
+                <span class="field__label">输出编码 output_format</span>
+                <select id="audio-gen-out-fmt" class="field__input">
+                  <option value="hex">hex（默认）</option>
+                  <option value="url">url</option>
+                </select>
+              </label>
+              <label class="field">
+                <span class="field__label">采样率 sample_rate</span>
+                <select id="audio-gen-sr" class="field__input">
+                  <option value="16000">16000</option>
+                  <option value="32000" selected>32000</option>
+                  <option value="44100">44100</option>
+                  <option value="48000">48000</option>
+                </select>
+              </label>
+              <label class="field">
+                <span class="field__label">码率 bitrate</span>
+                <input type="number" id="audio-gen-bitrate" class="field__input" min="32000" step="8000" value="128000" />
+              </label>
+              <label class="field">
+                <span class="field__label">语速 speed（0.5–2）</span>
+                <input type="number" id="audio-gen-speed" class="field__input" min="0.5" max="2" step="0.1" value="1" />
+              </label>
+              <label class="field">
+                <span class="field__label">音量 vol（0–10）</span>
+                <input type="number" id="audio-gen-vol" class="field__input" min="0.1" max="10" step="0.1" value="1" />
+              </label>
+              <label class="field">
+                <span class="field__label">音高 pitch（-12–12）</span>
+                <input type="number" id="audio-gen-pitch" class="field__input" min="-12" max="12" step="1" value="0" />
+              </label>
+              <label class="field">
+                <span class="field__label">情绪 emotion（可选）</span>
+                <select id="audio-gen-emotion" class="field__input">
+                  <option value="">（自动）</option>
+                  <option value="happy">happy</option>
+                  <option value="calm">calm</option>
+                  <option value="fluent">fluent</option>
+                  <option value="whisper">whisper</option>
+                  <option value="sad">sad</option>
+                </select>
+              </label>
+              <div class="field field--wide">
+                <label class="audio-gen-settings-dialog__stream">
+                  <input type="checkbox" id="audio-gen-stream" />
+                  <span>流式 stream（非流式合成请保持关闭）</span>
+                </label>
+              </div>
+            </div>
+          </div>
+          <footer class="external-settings-dialog__footer audio-gen-settings-dialog__footer">
+            <button type="button" class="btn btn-text" id="btn-audio-gen-restore">恢复服务端默认</button>
+            <div class="audio-gen-settings-dialog__footer-end">
+              <button type="button" class="btn btn-text" id="btn-audio-gen-cancel">取消</button>
+              <button type="button" class="btn btn-secondary" id="btn-audio-gen-save">保存合成参数</button>
+            </div>
+          </footer>
+        </div>
+      </dialog>
 
       <dialog class="external-settings-dialog" id="external-settings-dialog" aria-labelledby="external-settings-title">
         <div class="external-settings-dialog__panel">

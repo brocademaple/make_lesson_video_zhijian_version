@@ -34,6 +34,11 @@
   const downloadLink = document.getElementById("download-link");
   const imagesBanner = document.getElementById("images-banner");
   const taskList = document.getElementById("task-list");
+  const btnWorkspaceTaskDrawer = document.getElementById("btn-workspace-task-drawer");
+  const workspaceTaskDrawerBackdrop = document.getElementById("workspace-task-drawer-backdrop");
+  const workspaceTaskDrawerPanel = document.getElementById("workspace-task-drawer-panel");
+  const workspaceTaskDrawerList = document.getElementById("workspace-task-drawer-list");
+  const btnWorkspaceTaskDrawerClose = document.getElementById("btn-workspace-task-drawer-close");
   const btnRefreshTasks = document.getElementById("btn-refresh-tasks");
   const btnHelpTaskList = document.getElementById("btn-help-task-list");
   const taskDeletePopconfirm = document.getElementById("task-delete-popconfirm");
@@ -49,8 +54,12 @@
   const audioPlayer = document.getElementById("audio-player");
   const btnAudioSave = document.getElementById("btn-audio-save");
   const btnAudioGenerate = document.getElementById("btn-audio-generate");
+  const audioGenSettingsDialog = document.getElementById("audio-gen-settings-dialog");
+  const btnAudioGenSettings = document.getElementById("btn-audio-gen-settings");
   const externalSettingsDialog = document.getElementById("external-settings-dialog");
   const btnExternalSettings = document.getElementById("btn-external-settings");
+
+  var AUDIO_GEN_LS_KEY = "ppt_course_audio_gen_overrides";
 
   /** @type {File | null} */
   let currentFile = null;
@@ -374,6 +383,118 @@
     }
   }
 
+  function buildTaskListItem(t, options) {
+    var navOnly = options && options.navOnly;
+    var li = document.createElement("li");
+    li.className = "task-li" + (navOnly ? " task-li--nav" : "");
+    var main = document.createElement("button");
+    main.type = "button";
+    main.className = "task-row-main";
+    if (navOnly && currentTaskId && t.id === currentTaskId) {
+      main.classList.add("is-current");
+    }
+    main.innerHTML =
+      '<span class="task-row-name">' +
+      escapeHtml(t.filename || "") +
+      '</span><span class="task-row-meta">' +
+      (t.slide_count || 0) +
+      " 页" +
+      (t.images_available ? " · 含整页预览图" : "") +
+      " · " +
+      escapeHtml(formatTaskTime(t.created_at)) +
+      "</span>";
+    main.addEventListener("click", function () {
+      if (navOnly) closeWorkspaceTaskDrawer();
+      openStoredTask(t.id);
+    });
+
+    li.appendChild(main);
+    if (!navOnly) {
+      var actions = document.createElement("div");
+      actions.className = "task-row-actions";
+
+      var btnEdit = document.createElement("button");
+      btnEdit.type = "button";
+      btnEdit.className = "task-row-icon-btn";
+      btnEdit.setAttribute("aria-label", "编辑任务名称");
+      btnEdit.innerHTML = SVG_TASK_PENCIL;
+      btnEdit.addEventListener("click", function (e) {
+        e.stopPropagation();
+        openRenamePopover(btnEdit, t.id, t.filename || "");
+      });
+
+      var del = document.createElement("button");
+      del.type = "button";
+      del.className = "task-row-icon-btn task-row-icon-btn--danger";
+      del.setAttribute("aria-label", "删除该任务");
+      del.textContent = "×";
+      del.addEventListener("click", function (e) {
+        e.stopPropagation();
+        openDeletePopconfirm(del, t.id);
+      });
+
+      actions.appendChild(btnEdit);
+      actions.appendChild(del);
+      li.appendChild(actions);
+    }
+    return li;
+  }
+
+  function renderTaskListFromData(tasks, listEl, options) {
+    if (!listEl) return;
+    listEl.innerHTML = "";
+    tasks.forEach(function (t) {
+      listEl.appendChild(buildTaskListItem(t, options));
+    });
+    listEl.setAttribute("aria-label", tasks.length ? "已存任务列表" : "暂无任务");
+  }
+
+  function setWorkspaceTaskDrawerTabVisible(show) {
+    if (!btnWorkspaceTaskDrawer) return;
+    btnWorkspaceTaskDrawer.classList.toggle("hidden", !show);
+  }
+
+  function closeWorkspaceTaskDrawer() {
+    if (workspaceTaskDrawerBackdrop) {
+      workspaceTaskDrawerBackdrop.classList.remove("is-open");
+      workspaceTaskDrawerBackdrop.setAttribute("aria-hidden", "true");
+    }
+    if (workspaceTaskDrawerPanel) {
+      workspaceTaskDrawerPanel.classList.remove("is-open");
+      workspaceTaskDrawerPanel.setAttribute("aria-hidden", "true");
+      workspaceTaskDrawerPanel.setAttribute("aria-modal", "false");
+    }
+    if (btnWorkspaceTaskDrawer) {
+      btnWorkspaceTaskDrawer.setAttribute("aria-expanded", "false");
+      btnWorkspaceTaskDrawer.setAttribute("aria-label", "展开已存任务列表");
+    }
+  }
+
+  function workspaceTaskDrawerIsOpen() {
+    return !!(workspaceTaskDrawerPanel && workspaceTaskDrawerPanel.classList.contains("is-open"));
+  }
+
+  async function openWorkspaceTaskDrawer() {
+    if (!workspaceTaskDrawerPanel) return;
+    await refreshTaskList();
+    if (workspaceTaskDrawerBackdrop) {
+      workspaceTaskDrawerBackdrop.classList.add("is-open");
+      workspaceTaskDrawerBackdrop.setAttribute("aria-hidden", "false");
+    }
+    workspaceTaskDrawerPanel.classList.add("is-open");
+    workspaceTaskDrawerPanel.setAttribute("aria-hidden", "false");
+    workspaceTaskDrawerPanel.setAttribute("aria-modal", "true");
+    if (btnWorkspaceTaskDrawer) {
+      btnWorkspaceTaskDrawer.setAttribute("aria-expanded", "true");
+      btnWorkspaceTaskDrawer.setAttribute("aria-label", "收起已存任务列表");
+    }
+  }
+
+  function toggleWorkspaceTaskDrawer() {
+    if (workspaceTaskDrawerIsOpen()) closeWorkspaceTaskDrawer();
+    else void openWorkspaceTaskDrawer();
+  }
+
   async function refreshTaskList() {
     if (!taskList) return;
     closeAllTaskPopovers();
@@ -382,59 +503,9 @@
       if (!res.ok) return;
       var data = await res.json();
       var tasks = data.tasks || [];
-      taskList.innerHTML = "";
-      tasks.forEach(function (t) {
-        var li = document.createElement("li");
-        li.className = "task-li";
-        var main = document.createElement("button");
-        main.type = "button";
-        main.className = "task-row-main";
-        main.innerHTML =
-          '<span class="task-row-name">' +
-          escapeHtml(t.filename || "") +
-          '</span><span class="task-row-meta">' +
-          (t.slide_count || 0) +
-          " 页" +
-          (t.images_available ? " · 含整页预览图" : "") +
-          " · " +
-          escapeHtml(formatTaskTime(t.created_at)) +
-          "</span>";
-        main.addEventListener("click", function () {
-          openStoredTask(t.id);
-        });
-
-        var actions = document.createElement("div");
-        actions.className = "task-row-actions";
-
-        var btnEdit = document.createElement("button");
-        btnEdit.type = "button";
-        btnEdit.className = "task-row-icon-btn";
-        btnEdit.setAttribute("aria-label", "编辑任务名称");
-        btnEdit.innerHTML = SVG_TASK_PENCIL;
-        btnEdit.addEventListener("click", function (e) {
-          e.stopPropagation();
-          openRenamePopover(btnEdit, t.id, t.filename || "");
-        });
-
-        var del = document.createElement("button");
-        del.type = "button";
-        del.className = "task-row-icon-btn task-row-icon-btn--danger";
-        del.setAttribute("aria-label", "删除该任务");
-        del.textContent = "×";
-        del.addEventListener("click", function (e) {
-          e.stopPropagation();
-          openDeletePopconfirm(del, t.id);
-        });
-
-        actions.appendChild(btnEdit);
-        actions.appendChild(del);
-
-        li.appendChild(main);
-        li.appendChild(actions);
-        taskList.appendChild(li);
-      });
-      if (taskList) {
-        taskList.setAttribute("aria-label", tasks.length ? "已存任务列表" : "暂无任务");
+      renderTaskListFromData(tasks, taskList, { navOnly: false });
+      if (workspaceTaskDrawerList) {
+        renderTaskListFromData(tasks, workspaceTaskDrawerList, { navOnly: true });
       }
     } catch (_) {}
   }
@@ -508,6 +579,7 @@
       workspace.classList.remove("hidden");
       if (appMain) appMain.classList.add("app-main--workspace");
       if (slideRail) slideRail.classList.remove("hidden");
+      setWorkspaceTaskDrawerTabVisible(true);
       btnTransform.disabled = true;
       renderSlideList();
       renderPreview();
@@ -695,6 +767,101 @@
     } catch (_) {}
   }
 
+  function readStoredAudioGenOverrides() {
+    try {
+      var s = localStorage.getItem(AUDIO_GEN_LS_KEY);
+      if (!s) return {};
+      var o = JSON.parse(s);
+      return o && typeof o === "object" ? o : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function writeStoredAudioGenOverrides(obj) {
+    try {
+      localStorage.setItem(AUDIO_GEN_LS_KEY, JSON.stringify(obj));
+    } catch (_) {}
+  }
+
+  function ensureSelectHasOption(selectEl, value) {
+    if (!selectEl || value == null || value === "") return;
+    var v = String(value);
+    for (var i = 0; i < selectEl.options.length; i++) {
+      if (selectEl.options[i].value === v) return;
+    }
+    var opt = document.createElement("option");
+    opt.value = v;
+    opt.textContent = v;
+    selectEl.insertBefore(opt, selectEl.firstChild);
+    selectEl.value = v;
+  }
+
+  function fillAudioGenFormFromMerged(mm) {
+    var m = mm || {};
+    var grp = document.getElementById("audio-gen-group");
+    if (grp) grp.value = m.group_id || "";
+    var model = document.getElementById("audio-gen-model");
+    if (model) {
+      ensureSelectHasOption(model, m.model);
+      model.value = m.model || "speech-2.8-hd";
+    }
+    var voice = document.getElementById("audio-gen-voice");
+    if (voice) voice.value = m.voice_id || "Chinese (Mandarin)_Lyrical_Voice";
+    var lang = document.getElementById("audio-gen-lang");
+    if (lang) lang.value = m.language_boost || "Chinese";
+    var af = document.getElementById("audio-gen-audio-fmt");
+    if (af) af.value = m.audio_format || "mp3";
+    var of = document.getElementById("audio-gen-out-fmt");
+    if (of) of.value = m.output_format || "hex";
+    var sr = document.getElementById("audio-gen-sr");
+    if (sr) sr.value = String(m.sample_rate != null ? m.sample_rate : 32000);
+    var br = document.getElementById("audio-gen-bitrate");
+    if (br) br.value = String(m.bitrate != null ? m.bitrate : 128000);
+    var sp = document.getElementById("audio-gen-speed");
+    if (sp) sp.value = String(m.speed != null ? m.speed : 1);
+    var vo = document.getElementById("audio-gen-vol");
+    if (vo) vo.value = String(m.vol != null ? m.vol : 1);
+    var pi = document.getElementById("audio-gen-pitch");
+    if (pi) pi.value = String(m.pitch != null ? m.pitch : 0);
+    var em = document.getElementById("audio-gen-emotion");
+    if (em) em.value = m.emotion != null && m.emotion !== undefined ? m.emotion : "";
+    var st = document.getElementById("audio-gen-stream");
+    if (st) st.checked = !!m.stream;
+  }
+
+  function collectAudioGenOverridesFromForm() {
+    var o = {
+      model: document.getElementById("audio-gen-model").value,
+      voice_id: document.getElementById("audio-gen-voice").value.trim(),
+      language_boost: document.getElementById("audio-gen-lang").value,
+      audio_format: document.getElementById("audio-gen-audio-fmt").value,
+      output_format: document.getElementById("audio-gen-out-fmt").value,
+      sample_rate: parseInt(document.getElementById("audio-gen-sr").value, 10),
+      bitrate: parseInt(document.getElementById("audio-gen-bitrate").value, 10),
+      speed: parseFloat(document.getElementById("audio-gen-speed").value),
+      vol: parseFloat(document.getElementById("audio-gen-vol").value),
+      pitch: parseInt(document.getElementById("audio-gen-pitch").value, 10),
+      stream: document.getElementById("audio-gen-stream").checked,
+      emotion: document.getElementById("audio-gen-emotion").value,
+    };
+    var gid = document.getElementById("audio-gen-group").value.trim();
+    if (gid) o.group_id = gid;
+    return o;
+  }
+
+  async function openAudioGenSettingsDialog() {
+    try {
+      var res = await fetch("/api/settings/external");
+      var j = res.ok ? await res.json() : {};
+      var mm = j.minimax || {};
+      var stored = readStoredAudioGenOverrides();
+      var merged = Object.assign({}, mm, stored);
+      fillAudioGenFormFromMerged(merged);
+      if (audioGenSettingsDialog) audioGenSettingsDialog.showModal();
+    } catch (_) {}
+  }
+
   async function saveAudioWorkspaceRemote() {
     flushAudioTranscript();
     if (!slides.length) return;
@@ -729,6 +896,10 @@
     else {
       audioWorkbenchStatus.textContent = "缺少会话或任务标识";
       return;
+    }
+    var mmPrefs = readStoredAudioGenOverrides();
+    if (mmPrefs && Object.keys(mmPrefs).length > 0) {
+      genBody.minimax_overrides = mmPrefs;
     }
     try {
       var res = await fetch("/api/audio/workspace/generate", {
@@ -829,6 +1000,7 @@
       workspace.classList.remove("hidden");
       if (appMain) appMain.classList.add("app-main--workspace");
       if (slideRail) slideRail.classList.remove("hidden");
+      setWorkspaceTaskDrawerTabVisible(true);
       renderSlideList();
       renderPreview();
       await loadAudioWorkspaceMeta();
@@ -855,6 +1027,8 @@
   }
 
   function backToUpload() {
+    closeWorkspaceTaskDrawer();
+    setWorkspaceTaskDrawerTabVisible(false);
     previewMode = "session";
     workspace.classList.add("hidden");
     if (appMain) appMain.classList.remove("app-main--workspace");
@@ -919,6 +1093,29 @@
 
   btnChangeFile.addEventListener("click", function () {
     backToUpload();
+  });
+
+  if (btnWorkspaceTaskDrawer) {
+    btnWorkspaceTaskDrawer.addEventListener("click", function (e) {
+      e.stopPropagation();
+      toggleWorkspaceTaskDrawer();
+    });
+  }
+  if (btnWorkspaceTaskDrawerClose) {
+    btnWorkspaceTaskDrawerClose.addEventListener("click", function () {
+      closeWorkspaceTaskDrawer();
+    });
+  }
+  if (workspaceTaskDrawerBackdrop) {
+    workspaceTaskDrawerBackdrop.addEventListener("click", function () {
+      closeWorkspaceTaskDrawer();
+    });
+  }
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && workspaceTaskDrawerIsOpen()) {
+      e.preventDefault();
+      closeWorkspaceTaskDrawer();
+    }
   });
 
   btnTransform.addEventListener("click", async function () {
@@ -1192,6 +1389,46 @@
   if (btnAudioGenerate) {
     btnAudioGenerate.addEventListener("click", function () {
       generateAudioForCurrentSlide();
+    });
+  }
+
+  if (btnAudioGenSettings) {
+    btnAudioGenSettings.addEventListener("click", function () {
+      openAudioGenSettingsDialog();
+    });
+  }
+
+  if (audioGenSettingsDialog) {
+    audioGenSettingsDialog.addEventListener("click", function (e) {
+      if (e.target === audioGenSettingsDialog) audioGenSettingsDialog.close();
+    });
+  }
+
+  var btnAudioGenCancel = document.getElementById("btn-audio-gen-cancel");
+  if (btnAudioGenCancel && audioGenSettingsDialog) {
+    btnAudioGenCancel.addEventListener("click", function () {
+      audioGenSettingsDialog.close();
+    });
+  }
+
+  var btnAudioGenSave = document.getElementById("btn-audio-gen-save");
+  if (btnAudioGenSave) {
+    btnAudioGenSave.addEventListener("click", function () {
+      var o = collectAudioGenOverridesFromForm();
+      writeStoredAudioGenOverrides(o);
+      if (audioGenSettingsDialog) audioGenSettingsDialog.close();
+    });
+  }
+
+  var btnAudioGenRestore = document.getElementById("btn-audio-gen-restore");
+  if (btnAudioGenRestore) {
+    btnAudioGenRestore.addEventListener("click", async function () {
+      try {
+        localStorage.removeItem(AUDIO_GEN_LS_KEY);
+        var res = await fetch("/api/settings/external");
+        var j = res.ok ? await res.json() : {};
+        fillAudioGenFormFromMerged(j.minimax || {});
+      } catch (_) {}
     });
   }
 

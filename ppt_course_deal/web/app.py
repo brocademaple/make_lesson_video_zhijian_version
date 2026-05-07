@@ -365,10 +365,65 @@ def create_app() -> FastAPI:
         slide_count: int = Field(ge=0, le=500)
         transcripts: List[str] = Field(default_factory=list)
 
+    _AUDIO_GEN_OVERRIDE_KEYS = frozenset(
+        {
+            "model",
+            "voice_id",
+            "language_boost",
+            "output_format",
+            "audio_format",
+            "sample_rate",
+            "bitrate",
+            "speed",
+            "vol",
+            "pitch",
+            "emotion",
+            "stream",
+            "group_id",
+        }
+    )
+
+    def _apply_minimax_generation_overrides(
+        base: Dict[str, Any],
+        raw: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """单次合成请求允许的字段覆盖（不含 api_key / api_base）。对应 MiniMax T2A OpenAPI。"""
+        if not raw:
+            return base
+        out = dict(base)
+        for k, v in raw.items():
+            if k not in _AUDIO_GEN_OVERRIDE_KEYS:
+                continue
+            if v is None:
+                continue
+            if k == "emotion" and (
+                v == "" or (isinstance(v, str) and not str(v).strip())
+            ):
+                out.pop("emotion", None)
+                continue
+            if k in ("sample_rate", "bitrate", "pitch"):
+                try:
+                    out[k] = int(v)
+                except (TypeError, ValueError):
+                    continue
+            elif k in ("speed", "vol"):
+                try:
+                    out[k] = float(v)
+                except (TypeError, ValueError):
+                    continue
+            elif k == "stream":
+                out[k] = bool(v)
+            elif k == "group_id":
+                out[k] = str(v).strip()
+            else:
+                out[k] = v
+        return out
+
     class AudioGenerateBody(BaseModel):
         task_id: Optional[str] = None
         session_id: Optional[str] = None
         slide_index: int = Field(ge=0, le=499)
+        minimax_overrides: Optional[Dict[str, Any]] = None
 
     @application.get("/api/settings/external")
     def get_external_settings() -> Dict[str, Any]:
@@ -459,7 +514,10 @@ def create_app() -> FastAPI:
         if not text:
             raise HTTPException(status_code=400, detail="本页逐字稿为空，请先填写并保存")
 
-        mm = get_minimax_for_server_call()
+        mm = _apply_minimax_generation_overrides(
+            get_minimax_for_server_call(),
+            body.minimax_overrides,
+        )
         try:
             audio_bytes = synthesize_to_mp3_bytes(mm, text)
         except MiniMaxTTSError as e:
