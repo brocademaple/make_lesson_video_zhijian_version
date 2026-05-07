@@ -61,13 +61,28 @@ def save_task_from_parse(
         base.mkdir(parents=True, exist_ok=False)
         (base / "source.pptx").write_bytes(raw)
         prev_dir = base / "previews"
-        if pngs:
+        png_list: list[Path] = list(pngs) if pngs else []
+        if png_list:
             prev_dir.mkdir(exist_ok=True)
-            for i, src in enumerate(pngs):
+            for i, src in enumerate(png_list):
                 if not src.is_file():
                     continue
                 dest = prev_dir / f"slide-{i:04d}.png"
                 shutil.copy2(src, dest)
+
+        shape_manifest: list[dict[str, Any]] = []
+        try:
+            from ppt_course_deal.shape_image_export import populate_slide_preview_folders
+
+            prev_dir.mkdir(exist_ok=True)
+            shape_manifest = populate_slide_preview_folders(
+                base / "source.pptx",
+                prev_dir,
+                len(slides),
+                png_list if png_list else None,
+            )
+        except Exception:
+            logger.exception("按页目录导出 full.png / shapes 失败，已跳过")
 
         created = datetime.now(timezone.utc).isoformat()
         meta: dict[str, Any] = {
@@ -80,6 +95,7 @@ def save_task_from_parse(
             "images_error": images_error,
             "images_available": images_available,
             "preview_count": preview_count,
+            "shape_image_manifest": shape_manifest,
         }
         (base / "meta.json").write_text(
             json.dumps(meta, ensure_ascii=False, indent=2),
@@ -195,7 +211,24 @@ def update_task_display_name(task_id: str, display_name: str) -> bool:
 def preview_png_path(task_id: str, slide_index: int) -> Path | None:
     if slide_index < 0 or not _validate_task_id(task_id):
         return None
-    p = tasks_dir() / task_id / "previews" / f"slide-{slide_index:04d}.png"
-    if p.is_file():
-        return p
+    root = tasks_dir() / task_id / "previews"
+    nested = root / f"slide-{slide_index:04d}" / "full.png"
+    if nested.is_file():
+        return nested
+    flat = root / f"slide-{slide_index:04d}.png"
+    if flat.is_file():
+        return flat
     return None
+
+
+def slide_shape_file_path(task_id: str, slide_index: int, shape_index: int) -> Path | None:
+    """``previews/slide-NNNN/shapes/shape-XXXX.ext`` 按文件名排序后的第 ``shape_index`` 个文件。"""
+    if slide_index < 0 or shape_index < 0 or not _validate_task_id(task_id):
+        return None
+    from ppt_course_deal.shape_image_export import list_slide_shape_files
+
+    root = tasks_dir() / task_id / "previews"
+    files = list_slide_shape_files(root, slide_index)
+    if shape_index >= len(files):
+        return None
+    return files[shape_index]

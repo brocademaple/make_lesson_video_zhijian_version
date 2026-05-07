@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import mimetypes
 import os
 import shutil
 import tempfile
@@ -36,12 +37,15 @@ from ppt_course_deal.fallback_preview import write_fallback_pngs
 from ppt_course_deal.minimax_client import MiniMaxTTSError, synthesize_to_mp3_bytes
 from ppt_course_deal.pipeline import transform_pptx
 from ppt_course_deal.slide_render import describe_preview_render_env, render_pptx_to_pngs
+from ppt_course_deal.shape_image_export import list_slide_shape_files
 from ppt_course_deal.task_storage import (
     delete_task,
     list_task_summaries,
     load_task,
     preview_png_path,
     save_task_from_parse,
+    slide_shape_file_path,
+    tasks_dir,
     update_task_display_name,
 )
 
@@ -262,6 +266,48 @@ def create_app() -> FastAPI:
         return FileResponse(
             path,
             media_type="image/png",
+            headers={"Cache-Control": "private, max-age=86400"},
+        )
+
+    @application.get("/api/tasks/{task_id}/slide/{slide_index:int}/full")
+    def task_slide_full_png_alt(task_id: str, slide_index: int) -> FileResponse:
+        """与 ``/preview/{slide_index}`` 相同数据源；显式指向 ``previews/slide-NNNN/full.png`` 语义。"""
+        if load_task(task_id) is None:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        path = preview_png_path(task_id, slide_index)
+        if path is None:
+            raise HTTPException(status_code=404, detail="整页预览不存在")
+        return FileResponse(
+            path,
+            media_type="image/png",
+            headers={"Cache-Control": "private, max-age=86400"},
+        )
+
+    @application.get("/api/tasks/{task_id}/slide/{slide_index:int}/shapes")
+    def task_slide_shapes_list(task_id: str, slide_index: int) -> Dict[str, Any]:
+        """列出该页 ``previews/slide-NNNN/shapes/`` 下已导出的内嵌图文件名（按 shape 顺序）。"""
+        if load_task(task_id) is None:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        prev = tasks_dir() / task_id / "previews"
+        files = list_slide_shape_files(prev, slide_index)
+        return {
+            "slide_index": slide_index,
+            "count": len(files),
+            "filenames": [p.name for p in files],
+        }
+
+    @application.get("/api/tasks/{task_id}/slide/{slide_index:int}/shape/{shape_index:int}")
+    def task_slide_shape_asset(task_id: str, slide_index: int, shape_index: int) -> FileResponse:
+        """按索引返回该页第 ``shape_index`` 张图片形状导出文件（从 0 起）。"""
+        if load_task(task_id) is None:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        path = slide_shape_file_path(task_id, slide_index, shape_index)
+        if path is None:
+            raise HTTPException(status_code=404, detail="形状图片不存在")
+        mt = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        return FileResponse(
+            path,
+            media_type=mt,
             headers={"Cache-Control": "private, max-age=86400"},
         )
 
