@@ -44,6 +44,10 @@
   const taskDeletePopconfirm = document.getElementById("task-delete-popconfirm");
   const taskRenamePopover = document.getElementById("task-rename-popover");
   const taskRenameInput = document.getElementById("task-rename-input");
+  const taskIdPopover = document.getElementById("task-id-popover");
+  const taskIdPopoverCode = document.getElementById("task-id-popover-code");
+  const btnTaskIdCopy = document.getElementById("task-id-popover-copy");
+  const btnTaskIdClose = document.getElementById("task-id-popover-close");
   const btnTaskDeleteCancel = document.getElementById("task-delete-cancel");
   const btnTaskDeleteConfirm = document.getElementById("task-delete-confirm");
   const btnTaskRenameCancel = document.getElementById("task-rename-cancel");
@@ -55,6 +59,7 @@
   const btnAudioSave = document.getElementById("btn-audio-save");
   const btnAudioGenerate = document.getElementById("btn-audio-generate");
   const audioGenSettingsDialog = document.getElementById("audio-gen-settings-dialog");
+  const audioGenerateConfirmDialog = document.getElementById("audio-generate-confirm-dialog");
   const btnAudioGenSettings = document.getElementById("btn-audio-gen-settings");
   const externalSettingsDialog = document.getElementById("external-settings-dialog");
   const btnExternalSettings = document.getElementById("btn-external-settings");
@@ -115,6 +120,9 @@
   var SVG_TASK_PENCIL =
     '<svg class="task-row-icon-btn__svg" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>';
 
+  var SVG_TASK_INFO =
+    '<svg class="task-row-icon-btn__svg" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.75"/><path d="M12 16v-4M12 8h.01" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+
   /** @type {string | null} */
   var pendingDeleteId = null;
   /** @type {HTMLElement | null} */
@@ -123,6 +131,16 @@
   var pendingRenameId = null;
   /** @type {HTMLElement | null} */
   var renamePopoverAnchor = null;
+  /** @type {HTMLElement | null} */
+  var taskIdPopoverAnchor = null;
+
+  function closeTaskIdPopover() {
+    taskIdPopoverAnchor = null;
+    if (taskIdPopover) {
+      taskIdPopover.classList.add("hidden");
+      taskIdPopover.setAttribute("aria-hidden", "true");
+    }
+  }
 
   function closeDeletePopconfirm() {
     pendingDeleteId = null;
@@ -146,6 +164,7 @@
   function closeAllTaskPopovers() {
     closeDeletePopconfirm();
     closeRenamePopover();
+    closeTaskIdPopover();
   }
 
   function positionTaskPopover(anchor, popEl) {
@@ -167,6 +186,7 @@
 
   function openDeletePopconfirm(anchorBtn, taskId) {
     closeRenamePopover();
+    closeTaskIdPopover();
     pendingDeleteId = taskId;
     deletePopoverAnchor = anchorBtn;
     if (taskDeletePopconfirm) {
@@ -178,6 +198,7 @@
 
   function openRenamePopover(anchorBtn, taskId, currentName) {
     closeDeletePopconfirm();
+    closeTaskIdPopover();
     pendingRenameId = taskId;
     renamePopoverAnchor = anchorBtn;
     if (taskRenamePopover && taskRenameInput) {
@@ -213,9 +234,30 @@
         }
         closeRenamePopover();
       }
+      if (taskIdPopover && !taskIdPopover.classList.contains("hidden")) {
+        if (
+          taskIdPopover.contains(/** @type {Node} */ (e.target)) ||
+          (taskIdPopoverAnchor && taskIdPopoverAnchor.contains(/** @type {Node} */ (e.target)))
+        ) {
+          return;
+        }
+        closeTaskIdPopover();
+      }
     },
     true
   );
+
+  function openTaskIdPopover(anchorBtn, taskId) {
+    closeDeletePopconfirm();
+    closeRenamePopover();
+    taskIdPopoverAnchor = anchorBtn;
+    if (taskIdPopover && taskIdPopoverCode) {
+      taskIdPopoverCode.textContent = taskId || "";
+      taskIdPopover.classList.remove("hidden");
+      taskIdPopover.setAttribute("aria-hidden", "false");
+      positionTaskPopover(anchorBtn, taskIdPopover);
+    }
+  }
 
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Escape") return;
@@ -236,6 +278,13 @@
       !taskRenamePopover.classList.contains("hidden")
     ) {
       positionTaskPopover(renamePopoverAnchor, taskRenamePopover);
+    }
+    if (
+      taskIdPopoverAnchor &&
+      taskIdPopover &&
+      !taskIdPopover.classList.contains("hidden")
+    ) {
+      positionTaskPopover(taskIdPopoverAnchor, taskIdPopover);
     }
   });
 
@@ -383,6 +432,20 @@
     }
   }
 
+  function makeTaskInfoButton(taskId) {
+    var btnInfo = document.createElement("button");
+    btnInfo.type = "button";
+    btnInfo.className = "task-row-icon-btn";
+    btnInfo.setAttribute("aria-label", "查看任务 ID");
+    btnInfo.title = "任务 ID";
+    btnInfo.innerHTML = SVG_TASK_INFO;
+    btnInfo.addEventListener("click", function (e) {
+      e.stopPropagation();
+      openTaskIdPopover(btnInfo, taskId);
+    });
+    return btnInfo;
+  }
+
   function buildTaskListItem(t, options) {
     var navOnly = options && options.navOnly;
     var li = document.createElement("li");
@@ -409,9 +472,13 @@
     });
 
     li.appendChild(main);
-    if (!navOnly) {
+    if (navOnly) {
+      li.appendChild(makeTaskInfoButton(t.id));
+    } else {
       var actions = document.createElement("div");
       actions.className = "task-row-actions";
+
+      actions.appendChild(makeTaskInfoButton(t.id));
 
       var btnEdit = document.createElement("button");
       btnEdit.type = "button";
@@ -860,6 +927,56 @@
       fillAudioGenFormFromMerged(merged);
       if (audioGenSettingsDialog) audioGenSettingsDialog.showModal();
     } catch (_) {}
+  }
+
+  function formatMergedAudioGenForConfirm(m) {
+    m = m || {};
+    var gid = m.group_id;
+    var lines = [];
+    lines.push("Group ID：" + (gid != null && String(gid).trim() !== "" ? String(gid) : "（未指定）"));
+    lines.push("合成模型：" + (m.model || "speech-2.8-hd"));
+    lines.push("音色 voice_id：" + (m.voice_id || "Chinese (Mandarin)_Lyrical_Voice"));
+    lines.push("语言增强 language_boost：" + (m.language_boost || "Chinese"));
+    lines.push("音频格式 audio_setting.format：" + (m.audio_format || "mp3"));
+    lines.push("输出编码 output_format：" + (m.output_format || "hex"));
+    lines.push(
+      "采样率 sample_rate：" + (m.sample_rate != null ? String(m.sample_rate) : "32000"),
+    );
+    lines.push("码率 bitrate：" + (m.bitrate != null ? String(m.bitrate) : "128000"));
+    lines.push("语速 speed：" + (m.speed != null ? String(m.speed) : "1"));
+    lines.push("音量 vol：" + (m.vol != null ? String(m.vol) : "1"));
+    lines.push("音高 pitch：" + (m.pitch != null ? String(m.pitch) : "0"));
+    lines.push("情绪 emotion：" + (m.emotion ? String(m.emotion) : "（自动）"));
+    lines.push("流式 stream：" + (m.stream ? "是" : "否"));
+    return lines.join("\n");
+  }
+
+  async function openAudioGenerateConfirmDialog() {
+    flushAudioTranscript();
+    if (!slides.length) {
+      if (audioWorkbenchStatus) audioWorkbenchStatus.textContent = "暂无幻灯片";
+      return;
+    }
+    if (!currentTaskId && !sessionId) {
+      if (audioWorkbenchStatus) audioWorkbenchStatus.textContent = "缺少会话或任务标识";
+      return;
+    }
+    if (!audioGenerateConfirmDialog) return;
+    var merged = {};
+    try {
+      var res = await fetch("/api/settings/external");
+      var j = res.ok ? await res.json() : {};
+      var mm = j.minimax || {};
+      var stored = readStoredAudioGenOverrides();
+      merged = Object.assign({}, mm, stored);
+    } catch (_) {
+      merged = Object.assign({}, readStoredAudioGenOverrides());
+    }
+    var cfgEl = document.getElementById("audio-generate-confirm-config");
+    var taEl = document.getElementById("audio-generate-confirm-transcript");
+    if (cfgEl) cfgEl.textContent = formatMergedAudioGenForConfirm(merged);
+    if (taEl && audioTranscriptEl) taEl.value = audioTranscriptEl.value;
+    audioGenerateConfirmDialog.showModal();
   }
 
   async function saveAudioWorkspaceRemote() {
@@ -1388,7 +1505,28 @@
 
   if (btnAudioGenerate) {
     btnAudioGenerate.addEventListener("click", function () {
+      openAudioGenerateConfirmDialog();
+    });
+  }
+
+  var btnAudioGenerateConfirmCancel = document.getElementById("btn-audio-generate-confirm-cancel");
+  if (btnAudioGenerateConfirmCancel && audioGenerateConfirmDialog) {
+    btnAudioGenerateConfirmCancel.addEventListener("click", function () {
+      audioGenerateConfirmDialog.close();
+    });
+  }
+
+  var btnAudioGenerateConfirmOk = document.getElementById("btn-audio-generate-confirm-ok");
+  if (btnAudioGenerateConfirmOk && audioGenerateConfirmDialog) {
+    btnAudioGenerateConfirmOk.addEventListener("click", function () {
+      audioGenerateConfirmDialog.close();
       generateAudioForCurrentSlide();
+    });
+  }
+
+  if (audioGenerateConfirmDialog) {
+    audioGenerateConfirmDialog.addEventListener("click", function (e) {
+      if (e.target === audioGenerateConfirmDialog) audioGenerateConfirmDialog.close();
     });
   }
 
@@ -1454,6 +1592,22 @@
     btnTaskRenameSave.addEventListener("click", function (e) {
       e.stopPropagation();
       executeRenameTask();
+    });
+  }
+  if (btnTaskIdClose) {
+    btnTaskIdClose.addEventListener("click", function (e) {
+      e.stopPropagation();
+      closeTaskIdPopover();
+    });
+  }
+  if (btnTaskIdCopy && taskIdPopoverCode) {
+    btnTaskIdCopy.addEventListener("click", function (e) {
+      e.stopPropagation();
+      var text = taskIdPopoverCode.textContent || "";
+      if (!text) return;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).catch(function () {});
+      }
     });
   }
   if (taskRenameInput) {

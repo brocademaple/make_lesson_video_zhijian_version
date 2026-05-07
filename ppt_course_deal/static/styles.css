@@ -348,7 +348,14 @@ body {
 }
 
 .task-li--nav .task-row-main {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
+}
+
+.task-li--nav > .task-row-icon-btn {
+  flex-shrink: 0;
+  align-self: stretch;
+  border-left: 1px solid var(--border);
 }
 
 .task-row-main.is-current {
@@ -1391,6 +1398,50 @@ body {
   gap: 0.35rem;
 }
 
+.task-id-popover {
+  position: fixed;
+  z-index: 1200;
+  width: min(20rem, calc(100vw - 2rem));
+  padding: 0.75rem 0.85rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--dialog-shadow);
+}
+
+.task-id-popover__title {
+  margin: 0 0 0.5rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.task-id-popover__row {
+  margin-bottom: 0.65rem;
+  padding: 0.45rem 0.5rem;
+  border-radius: 8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  overflow-x: auto;
+}
+
+.task-id-popover__code {
+  display: block;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  word-break: break-all;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.task-id-popover__actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 /* Top bar：外部配置入口（与 API 文档链接区分） */
 .icon-toolbar {
   display: inline-flex;
@@ -1672,6 +1723,44 @@ body {
 
 .audio-gen-settings-dialog__stream input {
   margin-top: 0.15rem;
+}
+
+/* 生成本页音频 — 二次确认 */
+.audio-generate-confirm-dialog {
+  width: min(96vw, 520px);
+}
+
+.audio-generate-confirm__subtitle {
+  margin: 0.75rem 0 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.audio-generate-confirm__subtitle:first-of-type {
+  margin-top: 0;
+}
+
+.audio-generate-confirm__pre {
+  margin: 0;
+  padding: 0.55rem 0.65rem;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text);
+  max-height: 12rem;
+  overflow-y: auto;
+  font-family: inherit;
+}
+
+.audio-generate-confirm__transcript {
+  max-height: 14rem;
+  resize: vertical;
+  min-height: 5rem;
 }
 
 @media (max-width: 520px) {
