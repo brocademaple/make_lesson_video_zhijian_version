@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+ppt_course/user_data/
+ppt_course_data/
+.env
+*.pptx
+!tests/fixtures/**/*.pptx

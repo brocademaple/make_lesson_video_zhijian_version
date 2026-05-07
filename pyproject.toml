@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ppt-course-mvp"
+version = "0.1.0"
+description = "PPT 课程化重构工具 MVP：将文字密集型培训 PPT 转为适合录课的结构化 PPT"
+requires-python = ">=3.9"
+dependencies = [
+    "pillow>=10,<12",
+    "python-pptx>=1.0.2,<2",
+    "typer>=0.12,<1",
+    "pydantic>=2,<3",
+    "fastapi>=0.115,<1",
+    "uvicorn[standard]>=0.32,<1",
+    "python-multipart>=0.0.9",
+]
+
+[project.scripts]
+ppt-course = "ppt_course.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ppt_course*"]
+
+[tool.setuptools.package-data]
+ppt_course = ["static/*.html", "static/*.css", "static/*.js"]

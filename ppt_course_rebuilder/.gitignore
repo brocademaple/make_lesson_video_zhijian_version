@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+output/*.pptx
+output/slide_analysis.json
+output/course_slides.json
+output/page_scripts.md
+output/summary_report.json
+output/exported_images/
+!output/sample_course_slides.json
