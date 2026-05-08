@@ -1,0 +1,31 @@
+{
+  "fps": 30,
+  "slides": [
+    {
+      "imageRelative": "ppt_course_data/tasks/2555ebfb-ca07-4982-bf41-03d80b37dbad/previews/slide-0000/full.png",
+      "shapeRelatives": [
+        "ppt_course_data/tasks/2555ebfb-ca07-4982-bf41-03d80b37dbad/previews/slide-0000/shapes/shape-0000.png",
+        "ppt_course_data/tasks/2555ebfb-ca07-4982-bf41-03d80b37dbad/previews/slide-0000/shapes/shape-0001.png"
+      ],
+      "durationInFrames": 90
+    },
+    {
+      "imageRelative": "ppt_course_data/tasks/2555ebfb-ca07-4982-bf41-03d80b37dbad/previews/slide-0001/full.png",
+      "shapeRelatives": [
+        "ppt_course_data/tasks/2555ebfb-ca07-4982-bf41-03d80b37dbad/previews/slide-0001/shapes/shape-0000.png",
+        "ppt_course_data/tasks/2555ebfb-ca07-4982-bf41-03d80b37dbad/previews/slide-0001/shapes/shape-0001.png"
+      ],
+      "durationInFrames": 90
+    },
+    {
+      "imageRelative": "ppt_course_data/tasks/2555ebfb-ca07-4982-bf41-03d80b37dbad/previews/slide-0002/full.png",
+      "shapeRelatives": [
+        "ppt_course_data/tasks/2555ebfb-ca07-4982-bf41-03d80b37dbad/previews/slide-0002/shapes/shape-0000.png",
+        "ppt_course_data/tasks/2555ebfb-ca07-4982-bf41-03d80b37dbad/previews/slide-0002/shapes/shape-0001.png",
+        "ppt_course_data/tasks/2555ebfb-ca07-4982-bf41-03d80b37dbad/previews/slide-0002/shapes/shape-0002.png",
+        "ppt_course_data/tasks/2555ebfb-ca07-4982-bf41-03d80b37dbad/previews/slide-0002/shapes/shape-0003.png"
+      ],
+      "durationInFrames": 90
+    }
+  ]
+}

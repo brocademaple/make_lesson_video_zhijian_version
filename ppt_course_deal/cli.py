@@ -70,9 +70,9 @@ def cmd_serve(
     ),
     port: int = typer.Option(8765, "--port", "-p", help="端口"),
     reload: bool = typer.Option(
-        False,
-        "--reload",
-        help="开发模式：代码变更后自动重载（仅本机调试）",
+        True,
+        "--reload/--no-reload",
+        help="代码变更后自动重载（默认开启，避免新增接口后仍跑旧进程导致 404）；常驻可无 --no-reload",
     ),
 ) -> None:
     """启动 Web 界面：浏览器上传 PPTX，下载课程化 PPTX。"""
@@ -105,6 +105,51 @@ def cmd_serve(
         port=port,
         reload=reload,
     )
+
+
+@app.command("remotion-input-props")
+def cmd_remotion_input_props(
+    task_id: str = typer.Argument(..., help="已存任务 task_id"),
+    output: Path = typer.Option(
+        ...,
+        "-o",
+        "--output",
+        help="输出的 input-props.json 路径",
+    ),
+    fps: int = typer.Option(30, "--fps", help="与 Remotion Composition 的 fps 一致"),
+    max_slides: Optional[int] = typer.Option(
+        None,
+        "--max-slides",
+        help="最多导出前几页（默认该任务全部页）",
+    ),
+    no_audio_frames: int = typer.Option(
+        90,
+        "--no-audio-frames",
+        help="某页尚无分段 mp3 时的占位帧数",
+    ),
+    workspace_root: Optional[Path] = typer.Option(
+        None,
+        "-w",
+        "--workspace-root",
+        help="REMOTION_WORKSPACE_ROOT（默认仓库根）；数据目录在仓库外时请指定",
+    ),
+) -> None:
+    """根据任务预览与音频工作台生成 Remotion `input-props.json`（路径相对仓库根）。"""
+    from ppt_course_deal.remotion_input_props import write_props_file
+
+    try:
+        write_props_file(
+            task_id,
+            output,
+            fps=fps,
+            max_slides=max_slides,
+            no_audio_frames=no_audio_frames,
+            remotion_workspace_root=workspace_root,
+        )
+    except ValueError as e:
+        typer.secho(str(e), fg=typer.colors.RED)
+        raise typer.Exit(1) from e
+    typer.secho(f"已写入 {output}", fg=typer.colors.GREEN)
 
 
 def main() -> None:

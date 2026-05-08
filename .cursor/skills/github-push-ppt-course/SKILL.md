@@ -1,25 +1,71 @@
 ---
 name: github-push-ppt-course
 description: >-
-  Git commit and push for the text2classvideo repo without uploading local PPT
-  storage (ppt_course_data). Use when the user asks to push to GitHub, 提交,
-  commit, or wants the YYMMDD：更新信息 message format.
+  Git commit and push for the text2classvideo repo: what to add vs never add
+  (ppt_course_data, build artifacts, secrets), YYMMDD：message format, and
+  per-subproject ignores. Use when the user asks to push, 提交, or commit.
 ---
 
-# 本仓库 Git 提交与推送（排除本地课件数据）
+# 本仓库 Git 提交与推送（按当前结构：该 add 什么、别 add 什么）
 
 ## 目标
 
-- 只将**代码与文档**推到远程，**不**把本机落盘的解析结果与用户上传的 `.pptx` 副本纳入版本库。
-- 默认数据目录 **`ppt_course_data/`** 必须在 **`.gitignore`** 中（本仓库已包含）；若用户改用了 `PPT_COURSE_DATA`，需把对应目录同样加入 ignore 或提醒勿 `git add` 该路径。
+- 只把**可复现的源码、文档、配置、测试**推到远程；**不**把本机课件数据、合成产物、依赖目录和密钥文件纳入版本库。
+- 默认数据目录 **`ppt_course_data/`** 必须在根目录 **`.gitignore`** 中（已包含）；若使用环境变量 **`PPT_COURSE_DATA`** 指向自定义目录，该目录也应 **ignore**，或**永远不要** `git add` 该路径。
 
-## 提交前检查
+## 仓库结构（便于对照该改哪里）
 
-1. 阅读根目录 **`.gitignore`**，确认存在行：`ppt_course_data/`（及可选的 `ppt_course_deal/user_data/`、`ppt_course/user_data/` 等历史路径）。
-2. 执行 `git status`。若出现 `ppt_course_data` 下文件被 **staged**，执行  
-   `git reset HEAD -- ppt_course_data`（或 `git restore --staged`）取消暂存，**不要**用 `-f` 把该目录强加入库。
-3. 若曾误提交过 `ppt_course_data`，需从跟踪中移除并保留本地文件：  
-   `git rm -r --cached ppt_course_data`（仅当用户明确要求清理历史时再做，并单独说明风险）。
+| 区域 | 说明 |
+|------|------|
+| **`ppt_course_deal/`** | 主 Python 包（Web/CLI、`static/`、`transcript_rewrite/` 等）——**应提交源码** |
+| **`docs/`** | 项目文档（含 **`已实现功能说明.md`**）——**应提交** |
+| **`tests/`** | 单测；**`tests/fixtures/**/*.pptx`** 为允许的例外课件夹具 |
+| **`ppt_course_renderer/`** | Remotion/Node 子工程——**提交源码与配置**；见下文 **勿提交** |
+| **`ppt_course_rebuilder/`** | 独立重构管线——**提交源码**；**`output/` 大量生成物**见该目录 `.gitignore` |
+| **`ppt_course_data/`** | 默认数据根（任务、预览 PNG、`config/external_apis.json` 等）——**整目录勿提交** |
+
+---
+
+## 建议加入版本库（可以放心 `git add` 的）
+
+- **`ppt_course_deal/**/*.py`**、**`ppt_course_deal/static/**`**、包内 **`*.json`**（如 `minimax_t2a_allowlist.json`）、**`transcript_rewrite/minimax_skill.md`** 等已跟踪资源。
+- **`docs/**`**、**`tests/**`**（含允许的 **`tests/fixtures/**/*.pptx`**）。
+- 根目录 **`pyproject.toml`**、**`README`** 等元数据。
+- **`ppt_course_renderer/`**：**`package.json`、`src/`、`public/`**、doc 等；**不要 add `node_modules/`、`dist/`、`out/`**（见该目录 `.gitignore`）。
+- **`ppt_course_renderer/render_tasks/`**：各任务目录内 **`input-props.json`、脚本说明**等可提交；**不要 add 各任务下的 `out/`、以及该目录规则忽略的 `*.mp4` 等成片**。
+- **`ppt_course_rebuilder/`**：**源码与 `requirements.txt`** 等；**不要 add** 其 `.gitignore` 中的 **`output/*.pptx`**、部分 **`output/*.json`**、**`output/exported_images/`** 等（详见 **`ppt_course_rebuilder/.gitignore`**）。
+- **`.cursor/skills/**`**：若团队约定把 Cursor 技能入库（本 skill 即在此路径），则**修改后的 SKILL 应提交**。
+
+---
+
+## 不要 add（保持本地或应由 ignore 挡住）
+
+| 路径 / 类型 | 原因 |
+|-------------|------|
+| **`ppt_course_data/`** | 解析任务持久化：课件副本、预览图、本机 API 配置等 |
+| **`ppt_course_deal/user_data/`**、**`ppt_course/user_data/`** | 历史用户数据路径（根 `.gitignore`） |
+| **`.venv/`**、**`venv/`** | Python 虚拟环境 |
+| **`node_modules/`**（renderer） | Node 依赖 |
+| **`__pycache__/`**、**`*.pyc`**、**`.pytest_cache/`** | 字节码与测试缓存 |
+| **`dist/`**、**`build/`**、**`*.egg-info/`** | 构建产物 |
+| **根目录 `*.pptx`** | 误提交课件原件；**例外**：**`tests/fixtures/**/*.pptx`** |
+| **`.env`** | 密钥与环境 |
+| **`ppt_course_renderer/out`**、**`ppt_course_renderer/render_tasks/**/out/`** | 成片输出目录 |
+| **`ppt_course_renderer/render_tasks/`** 下的 **`*.mp4`**、**`*.mkv`**、**`*.mov`** | 渲染视频产物 |
+| **`ppt_course_rebuilder/output/`** 中被忽略的生成物 | 见 **`ppt_course_rebuilder/.gitignore`** |
+
+**说明**：若 **`git add -A`** 仍能把 **`ppt_course_data`** 或 **`node_modules`** 加进去，说明 **ignore 未生效或路径不在仓库内**，应先修正 **`.gitignore`**，再提交；**不要**用 **`-f`** 强行加入上述目录。
+
+---
+
+## 提交前检查（代理执行）
+
+1. 阅读根目录 **`.gitignore`**，确认 **`ppt_course_data/`** 存在；若有自定义数据目录，确认已忽略。
+2. **`git status`**。若 **`ppt_course_data`** 或 **`node_modules`** 出现在 **staged**，执行 **`git restore --staged <路径>`** 或 **`git reset HEAD -- <路径>`** 取消暂存。
+3. **`git diff --cached`**（或 GUI）确认没有误加的密钥文件、成片、整份用户数据目录。
+4. 仅在用户明确要求「清理历史上误提交的数据」时，再考虑 **`git rm -r --cached ppt_course_data`**（须单独说明风险）。
+
+---
 
 ## Commit message 格式（必须遵守）
 
@@ -41,28 +87,29 @@ YYMMDD：具体更新说明
 
 错误示例：`2026-05-06：xxx`、`260506(日期)：xxx`、`feat: xxx`（若用户明确要求本格式则不用 conventional commits）。
 
+---
+
 ## 推荐命令序列（代理执行时）
 
 ```bash
 git status
-git add -A   # 确认 status 中不会出现 ppt_course_data 下的新文件被加入；若会，改用按路径 add 或先修正 ignore
-git reset HEAD -- ppt_course_data 2>/dev/null || true
+# 优先：按路径添加已知安全目录，避免一把 add 进数据目录
+git add ppt_course_deal docs tests pyproject.toml .cursor/skills  # 按需增删路径
+# 若仍使用 git add -A：
+git add -A
+git reset HEAD -- ppt_course_data ppt_course_deal/user_data ppt_course/user_data 2>/dev/null || true
+git diff --cached --stat
 git commit -m "YYMMDD：更新说明"
 git push origin <branch>
 ```
 
-推送前应用户要求核对当前分支名（如 `main` / `master`）。
+推送前与用户核对当前分支名（如 **`main`** / **`master`**）。
 
-## 与本仓库相关的排除项小结
-
-| 路径 / 模式        | 原因 |
-|--------------------|------|
-| `ppt_course_data/` | Web 解析任务持久化：含 `source.pptx`、`meta.json`、预览 PNG |
-| `*.pptx`（根规则） | 避免误提交课件原件；测试夹具可用 `!tests/fixtures/**` 例外 |
-| `.venv/`、`__pycache__/` | 环境与字节码 |
+---
 
 ## 校验清单
 
-- [ ] `ppt_course_data` 未出现在 `git diff --cached` 中  
-- [ ] Commit message 符合 `YYMMDD：` 开头  
+- [ ] **`ppt_course_data`**、**`node_modules`**、**`.venv`** 未出现在 **`git diff --cached`**
+- [ ] 无成片 **`out/`**、无根目录误加的 **`.pptx`**（fixtures 例外）
+- [ ] Commit message 符合 **`YYMMDD：`** 开头  
 - [ ] Push 目标分支与远程一致

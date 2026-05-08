@@ -1,0 +1,61 @@
+{
+  "doc_source": "MiniMax T2A HTTP OpenAPI — text field (speech-2.8-hd / speech-2.8-turbo interjections; pause markers)",
+  "interjection_tags": [
+    "laughs",
+    "chuckle",
+    "coughs",
+    "clear-throat",
+    "groans",
+    "breath",
+    "pant",
+    "inhale",
+    "exhale",
+    "gasps",
+    "sniffs",
+    "sighs",
+    "snorts",
+    "burps",
+    "lip-smacking",
+    "humming",
+    "hissing",
+    "emm",
+    "sneezes"
+  ],
+  "interjection_glossary_zh": {
+    "laughs": "笑声",
+    "chuckle": "轻笑",
+    "coughs": "咳嗽",
+    "clear-throat": "清嗓子",
+    "groans": "呻吟",
+    "breath": "正常换气",
+    "pant": "喘气",
+    "inhale": "吸气",
+    "exhale": "呼气",
+    "gasps": "倒吸气",
+    "sniffs": "吸鼻子",
+    "sighs": "叹气",
+    "snorts": "喷鼻息",
+    "burps": "打嗝",
+    "lip-smacking": "咂嘴",
+    "humming": "哼唱",
+    "hissing": "嘶嘶声",
+    "emm": "嗯",
+    "sneezes": "喷嚏"
+  },
+  "pause_marker": {
+    "description": "Pause control: <#x#> where x is seconds in [0.01, 99.99], up to two decimal places; not consecutive.",
+    "min_sec": 0.01,
+    "max_sec": 99.99
+  },
+  "voice_emotion_api_values": [
+    "happy",
+    "sad",
+    "angry",
+    "fearful",
+    "disgusted",
+    "surprised",
+    "calm",
+    "fluent",
+    "whisper"
+  ]
+}

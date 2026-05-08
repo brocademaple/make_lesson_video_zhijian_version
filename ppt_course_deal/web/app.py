@@ -11,12 +11,13 @@ from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import quote
 from uuid import UUID
 
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import Body, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
+from ppt_course_deal.audio_duration import probe_audio_duration_seconds
 from ppt_course_deal.audio_workspace_store import (
     infer_slide_count,
     load_meta,
@@ -24,22 +25,35 @@ from ppt_course_deal.audio_workspace_store import (
     record_generated_segment,
     resolve_workspace_audio_path,
     save_meta_for_workspace,
-    slide_segment_filename,
     slide_count_for_task,
+    slide_duration_seconds_list,
+    workspace_relative_segment_path,
     workspace_root,
 )
 from ppt_course_deal.deck_sessions import create_session, get_session
 from ppt_course_deal.extract import parse_pptx_bytes
 from ppt_course_deal.external_settings import (
+    DEFAULT_TRANSCRIPT_REWRITE_EXTRA_INSTRUCTIONS,
     get_minimax_for_server_call,
+    get_transcript_rewrite_for_server_call,
     load_raw,
     merge_agent_update,
     merge_minimax_update,
+    merge_transcript_rewrite_update,
     public_minimax,
+    public_transcript_rewrite,
     save_raw,
 )
 from ppt_course_deal.fallback_preview import write_fallback_pngs
-from ppt_course_deal.minimax_client import MiniMaxTTSError, synthesize_to_mp3_bytes
+from ppt_course_deal.minimax_connect_archive import (
+    redact_minimax,
+    write_connect_test_record,
+)
+from ppt_course_deal.minimax_client import (
+    MiniMaxTTSError,
+    synthesize_to_mp3_bytes,
+    synthesize_to_mp3_bytes_traced,
+)
 from ppt_course_deal.pipeline import transform_pptx
 from ppt_course_deal.slide_render import describe_preview_render_env, render_pptx_to_pngs
 from ppt_course_deal.shape_image_export import list_slide_shape_files
@@ -52,6 +66,17 @@ from ppt_course_deal.task_storage import (
     slide_shape_file_path,
     tasks_dir,
     update_task_display_name,
+)
+from ppt_course_deal.transcript_import import (
+    MAX_SCRIPT_CHARS as TRANSCRIPT_IMPORT_MAX_CHARS,
+    merge_with_resolutions,
+    prepare_import,
+)
+from ppt_course_deal.transcript_rewrite import (
+    REWRITE_MINIMAL_SYSTEM,
+    build_user_prompt_with_skill,
+    chat_rewrite,
+    sanitize_for_minimax_t2a,
 )
 
 logger = logging.getLogger(__name__)
@@ -92,6 +117,17 @@ class TaskRenameBody(BaseModel):
 class ExternalPutBody(BaseModel):
     minimax: Optional[Dict[str, Any]] = None
     agent: Optional[Dict[str, Any]] = None
+    transcript_rewrite: Optional[Dict[str, Any]] = None
+
+
+class MiniMaxTestBody(BaseModel):
+    """连通测试可选携带当前表单中的 MiniMax 字段（与 PUT 合并规则一致）。"""
+
+    minimax: Optional[Dict[str, Any]] = None
+    persist: bool = Field(
+        default=True,
+        description="为 True 且携带 minimax 时，在连通测试成功后将合并结果写入 external_apis.json。",
+    )
 
 
 class AudioWorkspacePutBody(BaseModel):
@@ -110,6 +146,26 @@ class AudioGenerateBody(BaseModel):
     minimax_overrides: Optional[Dict[str, Any]] = None
 
 
+class TranscriptImportPreviewBody(BaseModel):
+    task_id: str = Field(min_length=1, max_length=64)
+    text: str = Field(min_length=1, max_length=TRANSCRIPT_IMPORT_MAX_CHARS)
+
+
+class TranscriptImportApplyBody(BaseModel):
+    task_id: str = Field(min_length=1, max_length=64)
+    text: str = Field(min_length=1, max_length=TRANSCRIPT_IMPORT_MAX_CHARS)
+    resolutions: Optional[Dict[str, str]] = None
+
+
+class TranscriptRewriteBody(BaseModel):
+    text: str = Field(min_length=1, max_length=9999)
+    transcript_rewrite: Optional[Dict[str, Any]] = None
+
+
+class TranscriptRewriteTestBody(BaseModel):
+    transcript_rewrite: Optional[Dict[str, Any]] = None
+
+
 _AUDIO_GEN_OVERRIDE_KEYS = frozenset(
     {
         "model",
@@ -125,6 +181,8 @@ _AUDIO_GEN_OVERRIDE_KEYS = frozenset(
         "emotion",
         "stream",
         "group_id",
+        "pronunciation_dict",
+        "subtitle_enable",
     }
 )
 
@@ -157,7 +215,7 @@ def _apply_minimax_generation_overrides(
                 out[k] = float(v)
             except (TypeError, ValueError):
                 continue
-        elif k == "stream":
+        elif k in ("stream", "subtitle_enable"):
             out[k] = bool(v)
         elif k == "group_id":
             out[k] = str(v).strip()
@@ -506,6 +564,12 @@ def create_app() -> FastAPI:
         return {
             "minimax": public_minimax(raw.get("minimax") or {}),
             "agent": raw.get("agent") or {},
+            "transcript_rewrite": public_transcript_rewrite(
+                raw.get("transcript_rewrite") or {}
+            ),
+            "transcript_rewrite_defaults": {
+                "extra_instructions": DEFAULT_TRANSCRIPT_REWRITE_EXTRA_INSTRUCTIONS,
+            },
         }
 
     @application.put("/api/settings/external")
@@ -523,21 +587,126 @@ def create_app() -> FastAPI:
                 raw.get("agent") or {},
                 dict(payload.agent),
             )
+        if payload.transcript_rewrite is not None:
+            raw["transcript_rewrite"] = merge_transcript_rewrite_update(
+                raw.get("transcript_rewrite") or {},
+                dict(payload.transcript_rewrite),
+            )
         save_raw(raw)
         return get_external_settings()
 
-    @application.post("/api/settings/external/minimax/test")
-    def test_minimax_connection() -> Dict[str, Any]:
-        mm = get_minimax_for_server_call()
-        probe = "连通测试：MiniMax 语音合成接口工作正常。"
+    @application.post("/api/settings/external/transcript-rewrite/test")
+    def test_transcript_rewrite_connection(
+        body: Optional[TranscriptRewriteTestBody] = Body(default=None),
+    ) -> Dict[str, Any]:
+        cfg = dict(get_transcript_rewrite_for_server_call())
+        if body is not None and body.transcript_rewrite:
+            cfg = merge_transcript_rewrite_update(
+                cfg,
+                dict(body.transcript_rewrite),
+            )
+        prov = (cfg.get("provider") or "none").strip().lower()
+        if prov != "openai_compatible":
+            raise HTTPException(
+                status_code=400,
+                detail="请先将「接入方式」设为 OpenAI 兼容 API",
+            )
         try:
-            synthesize_to_mp3_bytes(mm, probe)
-        except MiniMaxTTSError as e:
+            _ = chat_rewrite(
+                api_base=str(cfg.get("api_base") or "").strip(),
+                api_key=str(cfg.get("api_key") or ""),
+                model=str(cfg.get("model") or "").strip(),
+                system=REWRITE_MINIMAL_SYSTEM,
+                user="只输出一个字：好",
+            )
+        except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
+        return {"ok": True, "detail": "口播稿优化 API 可连通"}
+
+    @application.post("/api/transcript/rewrite")
+    def api_transcript_rewrite(body: TranscriptRewriteBody) -> Dict[str, Any]:
+        cfg = dict(get_transcript_rewrite_for_server_call())
+        if body.transcript_rewrite is not None:
+            cfg = merge_transcript_rewrite_update(
+                cfg,
+                dict(body.transcript_rewrite),
+            )
+        prov = (cfg.get("provider") or "none").strip().lower()
+        if prov != "openai_compatible":
+            raise HTTPException(
+                status_code=400,
+                detail="请先在「外部 API 配置 → 口播稿优化」中选择 OpenAI 兼容并保存 API Key",
+            )
+        extra = (cfg.get("extra_instructions") or "").strip()
+        user_msg = build_user_prompt_with_skill(body.text, extra_instructions=extra)
+        try:
+            raw_out = chat_rewrite(
+                api_base=str(cfg.get("api_base") or "").strip(),
+                api_key=str(cfg.get("api_key") or ""),
+                model=str(cfg.get("model") or "").strip(),
+                system=REWRITE_MINIMAL_SYSTEM,
+                user=user_msg,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        cleaned, warnings = sanitize_for_minimax_t2a(raw_out)
+        return {
+            "ok": True,
+            "rewritten_text": cleaned,
+            "sanitize_warnings": warnings,
+        }
+
+    @application.post("/api/settings/external/minimax/test")
+    def test_minimax_connection(
+        body: Optional[MiniMaxTestBody] = Body(default=None),
+    ) -> Dict[str, Any]:
+        mm = dict(get_minimax_for_server_call())
+        if body is not None and body.minimax:
+            mm = merge_minimax_update(mm, dict(body.minimax))
+
+        probe = "连通测试：MiniMax 语音合成接口工作正常。"
+        record: dict[str, Any] = {
+            "kind": "minimax_connect_test",
+            "probe_text": probe,
+            "minimax_settings_redacted": redact_minimax(mm),
+            "persisted_to_external_apis": False,
+        }
+        try:
+            audio_bytes, trace = synthesize_to_mp3_bytes_traced(mm, probe)
+            persisted = False
+            if body is not None and body.minimax and body.persist:
+                raw_cfg = load_raw()
+                raw_cfg["minimax"] = merge_minimax_update(
+                    raw_cfg.get("minimax") or {},
+                    dict(body.minimax),
+                )
+                save_raw(raw_cfg)
+                persisted = True
+            record["persisted_to_external_apis"] = persisted
+            record["ok"] = True
+            record["synthesis_trace"] = trace
+            record["result_audio_bytes"] = len(audio_bytes)
+            archive_rel = write_connect_test_record(record)
+            out: Dict[str, Any] = {
+                "ok": True,
+                "detail": "请求成功，已收到音频数据",
+                "persisted": persisted,
+                "audio_bytes": len(audio_bytes),
+            }
+            if archive_rel:
+                out["archive_path"] = archive_rel
+            return out
+        except MiniMaxTTSError as e:
+            record["ok"] = False
+            record["error"] = str(e)
+            archive_rel = write_connect_test_record(record)
+            detail = str(e)
+            if archive_rel:
+                detail = f"{detail}（已存档：{archive_rel}）"
+            raise HTTPException(status_code=400, detail=detail) from e
         except Exception:
             logger.exception("MiniMax 连通测试异常")
             raise HTTPException(status_code=500, detail="连通测试失败") from None
-        return {"ok": True, "detail": "请求成功，已收到音频数据"}
 
     @application.get("/api/audio/workspace")
     def get_audio_workspace(
@@ -562,6 +731,9 @@ def create_app() -> FastAPI:
             transcripts.append("")
         transcripts = transcripts[:sc]
         transcript_segments = normalize_transcript_segments(meta, sc)
+        seg_dur = meta.get("segment_duration_sec") or {}
+        if not isinstance(seg_dur, dict):
+            seg_dur = {}
         return {
             "kind": kind,
             "key": key,
@@ -569,6 +741,8 @@ def create_app() -> FastAPI:
             "transcripts": transcripts,
             "transcript_segments": transcript_segments,
             "generated_files": meta.get("generated_files") or {},
+            "segment_duration_sec": seg_dur,
+            "slide_duration_sec": slide_duration_seconds_list(meta, sc),
         }
 
     @application.put("/api/audio/workspace")
@@ -626,31 +800,136 @@ def create_app() -> FastAPI:
         fmt = (mm.get("audio_format") or "mp3").lower()
         if fmt not in ("mp3", "pcm", "flac"):
             fmt = "mp3"
-        filename = slide_segment_filename(
+        rel_path = workspace_relative_segment_path(
             payload.slide_index,
             payload.segment_index,
             text,
             fmt,
         )
-        path = workspace_root(kind, key) / filename
+        path = workspace_root(kind, key) / rel_path
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(audio_bytes)
+        duration_sec = probe_audio_duration_seconds(path)
         record_generated_segment(
             kind,
             key,
             payload.slide_index,
             payload.segment_index,
-            filename,
+            rel_path,
+            duration_sec=duration_sec,
         )
+        meta_after = load_meta(kind, key)
+        slide_durs = slide_duration_seconds_list(meta_after, sc)
         return {
             "ok": True,
             "slide_index": payload.slide_index,
             "segment_index": payload.segment_index,
-            "filename": filename,
+            "filename": rel_path,
+            "duration_sec": duration_sec,
+            "slide_duration_sec": slide_durs,
             "url": (
                 f"/api/audio/workspace/file?kind={kind}&key={quote(key, safe='')}"
                 f"&slide_index={payload.slide_index}"
                 f"&segment_index={payload.segment_index}"
             ),
+        }
+
+    @application.post("/api/audio/workspace/import-transcript/preview")
+    def import_transcript_preview(
+        payload: TranscriptImportPreviewBody,
+    ) -> Dict[str, Any]:
+        """解析整稿逐字稿，返回冲突列表与警告（不写盘）。"""
+        tid = _parse_uuid_param(payload.task_id)
+        if not tid:
+            raise HTTPException(
+                status_code=400,
+                detail="task_id 无效：须为有效 UUID（已存任务 ID）",
+            )
+        if load_task(tid) is None:
+            raise HTTPException(status_code=404, detail="任务不存在或已删除")
+        sc = slide_count_for_task(tid)
+        if sc is None or sc < 1:
+            raise HTTPException(status_code=400, detail="无法取得课件页数")
+        meta = load_meta("task", tid)
+        existing_segs = normalize_transcript_segments(meta, sc)
+        try:
+            result = prepare_import(payload.text.strip(), sc, existing_segs)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        out = {
+            "ok": True,
+            "slide_count": result["slide_count"],
+            "filled_slides": result["filled_slides"],
+            "warnings": result["warnings"],
+            "conflicts": result["conflicts"],
+            "conflict_count": len(result["conflicts"]),
+        }
+        return out
+
+    @application.post("/api/audio/workspace/import-transcript/apply")
+    def import_transcript_apply(
+        payload: TranscriptImportApplyBody,
+    ) -> Dict[str, Any]:
+        """将整稿逐字稿写入任务音频工作区；有冲突时需传入 resolutions（每页 import / keep）。"""
+        tid = _parse_uuid_param(payload.task_id)
+        if not tid:
+            raise HTTPException(
+                status_code=400,
+                detail="task_id 无效：须为有效 UUID（已存任务 ID）",
+            )
+        if load_task(tid) is None:
+            raise HTTPException(status_code=404, detail="任务不存在或已删除")
+        sc = slide_count_for_task(tid)
+        if sc is None or sc < 1:
+            raise HTTPException(status_code=400, detail="无法取得课件页数")
+        meta = load_meta("task", tid)
+        existing_segs = normalize_transcript_segments(meta, sc)
+        try:
+            prep = prepare_import(payload.text.strip(), sc, existing_segs)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+
+        conflicts = prep["conflicts"]
+        proposed = prep["proposed_transcript_segments"]
+        conflict_indices = {c["slide_index"] for c in conflicts}
+
+        if conflicts:
+            res = payload.resolutions or {}
+            needed = {str(c["slide_index"]) for c in conflicts}
+            if set(res.keys()) != needed:
+                raise HTTPException(
+                    status_code=400,
+                    detail="部分页面已有逐字稿且与导入稿不一致，请在 resolutions 中为每个冲突页选择 "
+                    "import（采用导入）或 keep（保留已有）。",
+                )
+            for k, v in res.items():
+                if v not in ("import", "keep"):
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"无效的覆盖选择：{k}={v}（仅允许 import 或 keep）",
+                    )
+            final_segs = merge_with_resolutions(
+                existing_segs,
+                proposed,
+                conflict_indices,
+                res,
+                sc,
+            )
+        else:
+            final_segs = proposed
+
+        save_meta_for_workspace(
+            "task",
+            tid,
+            sc,
+            transcript_segments=final_segs,
+            transcripts_flat=None,
+        )
+        return {
+            "ok": True,
+            "slide_count": sc,
+            "warnings": prep["warnings"],
+            "conflict_count": len(conflicts),
         }
 
     @application.get("/api/audio/workspace/file")

@@ -11,7 +11,7 @@
 | 中文定位 | 代码位置 | 典型用法 |
 |----------|----------|----------|
 | **课件处理与工作台** | Python 包 **`ppt_course_deal`**（PyPI 元数据名 `ppt-course-mvp`，命令 **`ppt-course`**） | **默认主力**：本机 **Web 工作台**（上传、预览、已存任务、课程化下载、音频与外部 API 等）+ CLI **`ppt-course transform` / `serve`**；课程化走 **启发式规则流水线**，**不依赖** Rebuilder 里的 LLM。 |
-| **视频渲染（Remotion）** | 目录 **`ppt_course_renderer/`** | 与 `ppt_course_deal` **平行**：接收每页图、TTS 音频、逐字稿，生成 Remotion 合成数据并导出成片；见该目录 **README** 与 [remotion-dev/remotion](https://github.com/remotion-dev/remotion)。**工程文件将在该目录内增量添加。** |
+| **视频渲染（Remotion）** | 目录 **`ppt_course_renderer/`** | 与 `ppt_course_deal` **平行**：接收每页图、TTS 音频、逐字稿，生成 Remotion 合成数据并导出成片；见该目录 **README** 与 [remotion-dev/remotion](https://github.com/remotion-dev/remotion)。已用 **`create-video`** 初始化空白模板（`npm run dev` / `npx remotion render`）；与 deal 的 **manifest 契约与 Web 触发渲染** 仍待接线。 |
 | **AI 课程重构管线（Rebuilder）** | 目录 **`ppt_course_rebuilder/`** | **可选、当前非主线**：需 **OpenAI 兼容 API**，跑「分析 → 规划 → 模板生成」与 `output/` 等产物。与 deal / renderer **未做自动串联**；完整 Agent 向扩展可在 deal→renderer 管线调通后再推进。 |
 | **GitHub Pages 静态介绍页** | 目录 **`github-pages/`** | **与运行时代码隔离**：仅 HTML/CSS/截图占位；本地预览见该目录 **README**；发布需在仓库 **Settings → Pages** 选择根目录、`/docs` 或 **GitHub Actions** 将本目录产物上线。 |
 
@@ -24,7 +24,7 @@
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e .
-ppt-course serve    # Web：默认 http://127.0.0.1:8765/
+ppt-course serve    # Web：默认 http://127.0.0.1:8765/（默认开启 **--reload**，改代码后自动重载；常驻可加 **--no-reload**）
 # 或
 ppt-course transform /path/to/原始.pptx
 ```

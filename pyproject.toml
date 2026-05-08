@@ -15,6 +15,7 @@ dependencies = [
     "fastapi>=0.115,<1",
     "uvicorn[standard]>=0.32,<1",
     "python-multipart>=0.0.9",
+    "tinytag>=1.10,<2",
 ]
 
 [project.scripts]
@@ -25,4 +26,11 @@ where = ["."]
 include = ["ppt_course_deal*"]
 
 [tool.setuptools.package-data]
-ppt_course_deal = ["static/*.html", "static/*.css", "static/*.js"]
+ppt_course_deal = [
+    "static/*.html",
+    "static/*.css",
+    "static/*.js",
+    "static/*.json",
+    "minimax_t2a_allowlist.json",
+    "transcript_rewrite/minimax_skill.md",
+]

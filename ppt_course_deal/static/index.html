@@ -17,7 +17,7 @@
         }
       })();
     </script>
-    <link rel="stylesheet" href="/assets/styles.css" />
+    <link rel="stylesheet" href="/assets/styles.css?v=2.52" />
   </head>
   <body>
     <div class="app">
@@ -152,6 +152,20 @@
               <span id="file-label" class="file-label"></span>
               <button
                 type="button"
+                class="rail-head__import hidden"
+                id="btn-import-transcript"
+                aria-label="导入整稿逐字稿"
+                title="导入整稿逐字稿（按「### 第 N 页」写入各页）"
+              >
+                <svg class="rail-head__import-icon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                  <path
+                    fill="currentColor"
+                    d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"
+                  />
+                </svg>
+              </button>
+              <button
+                type="button"
                 class="rail-head__home"
                 id="btn-change-file"
                 aria-label="返回首页"
@@ -241,8 +255,8 @@
                   type="button"
                   class="btn-audio-toolbar"
                   id="btn-audio-segments-toolbar"
-                  aria-label="本页多段逐字稿与音频合成"
-                  title="本页逐字稿与音频（多段）"
+                  aria-label="本页已生成音频（仅试听与下载）"
+                  title="仅对本页已合成的各段 MP3 试听、下载；生成请用下方「打开本页逐字稿与音频」"
                 >
                   <svg class="btn-audio-toolbar__svg" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
                     <path
@@ -253,11 +267,6 @@
                 </button>
               </div>
               <span class="toolbar-meta" id="slide-meta"></span>
-            </div>
-            <div class="toolbar-actions">
-              <button type="button" class="btn btn-secondary" id="btn-transform" disabled>
-                生成课程化 PPTX
-              </button>
             </div>
           </div>
 
@@ -305,7 +314,13 @@
                         >
                           ‹
                         </button>
-                        <div class="pv-carousel__img-outer">
+                        <div
+                          class="pv-carousel__img-outer"
+                          id="pv-carousel-img-outer"
+                          tabindex="0"
+                          role="button"
+                          aria-label="放大查看并下载当前预览图"
+                        >
                           <img id="pv-image" alt="当前页预览" />
                         </div>
                         <button
@@ -353,7 +368,7 @@
                       </button>
                     </div>
                     <p class="audio-workbench__hint" id="audio-workbench-hint">
-                      多段逐字稿、逐段合成与试听请点标题栏喇叭图标，或使用下方入口打开同一弹窗。
+                      多段逐字稿与逐段合成（生成前有确认弹窗）请点下方「打开本页逐字稿与音频」。标题栏喇叭<strong>仅</strong>对本页<strong>已生成</strong>的各段 MP3 提供试听与下载。
                     </p>
                     <div class="audio-workbench__open-row">
                       <button type="button" class="btn btn-secondary" id="btn-audio-open-segments">
@@ -429,21 +444,33 @@
         aria-labelledby="audio-gen-settings-title"
       >
         <div class="external-settings-dialog__panel">
-          <header class="external-settings-dialog__head">
-            <h2 class="external-settings-dialog__title" id="audio-gen-settings-title">音频生成参数（MiniMax T2A）</h2>
+          <header class="external-settings-dialog__head audio-generate-confirm-dialog__head">
+            <div class="audio-generate-confirm-dialog__title-row">
+              <h2 class="external-settings-dialog__title" id="audio-gen-settings-title">音频生成参数（MiniMax T2A）</h2>
+              <button
+                type="button"
+                class="icon-help icon-help--sm"
+                id="btn-help-audio-gen-settings"
+                aria-label="音频生成参数说明（含 API Key 填写位置）"
+                title="说明"
+              >
+                <svg class="icon-help__svg" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.75" />
+                  <path
+                    d="M12 16v-4M12 8h.01"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                  />
+                </svg>
+              </button>
+            </div>
             <form method="dialog">
               <button type="submit" class="btn btn-text" aria-label="关闭">关闭</button>
             </form>
           </header>
           <div class="external-settings-dialog__body">
-            <p class="external-settings-dialog__hint">
-              对应 MiniMax 语音合成接口 <code>/v1/t2a_v2</code> 的请求体字段（不含密钥与 API Base）。此处保存的合成偏好写入浏览器
-              <code>localStorage</code>，仅在点击「生成本页音频」时作为单次请求的 <code>minimax_overrides</code> 传给服务端。
-              详见官方文档：
-              <a href="https://platform.minimax.io/docs/api-reference/speech-t2a-http" target="_blank" rel="noopener noreferrer"
-                >Speech T2A（HTTP）</a
-              >。
-            </p>
             <div class="field-grid">
               <label class="field">
                 <span class="field__label">Group ID（可选）</span>
@@ -452,19 +479,51 @@
               <label class="field">
                 <span class="field__label">合成模型 model</span>
                 <select id="audio-gen-model" class="field__input">
-                  <option value="speech-2.8-hd">speech-2.8-hd</option>
-                  <option value="speech-2.8-turbo">speech-2.8-turbo</option>
-                  <option value="speech-2.6-hd">speech-2.6-hd</option>
-                  <option value="speech-2.6-turbo">speech-2.6-turbo</option>
-                  <option value="speech-02-hd">speech-02-hd</option>
-                  <option value="speech-02-turbo">speech-02-turbo</option>
-                  <option value="speech-01-hd">speech-01-hd</option>
-                  <option value="speech-01-turbo">speech-01-turbo</option>
+                  <optgroup label="Turbo（推荐 · 默认 speech-2.8-turbo）">
+                    <option value="speech-2.8-turbo">speech-2.8-turbo</option>
+                    <option value="speech-2.6-turbo">speech-2.6-turbo</option>
+                    <option value="speech-02-turbo">speech-02-turbo</option>
+                    <option value="speech-01-turbo">speech-01-turbo</option>
+                  </optgroup>
+                  <optgroup label="HD（部分套餐无额度 · 置底）">
+                    <option value="speech-2.8-hd">speech-2.8-hd</option>
+                    <option value="speech-2.6-hd">speech-2.6-hd</option>
+                    <option value="speech-02-hd">speech-02-hd</option>
+                    <option value="speech-01-hd">speech-01-hd</option>
+                  </optgroup>
                 </select>
               </label>
               <label class="field field--wide">
                 <span class="field__label">音色 voice_id</span>
-                <input type="text" id="audio-gen-voice" class="field__input" placeholder="如 Chinese (Mandarin)_Lyrical_Voice" />
+                <div class="voice-id-combobox" data-voice-combobox>
+                  <div class="voice-id-combobox__row">
+                    <input
+                      type="text"
+                      id="audio-gen-voice"
+                      class="field__input voice-id-combobox__input"
+                      autocomplete="off"
+                      placeholder="可输入自定义 ID，或点右侧按钮筛选普通话音色"
+                    />
+                    <button
+                      type="button"
+                      class="voice-id-combobox__toggle"
+                      aria-expanded="false"
+                      aria-label="展开普通话音色列表"
+                      title="从列表选择"
+                    >
+                      ▾
+                    </button>
+                  </div>
+                  <div class="voice-id-combobox__panel" hidden>
+                    <input
+                      type="search"
+                      class="field__input voice-id-combobox__filter"
+                      placeholder="筛选名称或 voice_id…"
+                      aria-label="筛选普通话音色"
+                    />
+                    <ul class="voice-id-combobox__list" role="listbox" aria-label="普通话音色"></ul>
+                  </div>
+                </div>
               </label>
               <label class="field">
                 <span class="field__label">语言增强 language_boost</span>
@@ -558,10 +617,27 @@
             </form>
           </header>
           <div class="external-settings-dialog__body audio-segments-dialog__body">
-            <p class="audio-segments-dialog__slide" id="audio-segments-slide-label"></p>
-            <p class="external-settings-dialog__hint audio-segments-dialog__hint">
-              每一行为一段口播，对应一次 MiniMax 合成；生成后音频保存在本机任务数据目录。切换幻灯片后此处显示对应页内容。
-            </p>
+            <div class="audio-segments-dialog__intro-row">
+              <p class="audio-segments-dialog__slide" id="audio-segments-slide-label"></p>
+              <button
+                type="button"
+                class="icon-help icon-help--sm"
+                id="btn-help-audio-segments"
+                aria-label="本页逐字稿与音频使用说明"
+                title="说明"
+              >
+                <svg class="icon-help__svg" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.75" />
+                  <path
+                    d="M12 16v-4M12 8h.01"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                  />
+                </svg>
+              </button>
+            </div>
             <div id="audio-segments-list" class="audio-segments-list"></div>
             <button type="button" class="btn btn-text audio-segments-dialog__add" id="btn-audio-segment-add">
               + 添加一段
@@ -579,16 +655,33 @@
         aria-labelledby="audio-generate-confirm-title"
       >
         <div class="external-settings-dialog__panel">
-          <header class="external-settings-dialog__head">
-            <h2 class="external-settings-dialog__title" id="audio-generate-confirm-title">确认生成本页音频</h2>
+          <header class="external-settings-dialog__head audio-generate-confirm-dialog__head">
+            <div class="audio-generate-confirm-dialog__title-row">
+              <h2 class="external-settings-dialog__title" id="audio-generate-confirm-title">确认生成本段音频</h2>
+              <button
+                type="button"
+                class="icon-help icon-help--sm"
+                id="btn-help-audio-generate-confirm"
+                aria-label="确认生成说明"
+                title="说明"
+              >
+                <svg class="icon-help__svg" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.75" />
+                  <path
+                    d="M12 16v-4M12 8h.01"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                  />
+                </svg>
+              </button>
+            </div>
             <form method="dialog">
               <button type="submit" class="btn btn-text" aria-label="关闭">关闭</button>
             </form>
           </header>
           <div class="external-settings-dialog__body">
-            <p class="external-settings-dialog__hint">
-              以下为当前合成参数（服务端外部配置与本机已保存合成偏好合并预览）与本页口播全文。确认无误后点击「开始生成」发起合成。
-            </p>
             <h3 class="audio-generate-confirm__subtitle">合成参数</h3>
             <div
               id="audio-generate-confirm-config"
@@ -613,6 +706,72 @@
         </div>
       </dialog>
 
+      <dialog
+        class="external-settings-dialog transcript-rewrite-dialog"
+        id="transcript-rewrite-dialog"
+        aria-labelledby="transcript-rewrite-title"
+      >
+        <div class="external-settings-dialog__panel transcript-rewrite-dialog__panel">
+          <header class="external-settings-dialog__head">
+            <h2 class="external-settings-dialog__title" id="transcript-rewrite-title">口播稿优化</h2>
+            <form method="dialog">
+              <button type="submit" class="btn btn-text" aria-label="关闭">关闭</button>
+            </form>
+          </header>
+          <div class="external-settings-dialog__body transcript-rewrite-dialog__body">
+            <div class="transcript-rewrite-dialog__grid">
+              <div class="transcript-rewrite-dialog__col">
+                <label class="transcript-rewrite-dialog__label" for="tr-rewrite-original">原文</label>
+                <textarea id="tr-rewrite-original" class="field__input transcript-rewrite-dialog__ta" readonly rows="10"></textarea>
+              </div>
+              <div class="transcript-rewrite-dialog__col">
+                <label class="transcript-rewrite-dialog__label" for="tr-rewrite-result">改写稿</label>
+                <textarea
+                  id="tr-rewrite-result"
+                  class="field__input transcript-rewrite-dialog__ta"
+                  readonly
+                  rows="10"
+                  placeholder="点击「开始改写」后显示"
+                ></textarea>
+              </div>
+            </div>
+            <p id="tr-rewrite-warnings" class="transcript-rewrite-dialog__warnings muted hidden"></p>
+            <label class="transcript-rewrite-dialog__save-opt">
+              <input type="checkbox" id="tr-rewrite-save-version" checked />
+              <span>采用后将改写稿存入本段「口播版本库」</span>
+            </label>
+          </div>
+          <footer class="external-settings-dialog__footer transcript-rewrite-dialog__footer">
+            <button type="button" class="btn btn-text" id="btn-tr-rewrite-cancel">取消</button>
+            <button type="button" class="btn btn-secondary" id="btn-tr-rewrite-run">开始改写</button>
+            <button type="button" class="btn btn-secondary" id="btn-tr-rewrite-adopt" disabled>采用改写稿</button>
+          </footer>
+        </div>
+      </dialog>
+
+      <dialog
+        class="external-settings-dialog transcript-rewrite-versions-dialog"
+        id="transcript-rewrite-versions-dialog"
+        aria-labelledby="transcript-rewrite-versions-title"
+      >
+        <div class="external-settings-dialog__panel">
+          <header class="external-settings-dialog__head">
+            <h2 class="external-settings-dialog__title" id="transcript-rewrite-versions-title">口播版本库</h2>
+            <form method="dialog">
+              <button type="submit" class="btn btn-text" aria-label="关闭">关闭</button>
+            </form>
+          </header>
+          <div class="external-settings-dialog__body">
+            <p id="tr-versions-subtitle" class="muted transcript-rewrite-versions-dialog__sub"></p>
+            <div id="tr-versions-list" class="transcript-rewrite-versions-dialog__list"></div>
+            <p id="tr-versions-empty" class="muted hidden">暂无保存的版本。可在「口播稿优化」结果中勾选保存，或采用改写稿时自动存入。</p>
+          </div>
+          <footer class="external-settings-dialog__footer">
+            <button type="button" class="btn btn-text" id="btn-tr-versions-close">关闭</button>
+          </footer>
+        </div>
+      </dialog>
+
       <dialog class="external-settings-dialog" id="external-settings-dialog" aria-labelledby="external-settings-title">
         <div class="external-settings-dialog__panel">
           <header class="external-settings-dialog__head">
@@ -625,6 +784,9 @@
             <button type="button" class="external-settings-dialog__tab is-active" role="tab" id="tab-minimax" aria-selected="true" data-settings-tab="minimax">
               MiniMax 语音
             </button>
+            <button type="button" class="external-settings-dialog__tab" role="tab" id="tab-transcript-rewrite" aria-selected="false" data-settings-tab="transcript-rewrite">
+              口播稿优化 API
+            </button>
             <button type="button" class="external-settings-dialog__tab" role="tab" id="tab-agent" aria-selected="false" data-settings-tab="agent">
               智能体（预留）
             </button>
@@ -632,19 +794,72 @@
           <div class="external-settings-dialog__body">
             <div class="settings-tab-panel" id="panel-minimax" role="tabpanel">
               <p class="external-settings-dialog__hint">
-                用于「音频工作台」调用 MiniMax T2A HTTP（<code>/v1/t2a_v2</code>）。密钥仅存于本机数据目录。
+                用于「音频工作台」调用 MiniMax T2A HTTP（<code>/v1/t2a_v2</code>）。密钥仅存于本机数据目录。默认 API Base 为
+                <code>api.minimaxi.com</code>（控制台 / 文档常用）；若使用国际节点请改为 <code>api.minimax.io</code>，二者密钥与路由可能不一致。
               </p>
               <div class="field-grid">
                 <label class="field">
                   <span class="field__label">API Base</span>
                   <select id="cfg-mm-base" class="field__input">
-                    <option value="https://api.minimax.io">https://api.minimax.io（默认）</option>
+                    <option value="https://api.minimaxi.com">https://api.minimaxi.com（控制台 / 文档常用 · 默认）</option>
+                    <option value="https://api.minimax.io">https://api.minimax.io（国际 api.minimax.io）</option>
                     <option value="https://api-uw.minimax.io">https://api-uw.minimax.io（低延迟）</option>
                   </select>
                 </label>
-                <label class="field">
+                <label class="field field--wide">
                   <span class="field__label">API Key</span>
-                  <input type="password" id="cfg-mm-key" class="field__input" autocomplete="off" placeholder="留空表示不修改已保存的密钥" />
+                  <div class="api-key-field" id="cfg-mm-key-field">
+                    <span class="api-key-field__bearer">Bearer</span>
+                    <div class="api-key-field__box">
+                      <input
+                        type="password"
+                        id="cfg-mm-key"
+                        class="api-key-field__input field__input"
+                        autocomplete="off"
+                        autocapitalize="off"
+                        spellcheck="false"
+                        aria-describedby="cfg-mm-key-hint"
+                      />
+                      <button
+                        type="button"
+                        class="api-key-field__eye"
+                        id="cfg-mm-key-toggle"
+                        aria-label="显示密钥"
+                        aria-pressed="false"
+                        title="显示/隐藏（仅当前输入框内的令牌；已保存的旧密钥无法在此查看明文）"
+                      >
+                        <svg
+                          class="api-key-field__eye-icon api-key-field__eye-open"
+                          width="18"
+                          height="18"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          aria-hidden="true"
+                        >
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                        <svg
+                          class="api-key-field__eye-icon api-key-field__eye-off hidden"
+                          width="18"
+                          height="18"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          aria-hidden="true"
+                        >
+                          <path
+                            d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"
+                          />
+                          <line x1="1" y1="1" x2="23" y2="23" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                  <span class="field__hint muted" id="cfg-mm-key-hint"></span>
                 </label>
                 <label class="field">
                   <span class="field__label">Group ID（可选，部分账户需在查询参数携带）</span>
@@ -653,19 +868,51 @@
                 <label class="field">
                   <span class="field__label">合成模型</span>
                   <select id="cfg-mm-model" class="field__input">
-                    <option value="speech-2.8-hd">speech-2.8-hd</option>
-                    <option value="speech-2.8-turbo">speech-2.8-turbo</option>
-                    <option value="speech-2.6-hd">speech-2.6-hd</option>
-                    <option value="speech-2.6-turbo">speech-2.6-turbo</option>
-                    <option value="speech-02-hd">speech-02-hd</option>
-                    <option value="speech-02-turbo">speech-02-turbo</option>
-                    <option value="speech-01-hd">speech-01-hd</option>
-                    <option value="speech-01-turbo">speech-01-turbo</option>
+                    <optgroup label="Turbo（推荐 · 默认 speech-2.8-turbo）">
+                      <option value="speech-2.8-turbo">speech-2.8-turbo</option>
+                      <option value="speech-2.6-turbo">speech-2.6-turbo</option>
+                      <option value="speech-02-turbo">speech-02-turbo</option>
+                      <option value="speech-01-turbo">speech-01-turbo</option>
+                    </optgroup>
+                    <optgroup label="HD（部分套餐无额度 · 置底）">
+                      <option value="speech-2.8-hd">speech-2.8-hd</option>
+                      <option value="speech-2.6-hd">speech-2.6-hd</option>
+                      <option value="speech-02-hd">speech-02-hd</option>
+                      <option value="speech-01-hd">speech-01-hd</option>
+                    </optgroup>
                   </select>
                 </label>
                 <label class="field field--wide">
                   <span class="field__label">音色 voice_id</span>
-                  <input type="text" id="cfg-mm-voice" class="field__input" placeholder="如 Chinese (Mandarin)_Lyrical_Voice" />
+                  <div class="voice-id-combobox" data-voice-combobox>
+                    <div class="voice-id-combobox__row">
+                      <input
+                        type="text"
+                        id="cfg-mm-voice"
+                        class="field__input voice-id-combobox__input"
+                        autocomplete="off"
+                        placeholder="可输入自定义 ID，或点右侧按钮筛选普通话音色"
+                      />
+                      <button
+                        type="button"
+                        class="voice-id-combobox__toggle"
+                        aria-expanded="false"
+                        aria-label="展开普通话音色列表"
+                        title="从列表选择"
+                      >
+                        ▾
+                      </button>
+                    </div>
+                    <div class="voice-id-combobox__panel" hidden>
+                      <input
+                        type="search"
+                        class="field__input voice-id-combobox__filter"
+                        placeholder="筛选名称或 voice_id…"
+                        aria-label="筛选普通话音色"
+                      />
+                      <ul class="voice-id-combobox__list" role="listbox" aria-label="普通话音色"></ul>
+                    </div>
+                  </div>
                 </label>
                 <label class="field">
                   <span class="field__label">语言增强 language_boost</span>
@@ -730,6 +977,123 @@
                 <span class="external-settings-dialog__test-msg" id="cfg-mm-test-msg"></span>
               </div>
             </div>
+            <div class="settings-tab-panel hidden" id="panel-transcript-rewrite" role="tabpanel">
+              <p class="external-settings-dialog__hint">
+                用于「本页逐字稿与音频」中的<strong>口播稿优化</strong>：服务端调用 OpenAI 兼容
+                <code>/v1/chat/completions</code>；系统提示词内置 MiniMax T2A 文档允许的插入语与 <code>&lt;#秒数#&gt;</code>
+                停顿白名单。密钥仅存本机数据目录；与 MiniMax、下方「智能体」占位<strong>相互独立</strong>。
+              </p>
+              <div class="field-grid">
+                <label class="field">
+                  <span class="field__label">接入方式</span>
+                  <select id="cfg-tr-provider" class="field__input">
+                    <option value="none">未启用</option>
+                    <option value="openai_compatible">OpenAI 兼容 API</option>
+                  </select>
+                </label>
+                <label class="field field--wide">
+                  <span class="field__label">API Base（结尾为 /v1，如 https://api.openai.com/v1）</span>
+                  <input
+                    type="text"
+                    id="cfg-tr-base"
+                    class="field__input"
+                    autocomplete="off"
+                    placeholder="https://api.openai.com/v1"
+                  />
+                </label>
+                <label class="field field--wide">
+                  <span class="field__label">API Key</span>
+                  <div class="api-key-field api-key-field--no-bearer" id="cfg-tr-key-field">
+                    <div class="api-key-field__box">
+                      <input
+                        type="password"
+                        id="cfg-tr-key"
+                        class="api-key-field__input field__input"
+                        autocomplete="off"
+                        autocapitalize="off"
+                        spellcheck="false"
+                        aria-describedby="cfg-tr-key-hint"
+                        placeholder="按网关要求粘贴令牌或 Key"
+                      />
+                      <button
+                        type="button"
+                        class="api-key-field__eye"
+                        id="cfg-tr-key-toggle"
+                        aria-label="显示密钥"
+                        aria-pressed="false"
+                        title="显示/隐藏（仅当前输入框内的令牌）"
+                      >
+                        <svg
+                          class="api-key-field__eye-icon api-key-field__eye-open"
+                          width="18"
+                          height="18"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          aria-hidden="true"
+                        >
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                        <svg
+                          class="api-key-field__eye-icon api-key-field__eye-off hidden"
+                          width="18"
+                          height="18"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          aria-hidden="true"
+                        >
+                          <path
+                            d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"
+                          />
+                          <line x1="1" y1="1" x2="23" y2="23" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                  <span class="field__hint muted" id="cfg-tr-key-hint"></span>
+                </label>
+                <label class="field field--wide">
+                  <span class="field__label">模型 model</span>
+                  <select id="cfg-tr-model" class="field__input" aria-describedby="cfg-tr-model-hint">
+                    <optgroup label="推荐 · 口播改写（对话模型；按性价比大致排序）">
+                      <option value="gpt-4o-mini">gpt-4o-mini · 通用 OpenAI 兼容</option>
+                      <option value="qwen3.5-flash" selected>qwen3.5-flash · 🟣 Alibaba（China）· 轻量高速</option>
+                      <option value="doubao-seed-2-0-lite">doubao-seed-2-0-lite · 🟠 字节 · 轻量</option>
+                      <option value="doubao-seed-2-0-mini">doubao-seed-2-0-mini · 🟠 字节 · 小模型</option>
+                      <option value="glm-4.6">glm-4.6 · ⚫ 智谱</option>
+                      <option value="doubao-seed-2-0-pro">doubao-seed-2-0-pro · 🟠 字节 · 增强</option>
+                      <option value="MiniMax-M2.7">MiniMax-M2.7 · ⚪ MiniMax</option>
+                      <option value="glm-4.7">glm-4.7 · ⚫ 智谱 Coding Plan</option>
+                      <option value="glm-5">glm-5 · ⚫ 智谱</option>
+                      <option value="glm-5.1">glm-5.1 · ⚫ 智谱</option>
+                      <option value="doubao-seed-1-8">doubao-seed-1-8 · 🟠 字节</option>
+                      <option value="doubao-seed-code">doubao-seed-code · 🟠 字节（偏代码，口播次之）</option>
+                      <option value="doubao-seed-2-0-code-preview">doubao-seed-2-0-code-preview · 🟠 字节（代码预览 · 口播备选）</option>
+                    </optgroup>
+                  </select>
+                  <span id="cfg-tr-model-hint" class="field__hint muted"
+                    >已隐藏<strong>向量嵌入、文生图、视频生成</strong>等不适合本场景的模型；若网关自定义模型未在列表中，可直接编辑数据目录下
+                    <code>external_apis.json</code> 的 <code>transcript_rewrite.model</code>，刷新本页后仍会显示。</span>
+                </label>
+                <label class="field field--wide">
+                  <span class="field__label-row">
+                    <span class="field__label">追加规则（可选，课程专属补充）</span>
+                    <button type="button" class="btn btn-text field__label-action" id="btn-tr-extra-reset">
+                      清空（内置默认）
+                    </button>
+                  </span>
+                  <textarea id="cfg-tr-extra" class="field__input" rows="12" placeholder="留空即可：通用规范由内置 minimax_skill.md 随改写请求写入 user 消息。此处仅填本课专用补充（术语口径、禁忌等），保存后并入同一条 user 内的「课程追加规则」段（不经长 system）。"></textarea>
+                </label>
+              </div>
+              <div class="external-settings-dialog__footer-actions">
+                <button type="button" class="btn btn-text" id="btn-tr-test">连通测试</button>
+                <span class="external-settings-dialog__test-msg" id="cfg-tr-test-msg"></span>
+              </div>
+            </div>
             <div class="settings-tab-panel hidden" id="panel-agent" role="tabpanel">
               <p class="external-settings-dialog__hint">
                 预留用于后续接入<strong>可自主规划与执行</strong>的智能体（如 Claude Code、自定义 Agent）。当前项目仍通过外部
@@ -753,6 +1117,90 @@
               取消
             </button>
             <button type="button" class="btn btn-secondary" id="btn-settings-save">保存</button>
+          </footer>
+        </div>
+      </dialog>
+
+      <dialog
+        class="pv-preview-zoom-dialog"
+        id="pv-preview-zoom-dialog"
+        aria-labelledby="pv-preview-zoom-title"
+      >
+        <div class="pv-preview-zoom-dialog__panel">
+          <header class="pv-preview-zoom-dialog__head">
+            <h2 class="pv-preview-zoom-dialog__title" id="pv-preview-zoom-title">预览</h2>
+            <form method="dialog">
+              <button type="submit" class="btn btn-text" aria-label="关闭">关闭</button>
+            </form>
+          </header>
+          <div class="pv-preview-zoom-dialog__body">
+            <img id="pv-preview-zoom-img" class="pv-preview-zoom-dialog__img" alt="" />
+          </div>
+          <footer class="pv-preview-zoom-dialog__footer">
+            <button type="button" class="btn btn-secondary" id="btn-pv-preview-zoom-download">下载本图</button>
+          </footer>
+        </div>
+      </dialog>
+
+      <dialog
+        class="external-settings-dialog import-transcript-dialog"
+        id="import-transcript-dialog"
+        aria-labelledby="import-transcript-title"
+      >
+        <div class="external-settings-dialog__panel import-transcript-dialog__panel">
+          <header class="external-settings-dialog__head">
+            <h2 class="external-settings-dialog__title" id="import-transcript-title">导入整稿逐字稿</h2>
+            <form method="dialog">
+              <button type="submit" class="external-settings-dialog__close" aria-label="关闭">×</button>
+            </form>
+          </header>
+          <div class="external-settings-dialog__body import-transcript-dialog__body">
+            <div id="import-transcript-step1">
+              <p class="external-settings-dialog__hint import-transcript-dialog__hint">
+                请使用「### 第 N 页」作为分页标题（N 为页码）。<strong>第 1 页</strong>对应左侧<strong>第 1 张</strong>幻灯片。支持上传 <code>.txt</code> 或粘贴全文。
+              </p>
+              <div class="import-transcript-dialog__file-row">
+                <label class="import-transcript-dialog__file-label">
+                  选择文件
+                  <input
+                    type="file"
+                    id="import-transcript-file"
+                    accept=".txt,text/plain"
+                    class="import-transcript-dialog__file-input"
+                  />
+                </label>
+              </div>
+              <label class="import-transcript-dialog__ta-label" for="import-transcript-textarea">文稿内容</label>
+              <textarea
+                id="import-transcript-textarea"
+                class="import-transcript-dialog__textarea"
+                rows="14"
+                placeholder="### 第1页&#10;……"
+              ></textarea>
+            </div>
+            <div id="import-transcript-step2" class="hidden import-transcript-dialog__step2">
+              <p id="import-transcript-step2-summary" class="import-transcript-dialog__summary"></p>
+              <ul id="import-transcript-warnings" class="import-transcript-dialog__warnings"></ul>
+              <div
+                id="import-transcript-conflicts-wrap"
+                class="import-transcript-dialog__conflicts-wrap hidden"
+              >
+                <p class="import-transcript-dialog__conflicts-title">
+                  以下页面已有逐字稿且与导入内容不一致，请逐页选择：
+                </p>
+                <div id="import-transcript-conflicts-list" class="import-transcript-dialog__conflicts-list"></div>
+              </div>
+            </div>
+          </div>
+          <footer class="external-settings-dialog__footer import-transcript-dialog__footer">
+            <div class="import-transcript-dialog__footer-row" id="import-transcript-footer-row1">
+              <button type="button" class="btn btn-text" id="btn-import-transcript-cancel">取消</button>
+              <button type="button" class="btn btn-primary" id="btn-import-transcript-preview">解析预览</button>
+            </div>
+            <div class="import-transcript-dialog__footer-row hidden" id="import-transcript-footer-row2">
+              <button type="button" class="btn btn-text" id="btn-import-transcript-back">上一步</button>
+              <button type="button" class="btn btn-primary" id="btn-import-transcript-apply">确认写入</button>
+            </div>
           </footer>
         </div>
       </dialog>
@@ -799,6 +1247,6 @@
       </div>
     </div>
 
-    <script src="/assets/app.js" defer></script>
+    <script src="/assets/app.js?v=2.56" defer></script>
   </body>
 </html>
