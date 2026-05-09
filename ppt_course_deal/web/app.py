@@ -60,8 +60,16 @@ from ppt_course_deal.minimax_client import (
 from ppt_course_deal.pipeline import transform_pptx
 from ppt_course_deal.slide_render import describe_preview_render_env, render_pptx_to_pngs
 from ppt_course_deal.shape_image_export import list_slide_shape_files
+from ppt_course_deal.slide_visual_generation import (
+    build_slide_visual_prompt,
+    generated_visual_coverage,
+    generate_slide_visual_png,
+    latest_generated_visual_path,
+    save_generated_visual,
+)
 from ppt_course_deal.task_storage import (
     delete_task,
+    get_data_root,
     list_task_summaries,
     load_task,
     preview_png_path,
@@ -117,6 +125,14 @@ def get_max_upload_bytes() -> int:
 
 class TaskRenameBody(BaseModel):
     filename: str = Field(min_length=1, max_length=200)
+
+
+class GenerateSlideVisualBody(BaseModel):
+    """文生图请求体；使用与口播稿优化相同的 ``transcript_rewrite`` API Base / Key。"""
+
+    prompt: Optional[str] = Field(default=None, max_length=4000)
+    size: str = Field(default="1792x1024", max_length=32)
+    model: str = Field(default="gpt-image-2", max_length=128)
 
 
 class ExternalPutBody(BaseModel):
@@ -485,6 +501,89 @@ def create_app() -> FastAPI:
             media_type=mt,
             headers={"Cache-Control": "private, max-age=86400"},
         )
+
+    @application.post("/api/tasks/{task_id}/slide/{slide_index:int}/generate-visual")
+    def generate_slide_visual_api(
+        task_id: str,
+        slide_index: int,
+        payload: Optional[GenerateSlideVisualBody] = Body(None),
+    ) -> Dict[str, Any]:
+        """使用口播稿优化同一套 OpenAI 兼容网关，调用 ``gpt-image-2``（可改）生成配图并落盘。"""
+        meta = load_task(task_id)
+        if meta is None:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        slides_list = meta.get("slides") or []
+        if slide_index < 0 or slide_index >= len(slides_list):
+            raise HTTPException(status_code=400, detail="页码超出范围")
+
+        tr = get_transcript_rewrite_for_server_call()
+        api_base = (tr.get("api_base") or "").strip()
+        api_key = (tr.get("api_key") or "").strip()
+        body = payload if payload is not None else GenerateSlideVisualBody()
+        slide_obj = slides_list[slide_index]
+        if not isinstance(slide_obj, dict):
+            slide_obj = {}
+        prompt = (body.prompt or "").strip()
+        if not prompt:
+            prompt = build_slide_visual_prompt(slide_obj)
+
+        try:
+            png_bytes = generate_slide_visual_png(
+                api_base=api_base,
+                api_key=api_key,
+                model=body.model.strip(),
+                prompt=prompt,
+                size=(body.size or "1792x1024").strip(),
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+
+        task_dir = tasks_dir() / task_id
+        path = save_generated_visual(
+            task_dir,
+            slide_index,
+            png_bytes,
+            model_slug=body.model.strip() or "gpt-image-2",
+        )
+        try:
+            rel = path.resolve().relative_to(get_data_root())
+            rel_str = rel.as_posix()
+        except ValueError:
+            rel_str = path.name
+
+        return {
+            "ok": True,
+            "path_under_course_data": rel_str,
+            "slide_index": slide_index,
+            "model": body.model.strip(),
+            "preview_url": f"/api/tasks/{task_id}/slide/{slide_index}/generated-visual",
+        }
+
+    @application.get("/api/tasks/{task_id}/slide/{slide_index:int}/generated-visual")
+    def task_slide_generated_visual_png(task_id: str, slide_index: int) -> FileResponse:
+        """返回该页最近一次「生成全新画面」的 PNG（若无则 404）。"""
+        if load_task(task_id) is None:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        task_dir = tasks_dir() / task_id
+        path = latest_generated_visual_path(task_dir, slide_index)
+        if path is None or not path.is_file():
+            raise HTTPException(status_code=404, detail="暂无 AI 生成画面")
+        return FileResponse(
+            path,
+            media_type="image/png",
+            headers={"Cache-Control": "private, no-store"},
+        )
+
+    @application.get("/api/tasks/{task_id}/generated-visual-coverage")
+    def generated_visual_coverage_api(task_id: str) -> Dict[str, Any]:
+        """各页是否已有 AI 生成图；**all_slides_complete** 为真时可启用「原版 / AI 重制版」分段主预览。"""
+        meta = load_task(task_id)
+        if meta is None:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        slides_list = meta.get("slides") or []
+        sc = len(slides_list)
+        task_dir = tasks_dir() / task_id
+        return generated_visual_coverage(task_dir, sc)
 
     @application.get("/api/preview/{session_id}/{slide_index:int}")
     def preview_slide_png(session_id: str, slide_index: int) -> FileResponse:

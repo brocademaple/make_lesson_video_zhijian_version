@@ -2,8 +2,9 @@
 name: github-push-ppt-course
 description: >-
   Git commit and push for the text2classvideo repo: what to add vs never add
-  (ppt_course_data, build artifacts, secrets), YYMMDD：message format, and
-  per-subproject ignores. Use when the user asks to push, 提交, or commit.
+  (ppt_course_data, build artifacts, secrets), YYMMDD：message format,
+  per-subproject ignores, and repo-local author (user.name / user.email).
+  Use when the user asks to push, 提交, or commit.
 ---
 
 # 本仓库 Git 提交与推送（按当前结构：该 add 什么、别 add 什么）
@@ -12,6 +13,17 @@ description: >-
 
 - 只把**可复现的源码、文档、配置、测试**推到远程；**不**把本机课件数据、合成产物、依赖目录和密钥文件纳入版本库。
 - 默认数据目录 **`ppt_course_data/`** 必须在根目录 **`.gitignore`** 中（已包含）；若使用环境变量 **`PPT_COURSE_DATA`** 指向自定义目录，该目录也应 **ignore**，或**永远不要** `git add` 该路径。
+
+## 本仓库提交者身份（仅本仓库）
+
+在 **`text2classvideo`** 根目录执行（**不写** `--global`，只影响当前仓库；`.git/config` 不入库）：
+
+```bash
+git config user.name "brocademaple"
+git config user.email "1300672728@qq.com"
+```
+
+代理执行提交/推送前，若未配置或作者不符维护者约定，可先执行以上两行再 **`git commit`**。
 
 ## 仓库结构（便于对照该改哪里）
 

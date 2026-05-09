@@ -71,6 +71,33 @@
   /** `true`：标题栏喇叭打开的「仅已生成 mp3」视图；`false`：完整逐字稿与生成 */
   var audioSegmentsDialogListenOnly = false;
   const btnAudioSegmentsToolbar = document.getElementById("btn-audio-segments-toolbar");
+  const btnGenerateSlideVisual = document.getElementById("btn-generate-slide-visual");
+  const btnAiVisualStock = document.getElementById("btn-ai-visual-stock");
+  const aiVisualStockDialog = document.getElementById("ai-visual-stock-dialog");
+  const aiVisualStockImg = document.getElementById("ai-visual-stock-img");
+  const aiVisualStockEmpty = document.getElementById("ai-visual-stock-empty");
+  const aiVisualStockTitle = document.getElementById("ai-visual-stock-title");
+  const btnAiVisualStockDownload = document.getElementById("btn-ai-visual-stock-download");
+  const pvSourceTabs = document.getElementById("pv-source-tabs");
+  const pvTabOriginal = document.getElementById("pv-tab-original");
+  const pvTabAi = document.getElementById("pv-tab-ai");
+  const generateVisualDialog = document.getElementById("generate-visual-dialog");
+  const gvPanelForm = document.getElementById("gv-panel-form");
+  const gvPanelResult = document.getElementById("gv-panel-result");
+  const gvFooterConfirm = document.getElementById("gv-footer-confirm");
+  const gvFooterResult = document.getElementById("gv-footer-result");
+  const gvStorageHint = document.getElementById("gv-storage-hint");
+  const gvSlideLabel = document.getElementById("gv-slide-label");
+  const gvModel = document.getElementById("gv-model");
+  const gvSize = document.getElementById("gv-size");
+  const gvPrompt = document.getElementById("gv-prompt");
+  const gvOpenNewTab = document.getElementById("gv-open-new-tab");
+  const gvError = document.getElementById("gv-error");
+  const gvResultImg = document.getElementById("gv-result-img");
+  const gvResultPathText = document.getElementById("gv-result-path-text");
+  const btnGvCancel = document.getElementById("btn-gv-cancel");
+  const btnGvSubmit = document.getElementById("btn-gv-submit");
+  const btnGvDone = document.getElementById("btn-gv-done");
   const btnAudioOpenSegments = document.getElementById("btn-audio-open-segments");
   const btnAudioSegmentAdd = document.getElementById("btn-audio-segment-add");
   const btnAudioSegmentsSave = document.getElementById("btn-audio-segments-save");
@@ -154,6 +181,12 @@
   /** @type {Array<{ url: string, caption: string, kind: string, shapeIndex: number | null }>} */
   let pvCarouselFrames = [];
   let pvCarouselIndex = 0;
+
+  /** 主预览区：原版 LibreOffice/切图 vs 全文生图（仅当各页均有 AI 图时可选） */
+  /** @type {'original' | 'ai'} */
+  let pvPreviewSourceMode = "original";
+  /** @type {{ slide_count: number, slides_with_generated: number[], all_slides_complete: boolean } | null} */
+  let genVisualCoverage = null;
 
   /** 与 /api/health 的 max_upload_mb 一致；默认 50MB 直至拉取到配置 */
   let maxUploadBytes = 50 * 1024 * 1024;
@@ -707,6 +740,299 @@
     );
   }
 
+  function refreshGenerateSlideVisualEnabled() {
+    if (!btnGenerateSlideVisual) return;
+    var ok = !!currentTaskId && slides.length > 0;
+    btnGenerateSlideVisual.disabled = !ok;
+    btnGenerateSlideVisual.title = ok
+      ? "打开确认框：核对存储路径、模型与提示词后再调用文生图（消耗网关额度）"
+      : "需任务已持久化（解析返回 task_id，或从左侧打开已存任务）";
+  }
+
+  async function refreshGenVisualCoverage() {
+    if (!currentTaskId) {
+      genVisualCoverage = null;
+      updatePvSourceTabsUi();
+      updateAiVisualToolbarBtn();
+      return;
+    }
+    try {
+      var res = await fetch(
+        "/api/tasks/" + encodeURIComponent(currentTaskId) + "/generated-visual-coverage",
+      );
+      if (!res.ok) genVisualCoverage = null;
+      else genVisualCoverage = await res.json();
+    } catch (_) {
+      genVisualCoverage = null;
+    }
+    if (pvPreviewSourceMode === "ai" && (!genVisualCoverage || !genVisualCoverage.all_slides_complete)) {
+      pvPreviewSourceMode = "original";
+    }
+    updatePvSourceTabsUi();
+    updateAiVisualToolbarBtn();
+  }
+
+  function updatePvSourceTabsUi() {
+    if (!pvSourceTabs || !pvTabOriginal || !pvTabAi) return;
+    var show =
+      !!currentTaskId &&
+      !!genVisualCoverage &&
+      !!genVisualCoverage.all_slides_complete &&
+      slides.length > 0 &&
+      genVisualCoverage.slide_count === slides.length;
+    if (show) {
+      pvSourceTabs.classList.remove("hidden");
+      pvTabOriginal.setAttribute("aria-selected", pvPreviewSourceMode === "original" ? "true" : "false");
+      pvTabAi.setAttribute("aria-selected", pvPreviewSourceMode === "ai" ? "true" : "false");
+    } else {
+      pvSourceTabs.classList.add("hidden");
+      pvTabOriginal.setAttribute("aria-selected", "true");
+      pvTabAi.setAttribute("aria-selected", "false");
+    }
+  }
+
+  function updateAiVisualToolbarBtn() {
+    if (!btnAiVisualStock) return;
+    if (!currentTaskId || !slides.length) {
+      btnAiVisualStock.disabled = true;
+      btnAiVisualStock.classList.remove("has-file");
+      return;
+    }
+    btnAiVisualStock.disabled = false;
+    var has = false;
+    if (genVisualCoverage && Array.isArray(genVisualCoverage.slides_with_generated)) {
+      has = genVisualCoverage.slides_with_generated.indexOf(selectedIndex) >= 0;
+    }
+    if (has) btnAiVisualStock.classList.add("has-file");
+    else btnAiVisualStock.classList.remove("has-file");
+  }
+
+  function openAiVisualStockDialog() {
+    if (!aiVisualStockDialog || !currentTaskId) return;
+    var base =
+      "/api/tasks/" +
+      encodeURIComponent(currentTaskId) +
+      "/slide/" +
+      selectedIndex +
+      "/generated-visual";
+    var url = base + (base.indexOf("?") >= 0 ? "&" : "?") + "zbust=" + Date.now();
+    if (aiVisualStockTitle) {
+      aiVisualStockTitle.textContent = "第 " + (selectedIndex + 1) + " 页 · AI 配图";
+    }
+    if (aiVisualStockImg) {
+      aiVisualStockImg.classList.add("hidden");
+      aiVisualStockImg.removeAttribute("src");
+    }
+    if (aiVisualStockEmpty) aiVisualStockEmpty.classList.add("hidden");
+    if (btnAiVisualStockDownload) btnAiVisualStockDownload.disabled = true;
+    aiVisualStockDialog.showModal();
+    void (async function () {
+      try {
+        var res = await fetch(base, { method: "GET" });
+        if (!res.ok) {
+          if (aiVisualStockEmpty) aiVisualStockEmpty.classList.remove("hidden");
+          return;
+        }
+        if (aiVisualStockEmpty) aiVisualStockEmpty.classList.add("hidden");
+        if (aiVisualStockImg) {
+          aiVisualStockImg.classList.remove("hidden");
+          aiVisualStockImg.alt = aiVisualStockTitle ? aiVisualStockTitle.textContent : "AI 配图";
+          aiVisualStockImg.src = url;
+        }
+        if (btnAiVisualStockDownload) btnAiVisualStockDownload.disabled = false;
+      } catch (_) {
+        if (aiVisualStockEmpty) aiVisualStockEmpty.classList.remove("hidden");
+      }
+    })();
+  }
+
+  async function downloadAiVisualStockImage() {
+    if (!currentTaskId || !btnAiVisualStockDownload || btnAiVisualStockDownload.disabled) return;
+    var base =
+      "/api/tasks/" +
+      encodeURIComponent(currentTaskId) +
+      "/slide/" +
+      selectedIndex +
+      "/generated-visual";
+    var name = "slide-" + String(selectedIndex + 1).padStart(4, "0") + "-ai-remake.png";
+    var origLabel = "下载本图";
+    btnAiVisualStockDownload.disabled = true;
+    btnAiVisualStockDownload.textContent = "下载中…";
+    try {
+      var res = await fetch(base);
+      if (!res.ok) throw new Error("fetch failed");
+      var blob = await res.blob();
+      var cd = res.headers.get("Content-Disposition");
+      if (cd) {
+        var m = /filename\*=UTF-8''([^;\s]+)|filename="([^"]+)"/i.exec(cd);
+        var raw = m ? m[1] || m[2] : "";
+        if (raw) {
+          try {
+            name = decodeURIComponent(raw.replace(/"/g, "").trim());
+          } catch (_) {
+            name = raw.replace(/"/g, "").trim();
+          }
+        }
+      }
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = name || "ai-remake.png";
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (_) {
+      window.open(base, "_blank", "noopener,noreferrer");
+    } finally {
+      btnAiVisualStockDownload.disabled = false;
+      btnAiVisualStockDownload.textContent = origLabel;
+    }
+  }
+
+  /** 与服务端 ``build_slide_visual_prompt`` 对齐，便于用户在确认框内预览默认提示词 */
+  function buildDefaultVisualPrompt(slide) {
+    var title = slide && slide.title ? String(slide.title).trim() : "";
+    var text = slide && slide.text ? String(slide.text).trim().replace(/\r\n/g, "\n") : "";
+    if (text.length > 1200) text = text.slice(0, 1200) + "…";
+    var parts = [
+      "生成一张 16:9 横版教学课件配图，风格清晰专业、适合中文在线课程，配色稳重，避免低俗或与课件无关的装饰。",
+      "画面中可适当包含简洁图示或排版感，但不要生成密密麻麻的小字正文。",
+    ];
+    if (title) parts.push("本页主题标题：" + title);
+    if (text) parts.push("内容要点摘录（供理解语境）：\n" + text);
+    var raw = parts.join("\n");
+    if (raw.length > 4000) return raw.slice(0, 3999) + "…";
+    return raw;
+  }
+
+  function resetGenerateVisualDialogToForm() {
+    if (gvPanelForm) gvPanelForm.classList.remove("hidden");
+    if (gvPanelResult) gvPanelResult.classList.add("hidden");
+    if (gvFooterConfirm) gvFooterConfirm.classList.remove("hidden");
+    if (gvFooterResult) gvFooterResult.classList.add("hidden");
+    if (gvError) {
+      gvError.classList.add("hidden");
+      gvError.textContent = "";
+    }
+    if (gvResultImg) {
+      gvResultImg.removeAttribute("src");
+    }
+    if (gvResultPathText) gvResultPathText.textContent = "";
+  }
+
+  function openGenerateVisualDialog() {
+    if (!generateVisualDialog || !currentTaskId || !slides.length) return;
+    resetGenerateVisualDialogToForm();
+    var si = selectedIndex;
+    var sid = String(si + 1).padStart(4, "0");
+    if (gvStorageHint) {
+      gvStorageHint.textContent =
+        "tasks/" +
+        currentTaskId +
+        "/generated_visuals/slide-" +
+        sid +
+        "/<时间戳>-<模型简写>.png";
+    }
+    var s = slides[si] || {};
+    if (gvSlideLabel) {
+      gvSlideLabel.textContent =
+        "第 " + (si + 1) + " / " + slides.length + " 页 · " + slideSnippetText(s);
+    }
+    if (gvModel) gvModel.value = "gpt-image-2";
+    if (gvSize) gvSize.value = "1792x1024";
+    if (gvPrompt) gvPrompt.value = buildDefaultVisualPrompt(s);
+    if (gvOpenNewTab) gvOpenNewTab.checked = true;
+    if (btnGvSubmit) {
+      btnGvSubmit.disabled = false;
+      btnGvSubmit.textContent = "确认生成（消耗额度）";
+    }
+    generateVisualDialog.showModal();
+  }
+
+  function closeGenerateVisualDialog() {
+    if (generateVisualDialog && generateVisualDialog.open) generateVisualDialog.close();
+    resetGenerateVisualDialogToForm();
+  }
+
+  async function submitGenerateVisualFromDialog() {
+    if (!currentTaskId || !btnGvSubmit) return;
+    if (gvError) {
+      gvError.classList.add("hidden");
+      gvError.textContent = "";
+    }
+    var model = gvModel ? gvModel.value.trim() : "gpt-image-2";
+    var size = gvSize ? gvSize.value : "1792x1024";
+    var promptVal = gvPrompt ? gvPrompt.value.trim() : "";
+    var body = { model: model || "gpt-image-2", size: size || "1792x1024" };
+    if (promptVal) body.prompt = promptVal;
+
+    btnGvSubmit.disabled = true;
+    var prevSubmitText = btnGvSubmit.textContent;
+    btnGvSubmit.textContent = "正在请求网关…";
+    try {
+      var res = await fetch(
+        "/api/tasks/" +
+          encodeURIComponent(currentTaskId) +
+          "/slide/" +
+          selectedIndex +
+          "/generate-visual",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }
+      );
+      var j = {};
+      try {
+        j = await res.json();
+      } catch (_) {}
+      if (!res.ok) {
+        var det = j.detail;
+        var errMsg =
+          typeof det === "string"
+            ? det
+            : det && typeof det === "object"
+              ? JSON.stringify(det)
+              : "生成失败（HTTP " + res.status + "）";
+        throw new Error(errMsg);
+      }
+
+      if (gvPanelForm) gvPanelForm.classList.add("hidden");
+      if (gvFooterConfirm) gvFooterConfirm.classList.add("hidden");
+      if (gvPanelResult) gvPanelResult.classList.remove("hidden");
+      if (gvFooterResult) gvFooterResult.classList.remove("hidden");
+      var pathTxt = j.path_under_course_data || "—";
+      if (gvResultPathText) {
+        gvResultPathText.textContent = "已保存（相对课件数据根）：" + pathTxt;
+      }
+      var pu = j.preview_url || "";
+      if (gvResultImg && pu) {
+        gvResultImg.src = pu + "?t=" + Date.now();
+      }
+      if (gvOpenNewTab && gvOpenNewTab.checked && pu) {
+        window.open(pu + "?t=" + Date.now(), "_blank", "noopener,noreferrer");
+      }
+      if (statusLine) {
+        statusLine.textContent =
+          "AI 配图已生成：" + pathTxt + (gvOpenNewTab && gvOpenNewTab.checked ? " · 已打开新标签预览" : " · 见上方对话框内预览");
+      }
+      await refreshGenVisualCoverage();
+      void updatePreviewMedia();
+    } catch (e) {
+      var msg = e instanceof Error ? e.message : String(e);
+      if (gvError) {
+        gvError.textContent = msg;
+        gvError.classList.remove("hidden");
+      }
+      if (statusLine) statusLine.textContent = "文生图失败：" + msg;
+    } finally {
+      btnGvSubmit.disabled = false;
+      btnGvSubmit.textContent = prevSubmitText;
+    }
+  }
+
   async function openStoredTask(taskId) {
     try {
       var res = await fetch("/api/tasks/" + encodeURIComponent(taskId));
@@ -742,6 +1068,7 @@
       if (appMain) appMain.classList.add("app-main--workspace");
       if (slideRail) slideRail.classList.remove("hidden");
       setWorkspaceTaskDrawerTabVisible(true);
+      await refreshGenVisualCoverage();
       renderSlideList();
       renderPreview();
       await loadAudioWorkspaceMeta();
@@ -754,6 +1081,7 @@
       }
       statusLine.textContent = msg;
       setImportTranscriptButtonVisible();
+      refreshGenerateSlideVisualEnabled();
     } catch (_) {}
   }
 
@@ -1115,6 +1443,9 @@
         "slide-" + p + "-shape-" + String(frame.shapeIndex + 1).padStart(2, "0") + ".png"
       );
     }
+    if (frame && frame.kind === "generated") {
+      return "slide-" + p + "-ai-remake.png";
+    }
     return "slide-" + p + "-full.png";
   }
 
@@ -1181,6 +1512,40 @@
     if (!slides.length || !pvImageWrap) return;
     var req = ++pvMediaRequestId;
     var tid = currentTaskId || null;
+
+    if (
+      pvPreviewSourceMode === "ai" &&
+      genVisualCoverage &&
+      genVisualCoverage.all_slides_complete &&
+      tid
+    ) {
+      var aiUrl =
+        "/api/tasks/" +
+        encodeURIComponent(tid) +
+        "/slide/" +
+        selectedIndex +
+        "/generated-visual?t=" +
+        Date.now();
+      /** @type {Array<{ url: string, caption: string, kind: string, shapeIndex: number | null }>} */
+      var framesAi = [
+        {
+          url: aiUrl,
+          caption: "AI 重制",
+          kind: "generated",
+          shapeIndex: null,
+        },
+      ];
+      if (req !== pvMediaRequestId) return;
+      pvModeLabel.textContent = "AI 重制版预览（文生图）";
+      currentPreviewHelpText =
+        "每一页均已生成 AI 画面时可在此切换「原版」与「AI 重制版」。当前为文生图结果；「原版」为 LibreOffice 整页与页内切图。";
+      pvCarouselFrames = framesAi;
+      pvCarouselIndex = 0;
+      pvImageWrap.classList.remove("hidden");
+      applyPvCarouselFrame();
+      return;
+    }
+
     var fullSrc = mainPreviewImageSrc();
     var shapeCount = 0;
     if (tid) {
@@ -1321,6 +1686,7 @@
     }
 
     refreshAudioWorkbench();
+    updateAiVisualToolbarBtn();
   }
 
   function ensureAudioSegmentsShape() {
@@ -2761,6 +3127,8 @@
       statusLine.textContent = msg;
       setImportTranscriptButtonVisible();
       refreshTaskList();
+      refreshGenerateSlideVisualEnabled();
+      void refreshGenVisualCoverage();
     } catch (err) {
       showErr(errorUpload, err instanceof Error ? err.message : String(err));
       uploadPanel.querySelector(".drop-title").textContent = "上传培训用 .pptx";
@@ -2793,6 +3161,8 @@
     previewCount = 0;
     previewSource = "libreoffice";
     selectedIndex = 0;
+    genVisualCoverage = null;
+    pvPreviewSourceMode = "original";
     fileInput.value = "";
     imagesBanner.classList.add("hidden");
     imagesBanner.textContent = "";
@@ -2800,6 +3170,9 @@
     statusLine.textContent = "";
     resetDownload();
     setImportTranscriptButtonVisible();
+    refreshGenerateSlideVisualEnabled();
+    updatePvSourceTabsUi();
+    updateAiVisualToolbarBtn();
   }
 
   dropzone.addEventListener("click", function () {
@@ -3353,6 +3726,65 @@
   if (btnAudioSegmentsToolbar) {
     btnAudioSegmentsToolbar.addEventListener("click", function () {
       void openAudioSegmentsListenOnly();
+    });
+  }
+
+  if (btnAiVisualStock) {
+    btnAiVisualStock.addEventListener("click", function () {
+      openAiVisualStockDialog();
+    });
+  }
+  if (pvTabOriginal) {
+    pvTabOriginal.addEventListener("click", function () {
+      if (pvPreviewSourceMode === "original") return;
+      pvPreviewSourceMode = "original";
+      updatePvSourceTabsUi();
+      renderPreview();
+    });
+  }
+  if (pvTabAi) {
+    pvTabAi.addEventListener("click", function () {
+      if (!genVisualCoverage || !genVisualCoverage.all_slides_complete) return;
+      if (pvPreviewSourceMode === "ai") return;
+      pvPreviewSourceMode = "ai";
+      updatePvSourceTabsUi();
+      renderPreview();
+    });
+  }
+  if (btnAiVisualStockDownload) {
+    btnAiVisualStockDownload.addEventListener("click", function () {
+      void downloadAiVisualStockImage();
+    });
+  }
+  if (aiVisualStockDialog) {
+    aiVisualStockDialog.addEventListener("click", function (e) {
+      if (e.target === aiVisualStockDialog) aiVisualStockDialog.close();
+    });
+  }
+
+  if (btnGenerateSlideVisual) {
+    btnGenerateSlideVisual.addEventListener("click", function () {
+      openGenerateVisualDialog();
+    });
+  }
+  if (btnGvCancel) {
+    btnGvCancel.addEventListener("click", function () {
+      closeGenerateVisualDialog();
+    });
+  }
+  if (btnGvSubmit) {
+    btnGvSubmit.addEventListener("click", function () {
+      void submitGenerateVisualFromDialog();
+    });
+  }
+  if (btnGvDone) {
+    btnGvDone.addEventListener("click", function () {
+      closeGenerateVisualDialog();
+    });
+  }
+  if (generateVisualDialog) {
+    generateVisualDialog.addEventListener("close", function () {
+      resetGenerateVisualDialogToForm();
     });
   }
 

@@ -17,7 +17,7 @@
         }
       })();
     </script>
-    <link rel="stylesheet" href="/assets/styles.css?v=2.64" />
+    <link rel="stylesheet" href="/assets/styles.css?v=2.67" />
   </head>
   <body>
     <div class="app">
@@ -265,8 +265,34 @@
                     />
                   </svg>
                 </button>
+                <button
+                  type="button"
+                  class="btn-ai-visual-toolbar"
+                  id="btn-ai-visual-stock"
+                  disabled
+                  aria-label="本页 AI 配图暂存预览"
+                  title="查看当前页「生成全新 PPT 画面」已保存的配图（弹窗）；圆点表示本页已有文件"
+                >
+                  <svg class="btn-ai-visual-toolbar__svg" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                    <path
+                      fill="currentColor"
+                      d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"
+                    />
+                  </svg>
+                </button>
               </div>
               <span class="toolbar-meta" id="slide-meta"></span>
+            </div>
+            <div class="toolbar-actions">
+              <button
+                type="button"
+                class="btn btn-secondary btn-generate-visual"
+                id="btn-generate-slide-visual"
+                disabled
+                title="请先打开已存任务"
+              >
+                生成全新PPT画面
+              </button>
             </div>
           </div>
 
@@ -275,25 +301,52 @@
               <div class="preview-aspect preview-aspect--image">
                 <div class="preview-inner">
                   <div class="pv-label-row">
-                    <p class="pv-label" id="pv-mode-label">预览</p>
-                    <button
-                      type="button"
-                      class="icon-help icon-help--sm"
-                      id="btn-help-preview"
-                      aria-label="本页预览区说明"
-                      title="说明"
+                    <div class="pv-label-row__main">
+                      <p class="pv-label" id="pv-mode-label">预览</p>
+                      <button
+                        type="button"
+                        class="icon-help icon-help--sm"
+                        id="btn-help-preview"
+                        aria-label="本页预览区说明"
+                        title="说明"
+                      >
+                        <svg class="icon-help__svg" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                          <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.75" />
+                          <path
+                            d="M12 16v-4M12 8h.01"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+                    <div
+                      class="pv-source-tabs hidden"
+                      id="pv-source-tabs"
+                      role="tablist"
+                      aria-label="主预览来源"
                     >
-                      <svg class="icon-help__svg" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-                        <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.75" />
-                        <path
-                          d="M12 16v-4M12 8h.01"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="2"
-                          stroke-linecap="round"
-                        />
-                      </svg>
-                    </button>
+                      <button
+                        type="button"
+                        class="pv-source-tab"
+                        id="pv-tab-original"
+                        role="tab"
+                        aria-selected="true"
+                      >
+                        原版
+                      </button>
+                      <button
+                        type="button"
+                        class="pv-source-tab"
+                        id="pv-tab-ai"
+                        role="tab"
+                        aria-selected="false"
+                      >
+                        AI 重制版
+                      </button>
+                    </div>
                   </div>
                   <div class="pv-image-wrap hidden" id="pv-image-wrap">
                     <div
@@ -865,6 +918,84 @@
       </dialog>
 
       <dialog
+        class="external-settings-dialog generate-visual-dialog"
+        id="generate-visual-dialog"
+        aria-labelledby="generate-visual-dialog-title"
+      >
+        <div class="external-settings-dialog__panel">
+          <header class="external-settings-dialog__head">
+            <h2 class="external-settings-dialog__title" id="generate-visual-dialog-title">确认生成 AI 配图</h2>
+            <form method="dialog">
+              <button type="submit" class="btn btn-text" aria-label="关闭">关闭</button>
+            </form>
+          </header>
+
+          <div class="external-settings-dialog__body" id="gv-panel-form">
+            <p class="generate-visual-dialog__warn">
+              <strong>将调用网关文生图接口并消耗额度。</strong>配置与「外部 API → 口播稿优化」相同（API Base、Key）；服务端请求
+              <code>/v1/images/generations</code>。请核对下方参数后再确认。
+            </p>
+            <div class="generate-visual-dialog__meta muted">
+              <p>
+                <strong>存储位置</strong>（本机 <code>ppt_course_data</code> 下，生成后可用 Remotion 等引用）：
+              </p>
+              <p class="generate-visual-dialog__path">
+                <code id="gv-storage-hint">tasks/…/generated_visuals/slide-NNNN/&lt;时间戳&gt;-&lt;模型&gt;.png</code>
+              </p>
+              <p>
+                <strong>当前页</strong>：<span id="gv-slide-label">—</span>
+              </p>
+            </div>
+            <div class="field-grid">
+              <label class="field">
+                <span class="field__label">模型 model</span>
+                <input type="text" id="gv-model" class="field__input" autocomplete="off" value="gpt-image-2" />
+              </label>
+              <label class="field">
+                <span class="field__label">尺寸 size</span>
+                <select id="gv-size" class="field__input">
+                  <option value="1792x1024" selected>1792×1024（横版 16:9）</option>
+                  <option value="1024x1024">1024×1024（正方）</option>
+                  <option value="1024x1792">1024×1792（竖版）</option>
+                </select>
+              </label>
+              <label class="field field--wide">
+                <span class="field__label">提示词 prompt（可编辑；留空则服务端按当前页标题与正文自动生成）</span>
+                <textarea id="gv-prompt" class="field__input" rows="10" placeholder="留空即使用默认拼装的提示词"></textarea>
+              </label>
+              <div class="field field--wide">
+                <label class="generate-visual-dialog__check">
+                  <input type="checkbox" id="gv-open-new-tab" checked />
+                  <span>生成成功后<strong>在新浏览器标签</strong>打开 PNG 预览（同源 GET，不额外计费）</span>
+                </label>
+              </div>
+              <p class="muted generate-visual-dialog__hint-preview">
+                <strong>说明：</strong>主预览区仍为 LibreOffice 导出的整页/切图轮播；AI 生成图保存在上述目录，不会自动替换当前幻灯片预览。后续可在 Remotion
+                <code>input-props</code> 中引用该路径。
+              </p>
+            </div>
+            <p id="gv-error" class="generate-visual-dialog__error hidden" role="alert"></p>
+          </div>
+
+          <div class="external-settings-dialog__body hidden" id="gv-panel-result" aria-live="polite">
+            <p class="generate-visual-dialog__success"><strong>生成完成</strong></p>
+            <p class="muted" id="gv-result-path-text"></p>
+            <div class="generate-visual-dialog__preview-wrap">
+              <img id="gv-result-img" class="generate-visual-dialog__preview-img" alt="AI 生成配图预览" />
+            </div>
+          </div>
+
+          <footer class="external-settings-dialog__footer" id="gv-footer-confirm">
+            <button type="button" class="btn btn-text" id="btn-gv-cancel">取消</button>
+            <button type="button" class="btn btn-secondary" id="btn-gv-submit">确认生成（消耗额度）</button>
+          </footer>
+          <footer class="external-settings-dialog__footer hidden" id="gv-footer-result">
+            <button type="button" class="btn btn-secondary" id="btn-gv-done">完成</button>
+          </footer>
+        </div>
+      </dialog>
+
+      <dialog
         class="external-settings-dialog transcript-rewrite-dialog"
         id="transcript-rewrite-dialog"
         aria-labelledby="transcript-rewrite-title"
@@ -1163,6 +1294,8 @@
                 用于「本页逐字稿与音频」中的<strong>口播稿优化</strong>：服务端调用 OpenAI 兼容
                 <code>/v1/chat/completions</code>；系统提示词内置 MiniMax T2A 文档允许的插入语与 <code>&lt;#秒数#&gt;</code>
                 停顿白名单。密钥仅存本机数据目录；与 MiniMax、下方「智能体」占位<strong>相互独立</strong>。
+                工作台预览工具栏<strong>「生成全新PPT画面」</strong>使用<strong>同一套 API Base 与 Key</strong>，请求
+                <code>/v1/images/generations</code>，默认模型 <code>gpt-image-2</code>（可在请求体覆盖）。
               </p>
               <div class="field-grid">
                 <label class="field">
@@ -1303,6 +1436,32 @@
       </dialog>
 
       <dialog
+        class="pv-preview-zoom-dialog ai-visual-stock-dialog"
+        id="ai-visual-stock-dialog"
+        aria-labelledby="ai-visual-stock-title"
+      >
+        <div class="pv-preview-zoom-dialog__panel">
+          <header class="pv-preview-zoom-dialog__head">
+            <h2 class="pv-preview-zoom-dialog__title" id="ai-visual-stock-title">本页 AI 配图</h2>
+            <form method="dialog">
+              <button type="submit" class="btn btn-text" aria-label="关闭">关闭</button>
+            </form>
+          </header>
+          <div class="pv-preview-zoom-dialog__body ai-visual-stock-dialog__body">
+            <p class="ai-visual-stock-dialog__empty hidden" id="ai-visual-stock-empty">
+              当前页尚未保存文生图。可使用右上角「生成全新 PPT 画面」生成后暂存于此。
+            </p>
+            <img id="ai-visual-stock-img" class="pv-preview-zoom-dialog__img hidden" alt="" />
+          </div>
+          <footer class="pv-preview-zoom-dialog__footer">
+            <button type="button" class="btn btn-secondary" id="btn-ai-visual-stock-download" disabled>
+              下载本图
+            </button>
+          </footer>
+        </div>
+      </dialog>
+
+      <dialog
         class="pv-preview-zoom-dialog"
         id="pv-preview-zoom-dialog"
         aria-labelledby="pv-preview-zoom-title"
@@ -1428,6 +1587,6 @@
       </div>
     </div>
 
-    <script src="/assets/app.js?v=2.69" defer></script>
+    <script src="/assets/app.js?v=2.72" defer></script>
   </body>
 </html>
