@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -62,6 +65,27 @@ def workspace_relative_segment_path(
 ) -> str:
     """相对任务音频根目录的路径：slide-NNNN/seg-MMM-Slide{页}_{stub}.ext（POSIX 斜杠）。"""
     return f"{slide_dir_name(slide_index)}/{segment_file_basename(slide_index, segment_index, text, ext)}"
+
+
+def segment_file_basename_unique(
+    slide_index: int, segment_index: int, text: str, ext: str, unique_suffix: str
+) -> str:
+    """同一段多次生成时使用不同文件名，避免覆盖磁盘旧文件。"""
+    safe_ext = re.sub(r"[^a-z0-9]", "", ext.lower()) or "mp3"
+    stub = safe_stub(text, 10)
+    suf = re.sub(r"[^\w\-]", "", unique_suffix, flags=re.UNICODE)[:24]
+    suf = suf or uuid.uuid4().hex[:10]
+    return f"seg-{segment_index:03d}-Slide{slide_index + 1}_{stub}_{suf}.{safe_ext}"
+
+
+def workspace_relative_segment_path_unique(
+    slide_index: int, segment_index: int, text: str, ext: str, unique_suffix: str
+) -> str:
+    """每次合成一条唯一相对路径（POSIX 斜杠）。"""
+    return (
+        f"{slide_dir_name(slide_index)}/"
+        f"{segment_file_basename_unique(slide_index, segment_index, text, ext, unique_suffix)}"
+    )
 
 
 def slide_segment_filename(slide_index: int, segment_index: int, text: str, ext: str) -> str:
@@ -197,6 +221,164 @@ def slide_duration_seconds_list(
     return out
 
 
+def ensure_segment_versions_migrated(kind: str, key: str) -> None:
+    """将仅含 generated_files 的旧 meta 迁移为 segment_versions（幂等）。"""
+    meta = load_meta(kind, key)
+    sv = meta.get("segment_versions")
+    if isinstance(sv, dict) and sv:
+        return
+    gen = meta.get("generated_files") or {}
+    if not isinstance(gen, dict) or not gen:
+        return
+    durs = meta.get("segment_duration_sec") or {}
+    if not isinstance(durs, dict):
+        durs = {}
+    versions: dict[str, list[dict[str, Any]]] = {}
+    for sk, rel in gen.items():
+        if not isinstance(rel, str) or not rel.strip():
+            continue
+        vid = "migrated_" + hashlib.sha256(rel.encode()).hexdigest()[:12]
+        ds = durs.get(sk)
+        ds_f: float | None = None
+        if isinstance(ds, (int, float)) and float(ds) > 0:
+            ds_f = round(float(ds), 4)
+        versions[sk] = [
+            {
+                "id": vid,
+                "rel": rel.strip(),
+                "duration_sec": ds_f,
+                "created_at": None,
+            }
+        ]
+    meta["segment_versions"] = versions
+    meta_path(kind, key).write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def append_segment_generation(
+    kind: str,
+    key: str,
+    slide_index: int,
+    segment_index: int,
+    rel_path: str,
+    *,
+    duration_sec: float | None = None,
+) -> str:
+    """追加一段音频生成记录；当前「生效」文件为列表中最新一条。返回 version_id。"""
+    ensure_segment_versions_migrated(kind, key)
+    meta = load_meta(kind, key)
+    sk = segment_storage_key(slide_index, segment_index)
+    vid = str(uuid.uuid4())
+    ds_f: float | None = None
+    if duration_sec is not None and float(duration_sec) > 0:
+        ds_f = round(float(duration_sec), 4)
+    entry = {
+        "id": vid,
+        "rel": rel_path.strip(),
+        "duration_sec": ds_f,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    versions = meta.get("segment_versions")
+    if not isinstance(versions, dict):
+        versions = {}
+    lst = versions.get(sk)
+    if not isinstance(lst, list):
+        lst = []
+    lst.append(entry)
+    versions[sk] = lst
+    meta["segment_versions"] = versions
+
+    gen = meta.get("generated_files") or {}
+    gen[sk] = rel_path.strip()
+    meta["generated_files"] = gen
+
+    durs = meta.get("segment_duration_sec") or {}
+    if not isinstance(durs, dict):
+        durs = {}
+    if ds_f is not None:
+        durs[sk] = ds_f
+    elif sk in durs:
+        del durs[sk]
+    meta["segment_duration_sec"] = durs
+
+    meta_path(kind, key).write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return vid
+
+
+def delete_segment_generation(
+    kind: str,
+    key: str,
+    slide_index: int,
+    segment_index: int,
+    version_id: str,
+) -> bool:
+    """删除指定版本记录及磁盘文件；更新生效文件与时长。若无匹配返回 False。"""
+    ensure_segment_versions_migrated(kind, key)
+    meta = load_meta(kind, key)
+    sk = segment_storage_key(slide_index, segment_index)
+    vid = (version_id or "").strip()
+    if not vid:
+        return False
+    versions = meta.get("segment_versions")
+    if not isinstance(versions, dict):
+        return False
+    lst = versions.get(sk)
+    if not isinstance(lst, list):
+        return False
+    idx = next((i for i, x in enumerate(lst) if isinstance(x, dict) and x.get("id") == vid), -1)
+    if idx < 0:
+        return False
+    removed = lst.pop(idx)
+    rel_rm = removed.get("rel") if isinstance(removed, dict) else None
+    root = workspace_root(kind, key)
+    if isinstance(rel_rm, str) and rel_rm.strip():
+        p = root / rel_rm.strip().replace("\\", "/")
+        try:
+            if p.is_file():
+                p.unlink()
+        except OSError:
+            logger.warning("删除音频文件失败 %s", p)
+
+    if lst:
+        versions[sk] = lst
+        active = lst[-1].get("rel") if isinstance(lst[-1], dict) else None
+        gen = meta.get("generated_files") or {}
+        if isinstance(active, str) and active.strip():
+            gen[sk] = active.strip()
+        meta["generated_files"] = gen
+        durs = meta.get("segment_duration_sec") or {}
+        if not isinstance(durs, dict):
+            durs = {}
+        last_ds = lst[-1].get("duration_sec") if isinstance(lst[-1], dict) else None
+        if isinstance(last_ds, (int, float)) and float(last_ds) > 0:
+            durs[sk] = round(float(last_ds), 4)
+        elif sk in durs:
+            del durs[sk]
+        meta["segment_duration_sec"] = durs
+    else:
+        del versions[sk]
+        gen = meta.get("generated_files") or {}
+        if sk in gen:
+            del gen[sk]
+        meta["generated_files"] = gen
+        durs = meta.get("segment_duration_sec") or {}
+        if isinstance(durs, dict) and sk in durs:
+            del durs[sk]
+            meta["segment_duration_sec"] = durs
+
+    meta["segment_versions"] = versions
+    meta_path(kind, key).write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return True
+
+
 def record_generated_segment(
     kind: str,
     key: str,
@@ -206,30 +388,50 @@ def record_generated_segment(
     *,
     duration_sec: float | None = None,
 ) -> None:
-    meta = load_meta(kind, key)
-    gen = meta.get("generated_files") or {}
-    sk = segment_storage_key(slide_index, segment_index)
-    gen[sk] = filename
-    meta["generated_files"] = gen
-
-    durs = meta.get("segment_duration_sec") or {}
-    if not isinstance(durs, dict):
-        durs = {}
-    if duration_sec is not None and duration_sec > 0:
-        durs[sk] = round(float(duration_sec), 4)
-    elif sk in durs:
-        del durs[sk]
-    meta["segment_duration_sec"] = durs
-
-    meta_path(kind, key).write_text(
-        json.dumps(meta, ensure_ascii=False, indent=2),
-        encoding="utf-8",
+    """兼容旧调用：等价于追加一条生成记录。"""
+    append_segment_generation(
+        kind,
+        key,
+        slide_index,
+        segment_index,
+        filename,
+        duration_sec=duration_sec,
     )
 
 
 def record_generated(kind: str, key: str, slide_index: int, filename: str) -> None:
     """兼容：视为第 0 段。"""
     record_generated_segment(kind, key, slide_index, 0, filename)
+
+
+def resolve_workspace_audio_version_path(
+    kind: str,
+    key: str,
+    slide_index: int,
+    segment_index: int,
+    version_id: str,
+) -> Path | None:
+    """按 segment_versions 中某条 id 解析磁盘路径。"""
+    ensure_segment_versions_migrated(kind, key)
+    meta = load_meta(kind, key)
+    sk = segment_storage_key(slide_index, segment_index)
+    vid = (version_id or "").strip()
+    if not vid:
+        return None
+    versions = meta.get("segment_versions")
+    if not isinstance(versions, dict):
+        return None
+    lst = versions.get(sk)
+    if not isinstance(lst, list):
+        return None
+    root = workspace_root(kind, key)
+    for x in lst:
+        if not isinstance(x, dict) or x.get("id") != vid:
+            continue
+        rel = x.get("rel")
+        if isinstance(rel, str) and rel.strip():
+            return _try_resolve_stored_filename(root, slide_index, rel.strip())
+    return None
 
 
 def _try_resolve_stored_filename(

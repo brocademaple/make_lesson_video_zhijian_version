@@ -6,9 +6,10 @@ from ppt_course_deal.transcript_rewrite import (
 )
 
 
-def test_skill_text_starts_with_scene_section() -> None:
+def test_skill_text_starts_with_output_section() -> None:
     t = load_transcript_rewrite_minimax_skill_text()
-    assert t.startswith("【场景与语气】")
+    assert t.startswith("【输出格式")
+    assert "【场景与语气】" in t
     assert "(laughs)" in t
     assert "<#x#>" in t
 
@@ -24,3 +25,17 @@ def test_user_prompt_includes_extra_block() -> None:
     assert "【课程追加规则】" in u
     assert "少说冷笑话" in u
     assert "【待优化原文】" in u
+
+
+def test_user_prompt_includes_course_context_and_position() -> None:
+    u = build_user_prompt_with_skill(
+        "本段待改",
+        course_transcript_context="【第 1 页】\n段 1：严肃开场",
+        context_slide_index=2,
+        context_segment_index=0,
+    )
+    assert "【全课逐字稿语境（只读，请勿改写本块）】" in u
+    assert "第 3 页 · 第 1 段" in u
+    assert "严肃开场" in u
+    assert "【待优化原文】" in u
+    assert u.endswith("本段待改")

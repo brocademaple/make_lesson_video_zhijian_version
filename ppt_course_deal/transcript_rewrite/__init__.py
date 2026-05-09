@@ -11,9 +11,11 @@
 
 from ppt_course_deal.transcript_rewrite.llm import (
     chat_rewrite,
+    normalize_minimax_rewrite_hints,
     normalize_rewrite_api_key,
     parse_chat_completions_response_body,
     resolve_chat_completions_url,
+    split_rewrite_output,
 )
 from ppt_course_deal.transcript_rewrite.prompt import (
     REWRITE_MINIMAL_SYSTEM,
@@ -29,8 +31,10 @@ __all__ = [
     "build_user_prompt_with_skill",
     "chat_rewrite",
     "load_transcript_rewrite_minimax_skill_text",
+    "normalize_minimax_rewrite_hints",
     "normalize_rewrite_api_key",
     "parse_chat_completions_response_body",
     "resolve_chat_completions_url",
     "sanitize_for_minimax_t2a",
+    "split_rewrite_output",
 ]

@@ -1,11 +1,19 @@
 import React from "react";
-import {AbsoluteFill, Audio, Img, Series, useVideoConfig} from "remotion";
-import type {CourseDeckProps, CourseDeckSlideSpec} from "./courseDeckTypes";
 import {
-  absPathToFileUrl,
-  getWorkspaceRoot,
-  resolveUnderRoot,
-} from "./paths";
+  AbsoluteFill,
+  Audio,
+  Img,
+  Series,
+  staticFile,
+  useVideoConfig,
+} from "remotion";
+import type {CourseDeckProps, CourseDeckSlideSpec} from "./courseDeckTypes";
+import {SlideCaption} from "./SlideCaption";
+
+/** `input-props` 路径相对仓库根；`public/ppt_course_data` 指向该目录时与 `staticFile` 一致。 */
+function publicAsset(relativePath: string): string {
+  return staticFile(relativePath.replace(/^\/+/, ""));
+}
 
 /** 将总帧数均分为 parts 份，余数摊到前几段，避免丢帧。 */
 function splitFrames(total: number, parts: number): number[] {
@@ -30,11 +38,9 @@ function slideShotRelatives(slide: CourseDeckSlideSpec): string[] {
 }
 
 export const CourseDeckComposition: React.FC<CourseDeckProps> = ({
-  workspaceRoot,
   slides,
 }) => {
   const {width, height} = useVideoConfig();
-  const root = workspaceRoot ?? getWorkspaceRoot();
 
   return (
     <AbsoluteFill style={{backgroundColor: "#000"}}>
@@ -57,7 +63,7 @@ export const CourseDeckComposition: React.FC<CourseDeckProps> = ({
                     >
                       <AbsoluteFill>
                         <Img
-                          src={absPathToFileUrl(resolveUnderRoot(root, rel))}
+                          src={publicAsset(rel)}
                           style={{
                             width,
                             height,
@@ -78,19 +84,19 @@ export const CourseDeckComposition: React.FC<CourseDeckProps> = ({
                           slide.durationInFrames
                         }
                       >
-                        <Audio
-                          src={absPathToFileUrl(
-                            resolveUnderRoot(root, rel),
-                          )}
-                        />
+                        <Audio src={publicAsset(rel)} />
                       </Series.Sequence>
                     ))}
                   </Series>
                 ) : slide.audioRelative ? (
-                  <Audio
-                    src={absPathToFileUrl(
-                      resolveUnderRoot(root, slide.audioRelative),
-                    )}
+                  <Audio src={publicAsset(slide.audioRelative)} />
+                ) : null}
+                {slide.caption ? (
+                  <SlideCaption
+                    slides={slides}
+                    slideIndex={i}
+                    title={slide.caption.title}
+                    subtitle={slide.caption.subtitle}
                   />
                 ) : null}
               </AbsoluteFill>

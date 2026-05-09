@@ -17,6 +17,14 @@ export type CourseDeckSlideSpec = {
   audioRelatives?: string[];
   /** 与 audioRelatives 等长：每段口播在成片中的帧数 */
   audioSegmentDurationInFrames?: number[];
+  /**
+   * 可选：底部信息条（通常来自 deal **`meta.json`** 的标题 + 摘要），用于「音画之上还有一点叙事锚点」，
+   * 而非单纯轮播 PNG。
+   */
+  caption?: {
+    title: string;
+    subtitle?: string | null;
+  };
 };
 
 export type CourseDeckProps = {

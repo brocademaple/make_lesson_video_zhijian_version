@@ -133,6 +133,11 @@ def cmd_remotion_input_props(
         "--workspace-root",
         help="REMOTION_WORKSPACE_ROOT（默认仓库根）；数据目录在仓库外时请指定",
     ),
+    bundle_audio: bool = typer.Option(
+        False,
+        "--bundle-audio/--no-bundle-audio",
+        help="把 audio_workspace 已落盘的 mp3 复制到 tasks/<task_id>/audio/，JSON 中引用任务内路径（MiniMax 外链短效；此处为本地持久副本）",
+    ),
 ) -> None:
     """根据任务预览与音频工作台生成 Remotion `input-props.json`（路径相对仓库根）。"""
     from ppt_course_deal.remotion_input_props import write_props_file
@@ -145,11 +150,36 @@ def cmd_remotion_input_props(
             max_slides=max_slides,
             no_audio_frames=no_audio_frames,
             remotion_workspace_root=workspace_root,
+            bundle_audio=bundle_audio,
         )
     except ValueError as e:
         typer.secho(str(e), fg=typer.colors.RED)
         raise typer.Exit(1) from e
     typer.secho(f"已写入 {output}", fg=typer.colors.GREEN)
+
+
+@app.command("bundle-task-audio")
+def cmd_bundle_task_audio(
+    task_id: str = typer.Argument(..., help="已存任务 task_id"),
+    max_slides: Optional[int] = typer.Option(
+        None,
+        "--max-slides",
+        help="仅复制前几页的音频（默认全部页）",
+    ),
+) -> None:
+    """将 audio_workspace 内该任务的 mp3 复制到 tasks/<task_id>/audio/（与 remotion-input-props --bundle-audio 同源）。"""
+    from ppt_course_deal.task_audio_bundle import mirror_workspace_mp3_to_task_bundle
+
+    try:
+        n, paths = mirror_workspace_mp3_to_task_bundle(task_id, max_slides=max_slides)
+    except ValueError as e:
+        typer.secho(str(e), fg=typer.colors.RED)
+        raise typer.Exit(1) from e
+    typer.secho(f"已复制 {n} 个文件到 ppt_course_data/tasks/{task_id}/audio/", fg=typer.colors.GREEN)
+    for p in paths[:12]:
+        typer.echo(f"  {p}")
+    if len(paths) > 12:
+        typer.echo(f"  … 共 {len(paths)} 个")
 
 
 def main() -> None:

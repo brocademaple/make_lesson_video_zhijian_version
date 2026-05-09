@@ -132,11 +132,19 @@
   let audioWorkspaceKey = "";
   /** @type {Record<string, string>} */
   let audioGeneratedFiles = {};
-  /** @type {Record<string, number>} 键同 segmentFileKey：「页索引-段索引」→ 秒 */
+  /** @type {Record<string, number>} 键同 segmentFileKey：「页索引-段索引」→ 秒（当前生效音频） */
   let audioSegmentDurations = {};
+  /** 每段多次生成的记录列表（键同 segmentFileKey） */
+  let audioSegmentVersions = {};
   let pendingAudioGenerateSegmentIndex = 0;
   let pendingRewriteSegmentIndex = 0;
   let pendingVersionsSegmentIndex = 0;
+  /** 口播优化返回的、可合并进本机「音频生成参数」的 MiniMax 字段 */
+  let lastTranscriptRewriteMinimaxHints = null;
+  /** 口播优化返回的 delivery_notes（与 hints 一并写入版本库） */
+  let lastTranscriptRewriteDeliveryNotes = null;
+  /** 口播版本库「采用此版本」后，下一次「确认生成本段音频」表单强制叠加的 hints（用完清空） */
+  let pendingAudioConfirmMinimaxOverlay = null;
   /** @type {string | null} */
   let currentTaskId = null;
   /** 上传解析会话为 session；从已存任务打开为 stored */
@@ -174,9 +182,9 @@
   var HELP_TASK_LIST_BODY =
     "上传并成功解析后，文件副本与解析结果会保存在项目根目录下的 ppt_course_data/tasks/（每任务一个子文件夹），并出现在主页**左侧已存任务**列表中。点击某条会在主界面打开预览（左侧变为幻灯片缩略图 + 右侧大图）。\n\n列表为空表示尚无记录；可在服务端设置环境变量 PPT_COURSE_DATA 改用其它数据根目录。";
   var HELP_AUDIO_SEGMENTS_BODY =
-    "主预览区标题栏 **喇叭**只用于本页**已生成**各段 MP3 的试听与下载；**逐字稿编辑、口播优化与生成**请用音频工作台里的「打开本页逐字稿与音频」。\n\n每一段口播对应一次 MiniMax 合成。点击某段的「生成」会先弹出确认框（合成参数与文案预览），确认后再请求服务端调用 T2A；返回的音频写入本机任务数据目录。\n\n「口播稿优化」在服务端调用 OpenAI 兼容大模型，按 MiniMax 官方文档白名单优化停顿与插入语；需先在顶栏「外部 API 配置」→「口播稿优化 API」启用并填写密钥。左右对比确认后再「采用改写稿」。「口播版本库」将多版改写稿存在浏览器本地，可按段选用。\n\n切换幻灯片后，若本弹窗保持打开，列表会随当前页刷新。\n\n「保存到服务端」会把当前内存中的全部逐字稿（含每一页的多段结构 transcript_segments）通过 PUT /api/audio/workspace 写入服务端工作区元数据，用于持久化与下次打开任务恢复；仅保存文本，不会在未点「生成」时调用 MiniMax。";
+    "主预览区标题栏喇叭只用于本页已生成各段 MP3：同一段可多次合成，喇叭弹窗内按「记录」列出历次生成，可分别试听、下载或删除（删除会移除服务端文件，并清除本站 IndexedDB 中为自动下载缓存的副本）。逐字稿编辑、口播优化与生成请用音频工作台里的「打开本页逐字稿与音频」。浏览器「下载」文件夹里另行出现的同名文件需自行整理。\n\n每一段口播对应多次可选的 MiniMax 合成。点击某段的「生成」会先弹出确认框（合成参数与文案预览），确认后再请求服务端调用 T2A；成功后通常会触发一条 mp3 的本地下载，服务端写入任务目录且不覆盖同段旧文件。\n\n「口播稿优化」在服务端调用 OpenAI 兼容大模型，按 MiniMax 官方文档白名单优化停顿与插入语；需先在顶栏「外部 API 配置」→「口播稿优化 API」启用并填写密钥。左右对比确认后再「采用改写稿」。「口播版本库」将多版改写稿存在浏览器本地，可按段选用。\n\n切换幻灯片后，若本弹窗保持打开，列表会随当前页刷新。\n\n「保存到服务端」会把当前内存中的全部逐字稿（含每一页的多段结构 transcript_segments）通过 PUT /api/audio/workspace 写入服务端工作区元数据，用于持久化与下次打开任务恢复；仅保存文本，不会在未点「生成」时调用 MiniMax。";
   var HELP_AUDIO_GENERATE_CONFIRM_BODY =
-    "以下为当前合成参数（服务端「外部 API 配置」中的 MiniMax 默认值，与本机「进入音频生成设置」里保存的合成偏好合并后的预览）以及待合成的该段口播稿。\n\n确认无误后点击「开始生成」才会向服务端发起 POST /api/audio/workspace/generate，仅针对当前选中的这一段。";
+    "弹窗内「合成参数」为可编辑表单：打开时已填入「外部 API 配置」中的 MiniMax 默认值 + 本机「进入音频生成设置」保存的偏好之合并结果；你可在本次生成前临时改模型、音色、语速、情绪、音量等。修改不会自动写回 localStorage；若希望长期默认，请仍到「进入音频生成设置」点「保存合成参数」。\n\n下方为待合成该段口播稿预览。点击「开始生成」才向服务端发起 POST /api/audio/workspace/generate，请求体中的 minimax_overrides 为当前表单值，仅针对当前选中的这一段。";
   var HELP_AUDIO_GEN_SETTINGS_BODY =
     "本弹窗中的选项对应 MiniMax 语音合成 HTTP 接口 /v1/t2a_v2 的请求体字段（不含 API Key 与 API Base）。此处点击「保存合成参数」后，偏好写入本机浏览器 localStorage；在「本页逐字稿与音频」里对某段点击「生成」时，会以 minimax_overrides 与顶栏「外部 API 配置」中的服务端默认值合并，再向本机服务发起单次合成。\n\n官方文档（Speech T2A HTTP）：https://platform.minimax.io/docs/api-reference/speech-t2a-http\n\n为何这里没有 API Key：密钥属于账户凭证，必须由服务端读取并保存在数据目录下的配置文件（例如 ppt_course_data/config/external_apis.json），供 POST /api/audio/workspace/generate 统一使用；若把密钥放进仅存在于浏览器的「音频生成参数」，既存在泄露风险，服务端也无法在合成时使用。填写位置：点击顶栏「外部 API 配置」，在同一界面设置 MiniMax API Key、API Base、可选 Group ID，并可做连通测试；本弹窗只负责模型、音色、采样等与单次合成偏好相关的字段。";
 
@@ -1359,6 +1367,17 @@
     syncAudioTranscriptsFromSegments();
   }
 
+  /** 将第 segIdx 段写为 txt，并保证该页段数组足够长（与 pending* 解耦，供口播版本库等使用） */
+  function setAudioTranscriptSegmentText(si, segIdx, txt) {
+    ensureAudioSegmentsShape();
+    if (!audioTranscriptSegments[si]) audioTranscriptSegments[si] = [""];
+    while (audioTranscriptSegments[si].length <= segIdx) {
+      audioTranscriptSegments[si].push("");
+    }
+    audioTranscriptSegments[si][segIdx] = txt;
+    syncAudioTranscriptsFromSegments();
+  }
+
   function flushAudioTranscript() {
     if (audioSegmentsDialog && audioSegmentsDialog.open) {
       flushAudioSegmentsFromDom();
@@ -1367,10 +1386,45 @@
     syncAudioTranscriptsFromSegments();
   }
 
+  /** 当前页是否存在至少一段已生成音频（用于主工作台试听条） */
+  function getFirstGeneratedAudioUrlForCurrentSlide() {
+    if (!audioWorkspaceKey || !slides.length) return null;
+    var si = selectedIndex;
+    ensureAudioSegmentsShape();
+    var rows = audioTranscriptSegments[si] || [""];
+    for (var j = 0; j < rows.length; j++) {
+      var gk = segmentFileKey(si, j);
+      var vs = audioSegmentVersions[gk];
+      if (vs && vs.length) {
+        return buildSegmentFileUrl(j);
+      }
+      if (audioGeneratedFiles[gk]) {
+        return buildSegmentFileUrl(j);
+      }
+    }
+    return null;
+  }
+
+  function updateAudioWorkbenchPlayer() {
+    if (!audioPlayer) return;
+    var u = getFirstGeneratedAudioUrlForCurrentSlide();
+    if (u) {
+      audioPlayer.classList.remove("hidden");
+      audioPlayer.src = u + (u.indexOf("?") >= 0 ? "&" : "?") + "t=" + Date.now();
+    } else {
+      audioPlayer.classList.add("hidden");
+      audioPlayer.removeAttribute("src");
+      try {
+        audioPlayer.load();
+      } catch (_) {}
+    }
+  }
+
   function refreshAudioWorkbench() {
     if (!slides.length) return;
     syncAudioTranscriptsFromSegments();
     if (audioWorkbenchStatus) audioWorkbenchStatus.textContent = "";
+    updateAudioWorkbenchPlayer();
     if (audioSegmentsDialog && audioSegmentsDialog.open) {
       renderAudioSegmentRows();
     }
@@ -1378,6 +1432,101 @@
 
   function segmentFileKey(slideIdx, segIdx) {
     return String(slideIdx) + "-" + String(segIdx);
+  }
+
+  /** MP3 另存为默认文件名：当前段逐字稿前 10 个字（Unicode），再去除路径非法字符 */
+  function mp3DownloadFilenameFromTranscript(text) {
+    var raw = typeof text === "string" ? text : "";
+    var chars = Array.from(raw.trim());
+    var prefix = chars.slice(0, 10).join("");
+    var safe = prefix
+      .replace(/[\\/:*?"<>|]/g, "")
+      .replace(/[\u0000-\u001f]/g, "")
+      .trim();
+    if (!safe) {
+      safe = "audio";
+    }
+    if (!/\.mp3$/i.test(safe)) {
+      safe = safe + ".mp3";
+    }
+    return safe;
+  }
+
+  var audioBlobDbPromise = null;
+  function openAudioBlobDb() {
+    if (!audioBlobDbPromise) {
+      audioBlobDbPromise = new Promise(function (resolve, reject) {
+        var req = indexedDB.open("ppt_course_audio_blobs", 1);
+        req.onerror = function () {
+          reject(req.error);
+        };
+        req.onsuccess = function () {
+          resolve(req.result);
+        };
+        req.onupgradeneeded = function () {
+          var db = req.result;
+          if (!db.objectStoreNames.contains("blobs")) {
+            db.createObjectStore("blobs", { keyPath: "key" });
+          }
+        };
+      });
+    }
+    return audioBlobDbPromise;
+  }
+
+  function audioBlobCacheKey(slideIdx, segIdx, versionId) {
+    var scope = currentTaskId || sessionId;
+    if (!scope || !versionId) return null;
+    return scope + "|" + segmentFileKey(slideIdx, segIdx) + "|" + String(versionId);
+  }
+
+  async function putAudioBlobCache(slideIdx, segIdx, versionId, blob, filename) {
+    var k = audioBlobCacheKey(slideIdx, segIdx, versionId);
+    if (!k || !blob) return;
+    try {
+      var db = await openAudioBlobDb();
+      var tx = db.transaction("blobs", "readwrite");
+      tx.objectStore("blobs").put({
+        key: k,
+        blob: blob,
+        filename: filename || "audio.mp3",
+      });
+    } catch (_) {}
+  }
+
+  async function deleteAudioBlobCache(slideIdx, segIdx, versionId) {
+    var k = audioBlobCacheKey(slideIdx, segIdx, versionId);
+    if (!k) return;
+    try {
+      var db = await openAudioBlobDb();
+      var tx = db.transaction("blobs", "readwrite");
+      tx.objectStore("blobs").delete(k);
+    } catch (_) {}
+  }
+
+  async function autoDownloadWorkspaceAudio(url, filename, slideIdx, segIdx, versionId) {
+    if (!url || !versionId) return;
+    try {
+      var res = await fetch(url);
+      if (!res.ok) return;
+      var blob = await res.blob();
+      var baseName =
+        (filename && String(filename).split("/").pop()) ||
+        (filename && String(filename).split("\\").pop()) ||
+        "audio.mp3";
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = baseName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function () {
+        try {
+          URL.revokeObjectURL(a.href);
+        } catch (_) {}
+      }, 4000);
+      await putAudioBlobCache(slideIdx, segIdx, versionId, blob, baseName);
+    } catch (_) {}
   }
 
   /** 当前页各段已有时长之和（秒）；任一段无记录则为 null */
@@ -1395,13 +1544,16 @@
     return any ? t : null;
   }
 
-  function buildSegmentFileUrl(segIdx) {
+  function buildSegmentFileUrl(segIdx, versionId) {
     if (!audioWorkspaceKey || !slides.length) return "";
     var params = new URLSearchParams();
     params.set("kind", audioWorkspaceKind);
     params.set("key", audioWorkspaceKey);
     params.set("slide_index", String(selectedIndex));
     params.set("segment_index", String(segIdx));
+    if (versionId != null && String(versionId).trim() !== "") {
+      params.set("version_id", String(versionId).trim());
+    }
     return "/api/audio/workspace/file?" + params.toString();
   }
 
@@ -1430,14 +1582,73 @@
     localStorage.setItem(k, JSON.stringify(versions.slice(-25)));
   }
 
-  function pushTranscriptVersion(segIdx, text) {
+  function removeTranscriptVersionById(segIdx, versionId) {
+    var vid = String(versionId || "").trim();
+    if (!vid) return;
     var v = loadTranscriptVersions(segIdx);
-    v.push({
+    var next = v.filter(function (x) {
+      return String(x.id || "") !== vid;
+    });
+    if (next.length === v.length) return;
+    saveTranscriptVersions(segIdx, next);
+    renderTranscriptVersionsList(segIdx);
+  }
+
+  function pushTranscriptVersion(segIdx, text, meta) {
+    var v = loadTranscriptVersions(segIdx);
+    var entry = {
       id: "v_" + Date.now() + "_" + Math.random().toString(36).slice(2, 9),
       text: text,
       createdAt: new Date().toISOString(),
-    });
+    };
+    if (meta && typeof meta === "object") {
+      var mh = meta.minimax_hints;
+      if (mh && typeof mh === "object" && Object.keys(mh).length > 0) {
+        entry.minimax_hints = mh;
+      }
+      var dn = meta.delivery_notes;
+      if (dn != null && String(dn).trim() !== "") {
+        entry.delivery_notes = String(dn).trim();
+      }
+    }
+    v.push(entry);
     saveTranscriptVersions(segIdx, v);
+  }
+
+  function formatMinimaxHintsReadable(hints) {
+    if (!hints || typeof hints !== "object") return "";
+    var labels = {
+      model: "合成模型",
+      voice_id: "音色 voice_id",
+      language_boost: "语言增强",
+      speed: "语速",
+      vol: "音量",
+      pitch: "音高",
+      emotion: "情绪",
+    };
+    var lines = [];
+    Object.keys(labels).forEach(function (k) {
+      if (hints[k] === undefined || hints[k] === null || hints[k] === "") return;
+      lines.push(labels[k] + "：" + String(hints[k]));
+    });
+    return lines.join("\n");
+  }
+
+  /** 清空「MiniMax 合成参数建议」展示区与本轮缓存（每次开始改写前 / 请求失败时也应调用，避免沿用上一轮） */
+  function clearTranscriptRewriteMinimaxSuggestionUi() {
+    lastTranscriptRewriteMinimaxHints = null;
+    lastTranscriptRewriteDeliveryNotes = null;
+    var mmSec = document.getElementById("tr-rewrite-minimax-section");
+    var mmPre = document.getElementById("tr-rewrite-minimax-hints");
+    var mmNotes = document.getElementById("tr-rewrite-delivery-notes");
+    var mmBtn = document.getElementById("btn-tr-rewrite-apply-minimax");
+    if (mmSec) mmSec.classList.add("hidden");
+    if (mmPre) mmPre.textContent = "";
+    if (mmNotes) {
+      mmNotes.textContent = "";
+      mmNotes.classList.add("hidden");
+    }
+    if (mmBtn) mmBtn.disabled = true;
   }
 
   function resetTranscriptRewriteDialogUi() {
@@ -1455,6 +1666,7 @@
     }
     var res = document.getElementById("tr-rewrite-result");
     if (res) res.value = "";
+    clearTranscriptRewriteMinimaxSuggestionUi();
   }
 
   function openTranscriptRewriteDialog(segIdx) {
@@ -1472,6 +1684,87 @@
     var oel = document.getElementById("tr-rewrite-original");
     if (oel) oel.value = orig;
     transcriptRewriteDialog.showModal();
+  }
+
+  /** 将版本库/API 返回的 hints 规范为可写入的最小对象（支持历史上误存的 JSON 字符串） */
+  function coerceMinimaxHintsObject(hints) {
+    if (hints == null) return null;
+    var o = hints;
+    if (typeof hints === "string") {
+      try {
+        o = JSON.parse(hints);
+      } catch (_) {
+        return null;
+      }
+    }
+    if (!o || typeof o !== "object") return null;
+    var keys = ["model", "voice_id", "language_boost", "speed", "vol", "pitch", "emotion"];
+    var out = {};
+    for (var i = 0; i < keys.length; i++) {
+      var k = keys[i];
+      if (o[k] === undefined || o[k] === null) continue;
+      if (k === "emotion") {
+        var em = String(o[k]).trim().toLowerCase();
+        if (!em) continue;
+        out[k] = em;
+        continue;
+      }
+      out[k] = o[k];
+    }
+    return Object.keys(out).length ? out : null;
+  }
+
+  /** 将口播优化 / 版本库卡片上的 minimax_hints 合并进本机「音频生成参数」（与确认生成弹窗同源） */
+  function mergeMinimaxHintsIntoStoredOverrides(hints) {
+    var coerced = coerceMinimaxHintsObject(hints);
+    if (!coerced) return false;
+    var cur = readStoredAudioGenOverrides();
+    var merged = Object.assign({}, cur);
+    var keys = ["model", "voice_id", "language_boost", "speed", "vol", "pitch", "emotion"];
+    for (var i = 0; i < keys.length; i++) {
+      var k = keys[i];
+      if (coerced[k] === undefined || coerced[k] === null) continue;
+      if (k === "emotion" && String(coerced[k]).trim() === "") continue;
+      merged[k] = coerced[k];
+    }
+    writeStoredAudioGenOverrides(merged);
+    return true;
+  }
+
+  function applyTranscriptRewriteMinimaxHints() {
+    var h = lastTranscriptRewriteMinimaxHints;
+    if (!h || typeof h !== "object" || !Object.keys(h).length) return;
+    pendingAudioConfirmMinimaxOverlay = coerceMinimaxHintsObject(h);
+    mergeMinimaxHintsIntoStoredOverrides(h);
+    if (audioWorkbenchStatus) {
+      audioWorkbenchStatus.textContent = "已合并口播优化建议到本机「音频生成参数」";
+    }
+  }
+
+  /** 口播优化请求附带的全课语境最大字符数（须小于服务端 Field max_length） */
+  var TRANSCRIPT_REWRITE_CONTEXT_MAX_CHARS = 42000;
+
+  /** 拼当前任务各页各段逐字稿，供模型统筹语气；与本段「待优化原文」区分 */
+  function buildCourseTranscriptContextForRewrite() {
+    if (!slides.length) return "";
+    ensureAudioSegmentsShape();
+    var parts = [];
+    for (var si = 0; si < slides.length; si++) {
+      var rows = audioTranscriptSegments[si] || [""];
+      var segs = [];
+      for (var j = 0; j < rows.length; j++) {
+        var t = typeof rows[j] === "string" ? rows[j].trim() : "";
+        segs.push("段 " + (j + 1) + "：" + (t || "（空）"));
+      }
+      parts.push("【第 " + (si + 1) + " 页】\n" + segs.join("\n\n"));
+    }
+    var s = parts.join("\n\n---\n\n");
+    if (s.length > TRANSCRIPT_REWRITE_CONTEXT_MAX_CHARS) {
+      s =
+        s.slice(0, TRANSCRIPT_REWRITE_CONTEXT_MAX_CHARS - 120) +
+        "\n\n……（全课语境过长已截断；请以已给出的页面把握整体基调）";
+    }
+    return s;
   }
 
   async function runTranscriptRewriteRequest() {
@@ -1500,6 +1793,7 @@
       warn.textContent = "";
       warn.classList.add("hidden");
     }
+    clearTranscriptRewriteMinimaxSuggestionUi();
     if (resTa) resTa.value = "";
     try {
       var res = await fetch("/api/transcript/rewrite", {
@@ -1508,12 +1802,16 @@
         body: JSON.stringify({
           text: text,
           transcript_rewrite: collectTranscriptRewritePayload(),
+          course_transcript_context: buildCourseTranscriptContextForRewrite(),
+          context_slide_index: selectedIndex,
+          context_segment_index: pendingRewriteSegmentIndex,
         }),
       });
       var j = await res.json().catch(function () {
         return {};
       });
       if (!res.ok) {
+        clearTranscriptRewriteMinimaxSuggestionUi();
         var detail = j.detail ? (typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail)) : "改写失败";
         alert(detail);
         return;
@@ -1523,6 +1821,45 @@
       if (warn && j.sanitize_warnings && j.sanitize_warnings.length) {
         warn.textContent = j.sanitize_warnings.join("\n");
         warn.classList.remove("hidden");
+      }
+      var hints = j.minimax_hints;
+      lastTranscriptRewriteMinimaxHints =
+        hints && typeof hints === "object" ? hints : null;
+      lastTranscriptRewriteDeliveryNotes =
+        j.delivery_notes != null && String(j.delivery_notes).trim() !== ""
+          ? String(j.delivery_notes).trim()
+          : null;
+      var mmSec = document.getElementById("tr-rewrite-minimax-section");
+      var mmPre = document.getElementById("tr-rewrite-minimax-hints");
+      var mmNotes = document.getElementById("tr-rewrite-delivery-notes");
+      var mmBtn = document.getElementById("btn-tr-rewrite-apply-minimax");
+      var hasHintFields =
+        lastTranscriptRewriteMinimaxHints && Object.keys(lastTranscriptRewriteMinimaxHints).length > 0;
+      var dn = j.delivery_notes != null ? String(j.delivery_notes).trim() : "";
+      if (mmSec && mmPre && mmNotes && mmBtn) {
+        if (hasHintFields || dn) {
+          mmSec.classList.remove("hidden");
+          var readableHints =
+            hasHintFields && formatMinimaxHintsReadable(lastTranscriptRewriteMinimaxHints);
+          mmPre.textContent = hasHintFields
+            ? readableHints ||
+              JSON.stringify(lastTranscriptRewriteMinimaxHints, null, 2)
+            : "（无可自动写入的参数字段；若下方有说明，请手动在「音频生成参数」中调整。）";
+          if (dn) {
+            mmNotes.textContent = dn;
+            mmNotes.classList.remove("hidden");
+          } else {
+            mmNotes.textContent = "";
+            mmNotes.classList.add("hidden");
+          }
+          mmBtn.disabled = !hasHintFields;
+        } else {
+          mmSec.classList.add("hidden");
+          mmPre.textContent = "";
+          mmNotes.textContent = "";
+          mmNotes.classList.add("hidden");
+          mmBtn.disabled = true;
+        }
       }
     } catch (_) {
       alert("改写请求失败（网络）");
@@ -1539,15 +1876,17 @@
     var chk = document.getElementById("tr-rewrite-save-version");
     var next = resTa ? String(resTa.value || "").trim() : "";
     if (!next) return;
-    flushAudioSegmentsFromDom();
-    ensureAudioSegmentsShape();
-    var si = selectedIndex;
     var segIdx = pendingRewriteSegmentIndex;
-    if (!audioTranscriptSegments[si]) audioTranscriptSegments[si] = [""];
-    audioTranscriptSegments[si][segIdx] = next;
-    syncAudioTranscriptsFromSegments();
-    if (chk && chk.checked) pushTranscriptVersion(segIdx, next);
     if (transcriptRewriteDialog) transcriptRewriteDialog.close();
+    flushAudioSegmentsFromDom();
+    var si = selectedIndex;
+    setAudioTranscriptSegmentText(si, segIdx, next);
+    if (chk && chk.checked) {
+      pushTranscriptVersion(segIdx, next, {
+        minimax_hints: lastTranscriptRewriteMinimaxHints || undefined,
+        delivery_notes: lastTranscriptRewriteDeliveryNotes || undefined,
+      });
+    }
     renderAudioSegmentRows();
   }
 
@@ -1578,6 +1917,14 @@
     if (!list) return;
     list.innerHTML = "";
     var rows = loadTranscriptVersions(segIdx);
+    var mig = false;
+    rows.forEach(function (x) {
+      if (!x.id) {
+        x.id = "v_mig_" + Date.now() + "_" + Math.random().toString(36).slice(2, 10);
+        mig = true;
+      }
+    });
+    if (mig) saveTranscriptVersions(segIdx, rows);
     if (!rows.length) {
       if (empty) empty.classList.remove("hidden");
       return;
@@ -1589,6 +1936,8 @@
       .forEach(function (row) {
         var card = document.createElement("div");
         card.className = "tr-version-card";
+        var headRow = document.createElement("div");
+        headRow.className = "tr-version-card__head";
         var meta = document.createElement("div");
         meta.className = "tr-version-card__meta";
         try {
@@ -1596,30 +1945,79 @@
         } catch (_) {
           meta.textContent = row.createdAt || "";
         }
+        var btnRmVer = document.createElement("button");
+        btnRmVer.type = "button";
+        btnRmVer.className = "btn btn-text tr-version-card__delete";
+        btnRmVer.textContent = "删除";
+        btnRmVer.setAttribute("aria-label", "从口播版本库删除此条");
+        (function (vid) {
+          btnRmVer.addEventListener("click", function () {
+            if (!confirm("确定删除本条口播版本记录？（仅清除本机浏览器中的保存，不影响已生成的音频文件。）")) return;
+            removeTranscriptVersionById(segIdx, vid);
+          });
+        })(row.id);
+        headRow.appendChild(meta);
+        headRow.appendChild(btnRmVer);
         var sn = document.createElement("div");
         sn.className = "tr-version-card__snippet";
         sn.textContent = snippetPreview(row.text, 220);
+        var hasHints =
+          row.minimax_hints &&
+          typeof row.minimax_hints === "object" &&
+          Object.keys(row.minimax_hints).length > 0;
+        var hasNotes = row.delivery_notes && String(row.delivery_notes).trim() !== "";
+        if (hasHints || hasNotes) {
+          var hintWrap = document.createElement("div");
+          hintWrap.className = "tr-version-card__hints";
+          var hintTitle = document.createElement("div");
+          hintTitle.className = "tr-version-card__hints-title";
+          hintTitle.textContent = "AI 建议的合成参数（仅供参考，生成音频时仍可修改）";
+          hintWrap.appendChild(hintTitle);
+          if (hasHints) {
+            var pre = document.createElement("pre");
+            pre.className = "tr-version-card__hints-pre";
+            var readable = formatMinimaxHintsReadable(row.minimax_hints);
+            pre.textContent =
+              readable ||
+              JSON.stringify(row.minimax_hints, null, 2);
+            hintWrap.appendChild(pre);
+          }
+          if (hasNotes) {
+            var note = document.createElement("p");
+            note.className = "tr-version-card__hints-note muted";
+            note.textContent = String(row.delivery_notes).trim();
+            hintWrap.appendChild(note);
+          }
+        }
         var act = document.createElement("div");
         act.className = "tr-version-card__actions";
         var btn = document.createElement("button");
         btn.type = "button";
         btn.className = "btn btn-secondary";
         btn.textContent = "采用此版本";
-        (function (txt) {
+        (function (txt, segIdxForRow, hints) {
           btn.addEventListener("click", function () {
-            flushAudioSegmentsFromDom();
-            ensureAudioSegmentsShape();
-            var si = selectedIndex;
-            if (!audioTranscriptSegments[si]) audioTranscriptSegments[si] = [""];
-            audioTranscriptSegments[si][pendingVersionsSegmentIndex] = txt;
-            syncAudioTranscriptsFromSegments();
             if (transcriptRewriteVersionsDialog) transcriptRewriteVersionsDialog.close();
+            flushAudioSegmentsFromDom();
+            var si = selectedIndex;
+            setAudioTranscriptSegmentText(si, segIdxForRow, txt);
+            var coercedHints = coerceMinimaxHintsObject(hints);
+            pendingAudioConfirmMinimaxOverlay = coercedHints;
+            if (mergeMinimaxHintsIntoStoredOverrides(hints)) {
+              if (audioWorkbenchStatus) {
+                audioWorkbenchStatus.textContent =
+                  "已采用该版本逐字稿，并已合并其中的合成参数建议（语速/情绪等）到本机「音频生成参数」。生成前可在确认弹窗中再改。";
+              }
+            }
             renderAudioSegmentRows();
           });
-        })(row.text);
+        })(row.text, segIdx, row.minimax_hints);
         act.appendChild(btn);
-        card.appendChild(meta);
+        card.appendChild(headRow);
         card.appendChild(sn);
+        if (hasHints || hasNotes) {
+          card.appendChild(hintWrap);
+        }
         card.appendChild(act);
         list.appendChild(card);
       });
@@ -1647,6 +2045,38 @@
     if (helpBtn) helpBtn.classList.toggle("hidden", audioSegmentsDialogListenOnly);
   }
 
+  async function deleteSegmentAudioVersion(segIdx, versionId) {
+    if (!versionId || (!currentTaskId && !sessionId)) return;
+    if (!confirm("确定删除该条生成记录？将删除服务器上的音频文件，并清除本页面对应的本地缓存。")) return;
+    var body = {
+      slide_index: selectedIndex,
+      segment_index: segIdx,
+      version_id: String(versionId),
+    };
+    if (currentTaskId) body.task_id = currentTaskId;
+    else body.session_id = sessionId;
+    try {
+      var res = await fetch("/api/audio/workspace/segment-version", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      var j = await res.json().catch(function () {
+        return {};
+      });
+      if (!res.ok) {
+        var d = j.detail != null ? j.detail : "删除失败";
+        alert(typeof d === "string" ? d : JSON.stringify(d));
+        return;
+      }
+      await deleteAudioBlobCache(selectedIndex, segIdx, versionId);
+      await loadAudioWorkspaceMeta();
+      renderAudioSegmentRows();
+    } catch (_) {
+      alert("删除失败（网络）");
+    }
+  }
+
   function renderAudioSegmentRows() {
     var list = document.getElementById("audio-segments-list");
     var slideLabel = document.getElementById("audio-segments-slide-label");
@@ -1664,7 +2094,9 @@
       var indices = [];
       rows.forEach(function (_, segIdx) {
         var gkk = segmentFileKey(si, segIdx);
-        if (audioGeneratedFiles[gkk]) indices.push(segIdx);
+        var vs = audioSegmentVersions[gkk];
+        if (vs && vs.length) indices.push(segIdx);
+        else if (audioGeneratedFiles[gkk]) indices.push(segIdx);
       });
       if (!indices.length) {
         var empty = document.createElement("p");
@@ -1676,6 +2108,21 @@
       }
       indices.forEach(function (segIdx) {
         var gk = segmentFileKey(si, segIdx);
+        var vers = audioSegmentVersions[gk];
+        if (!vers || !vers.length) {
+          if (audioGeneratedFiles[gk]) {
+            vers = [
+              {
+                id: "legacy",
+                rel: audioGeneratedFiles[gk],
+                duration_sec: audioSegmentDurations[gk],
+                created_at: null,
+              },
+            ];
+          } else {
+            vers = [];
+          }
+        }
         var row = document.createElement("div");
         row.className = "audio-segment-row audio-segment-row--listen-only";
         var head = document.createElement("div");
@@ -1688,25 +2135,73 @@
         if (typeof segDur === "number" && segDur > 0) {
           var durEl = document.createElement("span");
           durEl.className = "audio-segment-row__dur muted";
-          durEl.textContent = " · " + segDur.toFixed(2) + "s";
+          durEl.textContent = " · 当前成片用时长（本段最新一条）约 " + segDur.toFixed(2) + "s";
           head.appendChild(durEl);
         }
         row.appendChild(head);
-        var actions = document.createElement("div");
-        actions.className = "audio-segment-row__actions";
-        var au = document.createElement("audio");
-        au.className = "audio-segment-row__player";
-        au.controls = true;
-        au.preload = "none";
-        au.src = buildSegmentFileUrl(segIdx) + "&t=" + Date.now();
-        actions.appendChild(au);
-        var dl = document.createElement("a");
-        dl.className = "btn btn-text";
-        dl.href = buildSegmentFileUrl(segIdx);
-        dl.textContent = "下载";
-        dl.setAttribute("download", "");
-        actions.appendChild(dl);
-        row.appendChild(actions);
+
+        var segTextRaw = typeof rows[segIdx] === "string" ? rows[segIdx] : "";
+        var listenDownloadName = mp3DownloadFilenameFromTranscript(segTextRaw);
+
+        vers.forEach(function (ver, vi) {
+          var vid = ver && ver.id != null ? String(ver.id) : "";
+          var verWrap = document.createElement("div");
+          verWrap.className = "audio-segment-version";
+          var metaLn = document.createElement("div");
+          metaLn.className = "audio-segment-version__meta muted";
+          var parts = ["记录 " + (vi + 1)];
+          if (ver && ver.created_at) {
+            try {
+              var dt = new Date(ver.created_at);
+              if (!isNaN(dt.getTime())) parts.push(dt.toLocaleString());
+            } catch (_) {}
+          }
+          if (typeof ver.duration_sec === "number" && ver.duration_sec > 0) {
+            parts.push(ver.duration_sec.toFixed(2) + "s");
+          }
+          metaLn.textContent = parts.join(" · ");
+          verWrap.appendChild(metaLn);
+
+          var actions = document.createElement("div");
+          actions.className = "audio-segment-row__actions audio-segment-version__actions";
+          var fileUrl =
+            vid === "legacy"
+              ? buildSegmentFileUrl(segIdx)
+              : buildSegmentFileUrl(segIdx, vid);
+          var au = document.createElement("audio");
+          au.className = "audio-segment-row__player";
+          au.controls = true;
+          au.preload = "none";
+          au.src = fileUrl + (fileUrl.indexOf("?") >= 0 ? "&" : "?") + "t=" + Date.now();
+          actions.appendChild(au);
+          var dl = document.createElement("a");
+          dl.className = "btn btn-text";
+          dl.href = fileUrl;
+          dl.textContent = "下载";
+          dl.setAttribute("download", listenDownloadName);
+          actions.appendChild(dl);
+          if (vid && vid !== "legacy") {
+            var btnDel = document.createElement("button");
+            btnDel.type = "button";
+            btnDel.className = "btn btn-text";
+            btnDel.textContent = "删除";
+            (function (sidx, idv) {
+              btnDel.addEventListener("click", function () {
+                deleteSegmentAudioVersion(sidx, idv);
+              });
+            })(segIdx, vid);
+            actions.appendChild(btnDel);
+          }
+          verWrap.appendChild(actions);
+          row.appendChild(verWrap);
+        });
+
+        var tx = document.createElement("div");
+        tx.className = "audio-segment-row__listen-transcript";
+        tx.setAttribute("role", "region");
+        tx.setAttribute("aria-label", "本段口播逐字稿");
+        tx.textContent = segTextRaw.trim() || "（暂无该段逐字稿）";
+        row.appendChild(tx);
         list.appendChild(row);
       });
       return;
@@ -1803,7 +2298,7 @@
         dl.className = "btn btn-text";
         dl.href = buildSegmentFileUrl(segIdx);
         dl.textContent = "下载";
-        dl.setAttribute("download", "");
+        dl.setAttribute("download", mp3DownloadFilenameFromTranscript(text));
         actions.appendChild(dl);
       }
       row.appendChild(actions);
@@ -1860,6 +2355,13 @@
       if (j.kind) audioWorkspaceKind = j.kind;
       if (j.key) audioWorkspaceKey = j.key;
       audioGeneratedFiles = j.generated_files && typeof j.generated_files === "object" ? j.generated_files : {};
+      audioSegmentVersions = {};
+      if (j.segment_versions && typeof j.segment_versions === "object") {
+        Object.keys(j.segment_versions).forEach(function (k) {
+          var arr = j.segment_versions[k];
+          audioSegmentVersions[k] = Array.isArray(arr) ? arr.slice() : [];
+        });
+      }
       audioSegmentDurations = {};
       if (j.segment_duration_sec && typeof j.segment_duration_sec === "object") {
         Object.keys(j.segment_duration_sec).forEach(function (k) {
@@ -1919,11 +2421,12 @@
     selectEl.value = v;
   }
 
-  function fillAudioGenFormFromMerged(mm) {
+  /** @param {"audio-gen" | "audio-confirm"} prefix */
+  function fillAudioGenFormByPrefix(prefix, mm) {
     var m = mm || {};
-    var grp = document.getElementById("audio-gen-group");
+    var grp = document.getElementById(prefix + "-group");
     if (grp) grp.value = m.group_id || "";
-    var model = document.getElementById("audio-gen-model");
+    var model = document.getElementById(prefix + "-model");
     if (model) {
       var selModel =
         typeof m.model === "string" && m.model.trim() !== ""
@@ -1932,48 +2435,97 @@
       ensureSelectHasOption(model, selModel);
       model.value = selModel;
     }
-    var voice = document.getElementById("audio-gen-voice");
+    var voice = document.getElementById(prefix + "-voice");
     if (voice) voice.value = m.voice_id || "Chinese (Mandarin)_Lyrical_Voice";
-    var lang = document.getElementById("audio-gen-lang");
+    var lang = document.getElementById(prefix + "-lang");
     if (lang) lang.value = m.language_boost || "Chinese";
-    var af = document.getElementById("audio-gen-audio-fmt");
+    var af = document.getElementById(prefix + "-audio-fmt");
     if (af) af.value = m.audio_format || "mp3";
-    var of = document.getElementById("audio-gen-out-fmt");
+    var of = document.getElementById(prefix + "-out-fmt");
     if (of) of.value = m.output_format || "url";
-    var sr = document.getElementById("audio-gen-sr");
+    var sr = document.getElementById(prefix + "-sr");
     if (sr) sr.value = String(m.sample_rate != null ? m.sample_rate : 32000);
-    var br = document.getElementById("audio-gen-bitrate");
+    var br = document.getElementById(prefix + "-bitrate");
     if (br) br.value = String(m.bitrate != null ? m.bitrate : 128000);
-    var sp = document.getElementById("audio-gen-speed");
+    var sp = document.getElementById(prefix + "-speed");
     if (sp) sp.value = String(m.speed != null ? m.speed : 1);
-    var vo = document.getElementById("audio-gen-vol");
+    var vo = document.getElementById(prefix + "-vol");
     if (vo) vo.value = String(m.vol != null ? m.vol : 1);
-    var pi = document.getElementById("audio-gen-pitch");
+    var pi = document.getElementById(prefix + "-pitch");
     if (pi) pi.value = String(m.pitch != null ? m.pitch : 0);
-    var em = document.getElementById("audio-gen-emotion");
-    if (em) em.value = m.emotion != null && m.emotion !== undefined ? m.emotion : "";
-    var st = document.getElementById("audio-gen-stream");
+    var em = document.getElementById(prefix + "-emotion");
+    if (em) {
+      var rawEm = m.emotion;
+      if (rawEm != null && rawEm !== undefined && String(rawEm).trim() !== "") {
+        var emNorm = String(rawEm).trim().toLowerCase();
+        ensureSelectHasOption(em, emNorm);
+        em.value = emNorm;
+      } else {
+        em.value = "";
+      }
+    }
+    var st = document.getElementById(prefix + "-stream");
     if (st) st.checked = !!m.stream;
   }
 
-  function collectAudioGenOverridesFromForm() {
+  function fillAudioGenFormFromMerged(mm) {
+    fillAudioGenFormByPrefix("audio-gen", mm);
+  }
+
+  /** @param {"audio-gen" | "audio-confirm"} prefix */
+  function collectAudioGenOverridesByPrefix(prefix) {
+    var modelEl = document.getElementById(prefix + "-model");
+    var voiceEl = document.getElementById(prefix + "-voice");
+    var langEl = document.getElementById(prefix + "-lang");
+    var afEl = document.getElementById(prefix + "-audio-fmt");
+    var ofEl = document.getElementById(prefix + "-out-fmt");
+    var srEl = document.getElementById(prefix + "-sr");
+    var brEl = document.getElementById(prefix + "-bitrate");
+    var spEl = document.getElementById(prefix + "-speed");
+    var voEl = document.getElementById(prefix + "-vol");
+    var piEl = document.getElementById(prefix + "-pitch");
+    var stEl = document.getElementById(prefix + "-stream");
+    var emEl = document.getElementById(prefix + "-emotion");
+    var gidEl = document.getElementById(prefix + "-group");
+    if (
+      !modelEl ||
+      !voiceEl ||
+      !langEl ||
+      !afEl ||
+      !ofEl ||
+      !srEl ||
+      !brEl ||
+      !spEl ||
+      !voEl ||
+      !piEl ||
+      !stEl ||
+      !emEl
+    ) {
+      return {};
+    }
     var o = {
-      model: document.getElementById("audio-gen-model").value,
-      voice_id: document.getElementById("audio-gen-voice").value.trim(),
-      language_boost: document.getElementById("audio-gen-lang").value,
-      audio_format: document.getElementById("audio-gen-audio-fmt").value,
-      output_format: document.getElementById("audio-gen-out-fmt").value,
-      sample_rate: parseInt(document.getElementById("audio-gen-sr").value, 10),
-      bitrate: parseInt(document.getElementById("audio-gen-bitrate").value, 10),
-      speed: parseFloat(document.getElementById("audio-gen-speed").value),
-      vol: parseFloat(document.getElementById("audio-gen-vol").value),
-      pitch: parseInt(document.getElementById("audio-gen-pitch").value, 10),
-      stream: document.getElementById("audio-gen-stream").checked,
-      emotion: document.getElementById("audio-gen-emotion").value,
+      model: modelEl.value,
+      voice_id: voiceEl.value.trim(),
+      language_boost: langEl.value,
+      audio_format: afEl.value,
+      output_format: ofEl.value,
+      sample_rate: parseInt(srEl.value, 10),
+      bitrate: parseInt(brEl.value, 10),
+      speed: parseFloat(spEl.value),
+      vol: parseFloat(voEl.value),
+      pitch: parseInt(piEl.value, 10),
+      stream: stEl.checked,
+      emotion: emEl.value,
     };
-    var gid = document.getElementById("audio-gen-group").value.trim();
-    if (gid) o.group_id = gid;
+    if (gidEl) {
+      var gid = gidEl.value.trim();
+      if (gid) o.group_id = gid;
+    }
     return o;
+  }
+
+  function collectAudioGenOverridesFromForm() {
+    return collectAudioGenOverridesByPrefix("audio-gen");
   }
 
   async function openAudioGenSettingsDialog() {
@@ -1986,28 +2538,6 @@
       fillAudioGenFormFromMerged(merged);
       if (audioGenSettingsDialog) audioGenSettingsDialog.showModal();
     } catch (_) {}
-  }
-
-  function formatMergedAudioGenForConfirm(m) {
-    m = m || {};
-    var gid = m.group_id;
-    var lines = [];
-    lines.push("Group ID：" + (gid != null && String(gid).trim() !== "" ? String(gid) : "（未指定）"));
-    lines.push("合成模型：" + (m.model || "speech-2.8-turbo"));
-    lines.push("音色 voice_id：" + (m.voice_id || "Chinese (Mandarin)_Lyrical_Voice"));
-    lines.push("语言增强 language_boost：" + (m.language_boost || "Chinese"));
-    lines.push("音频格式 audio_setting.format：" + (m.audio_format || "mp3"));
-    lines.push("输出编码 output_format：" + (m.output_format || "url"));
-    lines.push(
-      "采样率 sample_rate：" + (m.sample_rate != null ? String(m.sample_rate) : "32000"),
-    );
-    lines.push("码率 bitrate：" + (m.bitrate != null ? String(m.bitrate) : "128000"));
-    lines.push("语速 speed：" + (m.speed != null ? String(m.speed) : "1"));
-    lines.push("音量 vol：" + (m.vol != null ? String(m.vol) : "1"));
-    lines.push("音高 pitch：" + (m.pitch != null ? String(m.pitch) : "0"));
-    lines.push("情绪 emotion：" + (m.emotion ? String(m.emotion) : "（自动）"));
-    lines.push("流式 stream：" + (m.stream ? "是" : "否"));
-    return lines.join("\n");
   }
 
   async function openAudioGenerateConfirmDialog() {
@@ -2031,9 +2561,12 @@
     } catch (_) {
       merged = Object.assign({}, readStoredAudioGenOverrides());
     }
-    var cfgEl = document.getElementById("audio-generate-confirm-config");
+    if (pendingAudioConfirmMinimaxOverlay && Object.keys(pendingAudioConfirmMinimaxOverlay).length) {
+      merged = Object.assign({}, merged, pendingAudioConfirmMinimaxOverlay);
+      pendingAudioConfirmMinimaxOverlay = null;
+    }
+    fillAudioGenFormByPrefix("audio-confirm", merged);
     var taEl = document.getElementById("audio-generate-confirm-transcript");
-    if (cfgEl) cfgEl.textContent = formatMergedAudioGenForConfirm(merged);
     var rows = audioTranscriptSegments[selectedIndex] || [""];
     var seg = pendingAudioGenerateSegmentIndex;
     if (seg < 0 || seg >= rows.length) seg = 0;
@@ -2087,9 +2620,9 @@
       audioWorkbenchStatus.textContent = "缺少会话或任务标识";
       return;
     }
-    var mmPrefs = readStoredAudioGenOverrides();
-    if (mmPrefs && Object.keys(mmPrefs).length > 0) {
-      genBody.minimax_overrides = mmPrefs;
+    var confirmOverrides = collectAudioGenOverridesByPrefix("audio-confirm");
+    if (confirmOverrides && Object.keys(confirmOverrides).length > 0) {
+      genBody.minimax_overrides = confirmOverrides;
     }
     try {
       var res = await fetch("/api/audio/workspace/generate", {
@@ -2107,18 +2640,25 @@
         return;
       }
       var seg = pendingAudioGenerateSegmentIndex;
-      var gk = segmentFileKey(selectedIndex, seg);
-      if (j.filename) audioGeneratedFiles[gk] = j.filename;
-      if (typeof j.duration_sec === "number" && j.duration_sec > 0) {
-        audioSegmentDurations[gk] = j.duration_sec;
-      }
+      await loadAudioWorkspaceMeta();
       var url = j.url || "";
-      if (url && audioPlayer) {
-        audioPlayer.classList.remove("hidden");
-        audioPlayer.src = url + (url.indexOf("?") >= 0 ? "&" : "?") + "t=" + Date.now();
+      if (url && j.version_id) {
+        var rowsAfter = audioTranscriptSegments[selectedIndex] || [""];
+        var segTextForName =
+          rowsAfter[seg] != null && typeof rowsAfter[seg] === "string"
+            ? rowsAfter[seg]
+            : "";
+        await autoDownloadWorkspaceAudio(
+          url,
+          mp3DownloadFilenameFromTranscript(segTextForName),
+          selectedIndex,
+          seg,
+          j.version_id
+        );
       }
+      updateAudioWorkbenchPlayer();
       if (audioWorkbenchStatus) {
-        audioWorkbenchStatus.textContent = "第 " + (seg + 1) + " 段已生成，可试听";
+        audioWorkbenchStatus.textContent = "第 " + (seg + 1) + " 段已生成并已下载，可试听";
       }
       renderAudioSegmentRows();
     } catch (e) {
@@ -2246,6 +2786,7 @@
     audioWorkspaceKind = "session";
     audioWorkspaceKey = "";
     audioGeneratedFiles = {};
+    audioSegmentVersions = {};
     audioSegmentDurations = {};
     sessionId = null;
     imagesAvailable = false;
@@ -2768,6 +3309,13 @@
   if (btnTrRewriteAdopt) {
     btnTrRewriteAdopt.addEventListener("click", function () {
       adoptTranscriptRewriteFromDialog();
+    });
+  }
+
+  var btnTrRewriteApplyMinimax = document.getElementById("btn-tr-rewrite-apply-minimax");
+  if (btnTrRewriteApplyMinimax) {
+    btnTrRewriteApplyMinimax.addEventListener("click", function () {
+      applyTranscriptRewriteMinimaxHints();
     });
   }
 

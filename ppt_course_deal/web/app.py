@@ -9,7 +9,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import quote
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import Body, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, Response
@@ -19,15 +19,18 @@ from starlette.background import BackgroundTask
 
 from ppt_course_deal.audio_duration import probe_audio_duration_seconds
 from ppt_course_deal.audio_workspace_store import (
+    append_segment_generation,
+    delete_segment_generation,
+    ensure_segment_versions_migrated,
     infer_slide_count,
     load_meta,
     normalize_transcript_segments,
-    record_generated_segment,
     resolve_workspace_audio_path,
+    resolve_workspace_audio_version_path,
     save_meta_for_workspace,
     slide_count_for_task,
     slide_duration_seconds_list,
-    workspace_relative_segment_path,
+    workspace_relative_segment_path_unique,
     workspace_root,
 )
 from ppt_course_deal.deck_sessions import create_session, get_session
@@ -76,7 +79,9 @@ from ppt_course_deal.transcript_rewrite import (
     REWRITE_MINIMAL_SYSTEM,
     build_user_prompt_with_skill,
     chat_rewrite,
+    normalize_minimax_rewrite_hints,
     sanitize_for_minimax_t2a,
+    split_rewrite_output,
 )
 
 logger = logging.getLogger(__name__)
@@ -146,6 +151,14 @@ class AudioGenerateBody(BaseModel):
     minimax_overrides: Optional[Dict[str, Any]] = None
 
 
+class AudioSegmentVersionDeleteBody(BaseModel):
+    task_id: Optional[str] = None
+    session_id: Optional[str] = None
+    slide_index: int = Field(ge=0, le=499)
+    segment_index: int = Field(default=0, ge=0, le=99)
+    version_id: str = Field(min_length=1, max_length=80)
+
+
 class TranscriptImportPreviewBody(BaseModel):
     task_id: str = Field(min_length=1, max_length=64)
     text: str = Field(min_length=1, max_length=TRANSCRIPT_IMPORT_MAX_CHARS)
@@ -160,6 +173,10 @@ class TranscriptImportApplyBody(BaseModel):
 class TranscriptRewriteBody(BaseModel):
     text: str = Field(min_length=1, max_length=9999)
     transcript_rewrite: Optional[Dict[str, Any]] = None
+    #: 各页逐字稿拼接（只读语境）；用于统筹全课语气与衔接，模型仅改写 text 对应段
+    course_transcript_context: Optional[str] = Field(default=None, max_length=48000)
+    context_slide_index: Optional[int] = Field(default=None, ge=0)
+    context_segment_index: Optional[int] = Field(default=None, ge=0)
 
 
 class TranscriptRewriteTestBody(BaseModel):
@@ -638,7 +655,13 @@ def create_app() -> FastAPI:
                 detail="请先在「外部 API 配置 → 口播稿优化」中选择 OpenAI 兼容并保存 API Key",
             )
         extra = (cfg.get("extra_instructions") or "").strip()
-        user_msg = build_user_prompt_with_skill(body.text, extra_instructions=extra)
+        user_msg = build_user_prompt_with_skill(
+            body.text,
+            extra_instructions=extra,
+            course_transcript_context=body.course_transcript_context,
+            context_slide_index=body.context_slide_index,
+            context_segment_index=body.context_segment_index,
+        )
         try:
             raw_out = chat_rewrite(
                 api_base=str(cfg.get("api_base") or "").strip(),
@@ -649,12 +672,22 @@ def create_app() -> FastAPI:
             )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
-        cleaned, warnings = sanitize_for_minimax_t2a(raw_out)
-        return {
+        transcript_part, raw_hints = split_rewrite_output(raw_out)
+        cleaned, warnings = sanitize_for_minimax_t2a(transcript_part)
+        hints_payload, delivery_notes, hint_warns = normalize_minimax_rewrite_hints(
+            raw_hints
+        )
+        warnings = list(warnings) + list(hint_warns)
+        out: Dict[str, Any] = {
             "ok": True,
             "rewritten_text": cleaned,
             "sanitize_warnings": warnings,
         }
+        if hints_payload:
+            out["minimax_hints"] = hints_payload
+        if delivery_notes:
+            out["delivery_notes"] = delivery_notes
+        return out
 
     @application.post("/api/settings/external/minimax/test")
     def test_minimax_connection(
@@ -725,6 +758,7 @@ def create_app() -> FastAPI:
                     detail="非已存任务时请传入 slide_count",
                 )
             sc = slide_count
+        ensure_segment_versions_migrated(kind, key)
         meta = load_meta(kind, key)
         transcripts = list(meta.get("transcripts") or [])
         while len(transcripts) < sc:
@@ -734,6 +768,9 @@ def create_app() -> FastAPI:
         seg_dur = meta.get("segment_duration_sec") or {}
         if not isinstance(seg_dur, dict):
             seg_dur = {}
+        sv = meta.get("segment_versions")
+        if not isinstance(sv, dict):
+            sv = {}
         return {
             "kind": kind,
             "key": key,
@@ -741,6 +778,7 @@ def create_app() -> FastAPI:
             "transcripts": transcripts,
             "transcript_segments": transcript_segments,
             "generated_files": meta.get("generated_files") or {},
+            "segment_versions": sv,
             "segment_duration_sec": seg_dur,
             "slide_duration_sec": slide_duration_seconds_list(meta, sc),
         }
@@ -800,17 +838,19 @@ def create_app() -> FastAPI:
         fmt = (mm.get("audio_format") or "mp3").lower()
         if fmt not in ("mp3", "pcm", "flac"):
             fmt = "mp3"
-        rel_path = workspace_relative_segment_path(
+        uniq = uuid4().hex[:12]
+        rel_path = workspace_relative_segment_path_unique(
             payload.slide_index,
             payload.segment_index,
             text,
             fmt,
+            uniq,
         )
         path = workspace_root(kind, key) / rel_path
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(audio_bytes)
         duration_sec = probe_audio_duration_seconds(path)
-        record_generated_segment(
+        version_id = append_segment_generation(
             kind,
             key,
             payload.slide_index,
@@ -825,12 +865,14 @@ def create_app() -> FastAPI:
             "slide_index": payload.slide_index,
             "segment_index": payload.segment_index,
             "filename": rel_path,
+            "version_id": version_id,
             "duration_sec": duration_sec,
             "slide_duration_sec": slide_durs,
             "url": (
                 f"/api/audio/workspace/file?kind={kind}&key={quote(key, safe='')}"
                 f"&slide_index={payload.slide_index}"
                 f"&segment_index={payload.segment_index}"
+                f"&version_id={quote(version_id, safe='')}"
             ),
         }
 
@@ -932,12 +974,43 @@ def create_app() -> FastAPI:
             "conflict_count": len(conflicts),
         }
 
+    @application.delete("/api/audio/workspace/segment-version")
+    def delete_workspace_segment_version(
+        payload: AudioSegmentVersionDeleteBody = Body(...),
+    ) -> Dict[str, Any]:
+        kind, key = _workspace_scope(payload.task_id, payload.session_id)
+        try:
+            UUID(key)
+        except ValueError as err:
+            raise HTTPException(status_code=400, detail="key 无效") from err
+        if kind == "task" and load_task(key) is None:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        ok = delete_segment_generation(
+            kind,
+            key,
+            payload.slide_index,
+            payload.segment_index,
+            payload.version_id,
+        )
+        if not ok:
+            raise HTTPException(status_code=404, detail="未找到该生成记录")
+        meta = load_meta(kind, key)
+        sc = infer_slide_count(meta, kind, key)
+        return {
+            "ok": True,
+            "generated_files": meta.get("generated_files") or {},
+            "segment_versions": meta.get("segment_versions") or {},
+            "segment_duration_sec": meta.get("segment_duration_sec") or {},
+            "slide_duration_sec": slide_duration_seconds_list(meta, sc),
+        }
+
     @application.get("/api/audio/workspace/file")
     def get_workspace_audio_file(
         kind: str = Query(...),
         key: str = Query(...),
         slide_index: int = Query(ge=0, le=499),
         segment_index: int = Query(default=0, ge=0, le=99),
+        version_id: Optional[str] = Query(default=None, max_length=80),
     ) -> FileResponse:
         if kind not in ("task", "session"):
             raise HTTPException(status_code=400, detail="kind 无效")
@@ -951,7 +1024,14 @@ def create_app() -> FastAPI:
         fmt = (mm.get("audio_format") or "mp3").lower()
         if fmt not in ("mp3", "pcm", "flac"):
             fmt = "mp3"
-        path = resolve_workspace_audio_path(kind, key, slide_index, segment_index, fmt)
+        path: Path | None = None
+        vid = (version_id or "").strip()
+        if vid:
+            path = resolve_workspace_audio_version_path(
+                kind, key, slide_index, segment_index, vid
+            )
+        else:
+            path = resolve_workspace_audio_path(kind, key, slide_index, segment_index, fmt)
         if path is None:
             raise HTTPException(status_code=404, detail="音频不存在，请先生成")
         ext = path.suffix.lower().lstrip(".") or fmt

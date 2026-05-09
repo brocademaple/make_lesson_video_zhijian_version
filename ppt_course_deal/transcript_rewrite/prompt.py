@@ -10,7 +10,8 @@ _SKILL_FILE = Path(__file__).resolve().parent / "minimax_skill.md"
 # 仅占位满足 Chat API 的 system 槽位；全部约束见 user 消息内的 skill。
 REWRITE_MINIMAL_SYSTEM = (
     "你是中文录课口播编辑。"
-    "用户消息已包含完整改写规范与待优化原文；只输出改写后的口播正文，不要前言、标题或解释。"
+    "用户消息已含完整规范与待优化原文：先按规范改口播正文，再按其中「输出格式」在文末给出 MiniMax 合成参数 JSON；"
+    "不要复述规范条文，不要在正文外加与 JSON 无关的说明段落。"
 )
 
 
@@ -25,11 +26,16 @@ def load_transcript_rewrite_minimax_skill_text() -> str:
 def build_user_prompt_with_skill(
     original_text: str,
     extra_instructions: str | None = None,
+    *,
+    course_transcript_context: str | None = None,
+    context_slide_index: int | None = None,
+    context_segment_index: int | None = None,
 ) -> str:
-    """user 消息：skill 全文 + 可选「课程追加规则」+ 待优化原文。"""
+    """user 消息：skill 全文 + 可选「课程追加规则」+ 可选全课语境 + 待优化原文。"""
     skill = load_transcript_rewrite_minimax_skill_text()
     body = (original_text or "").strip()
     extra = (extra_instructions or "").strip()
+    ctx = (course_transcript_context or "").strip()
 
     chunks: list[str] = [
         "下列内容由内置文档 ppt_course_deal/transcript_rewrite/minimax_skill.md 提供。"
@@ -39,6 +45,15 @@ def build_user_prompt_with_skill(
     if extra:
         chunks.append("\n\n---\n\n【课程追加规则】\n\n")
         chunks.append(extra)
+    if ctx:
+        chunks.append("\n\n---\n\n【全课逐字稿语境（只读，请勿改写本块）】\n\n")
+        if context_slide_index is not None and context_segment_index is not None:
+            chunks.append(
+                "当前待优化的段落位置：**第 "
+                f"{int(context_slide_index) + 1} 页 · 第 {int(context_segment_index) + 1} 段**。"
+                "你只能改写下方「【待优化原文】」中的那一段；上文仅为把握全课基调与章节衔接。\n\n"
+            )
+        chunks.append(ctx)
     chunks.append("\n\n---\n\n【待优化原文】\n\n")
     chunks.append(body)
     return "".join(chunks)

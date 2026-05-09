@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +13,7 @@ from ppt_course_deal.audio_workspace_store import (
     resolve_workspace_audio_path,
     slide_count_for_task,
 )
+from ppt_course_deal.task_audio_bundle import task_bundle_audio_dir
 from ppt_course_deal.task_storage import get_data_root
 
 
@@ -46,6 +48,7 @@ def build_props(
     max_slides: int | None,
     no_audio_frames: int,
     remotion_workspace_root: Path | None,
+    bundle_audio: bool = False,
 ) -> dict[str, Any]:
     """
     构造 CourseDeckComposition 可用的 props。
@@ -96,7 +99,14 @@ def build_props(
             else:
                 dur_sec = probe_duration_sec(ap)
             frames = max(1, math.ceil(dur_sec * fps))
-            audio_rels.append(rel_for_props(ap, root))
+            if bundle_audio:
+                dest_dir = task_bundle_audio_dir(task_id, i)
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                dest_mp3 = dest_dir / ap.name
+                shutil.copy2(ap, dest_mp3)
+                audio_rels.append(rel_for_props(dest_mp3, root))
+            else:
+                audio_rels.append(rel_for_props(ap, root))
             segment_frames.append(frames)
             j += 1
             if j > 500:
@@ -131,6 +141,7 @@ def write_props_file(
     max_slides: int | None = None,
     no_audio_frames: int = 90,
     remotion_workspace_root: Path | None = None,
+    bundle_audio: bool = False,
 ) -> None:
     props = build_props(
         task_id,
@@ -138,6 +149,7 @@ def write_props_file(
         max_slides=max_slides,
         no_audio_frames=no_audio_frames,
         remotion_workspace_root=remotion_workspace_root,
+        bundle_audio=bundle_audio,
     )
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(

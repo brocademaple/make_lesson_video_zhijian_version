@@ -30,6 +30,8 @@
   --error-bg: rgba(185, 28, 28, 0.25);
   --error-border: rgba(248, 113, 113, 0.35);
   --result-tint: rgba(34, 197, 94, 0.1);
+  /* 顶栏 + .app 内边距预留，用于工作台主区视口高度 */
+  --workspace-viewport-offset: 6.75rem;
   font-family:
     ui-sans-serif,
     system-ui,
@@ -116,7 +118,8 @@ body {
   display: none;
 }
 
-/* 解析完成后：左侧缩略图列表（约 35%）| 右侧预览（约 65%）；占满顶栏以下视口高度 */
+/* 解析完成后：左侧缩略图列表（约 35%）| 右侧预览（约 65%）。
+   固定主区高度为视口减顶栏，避免左侧列表条目过多时撑高整页；列表在 .slide-rail__scroll 内滚动。 */
 .app-main.app-main--workspace {
   grid-template-columns: minmax(0, 35fr) minmax(0, 65fr);
   grid-template-rows: minmax(0, 1fr);
@@ -124,6 +127,8 @@ body {
   min-height: 0;
   flex: 1 1 auto;
   overflow: hidden;
+  height: calc(100dvh - var(--workspace-viewport-offset));
+  max-height: calc(100dvh - var(--workspace-viewport-offset));
 }
 
 .sidebar-column {
@@ -205,6 +210,8 @@ body {
   .app-main.app-main--workspace {
     grid-template-columns: 1fr;
     grid-template-rows: minmax(0, min(46vh, calc(100dvh - 9rem))) minmax(0, 1fr);
+    height: calc(100dvh - var(--workspace-viewport-offset));
+    max-height: calc(100dvh - var(--workspace-viewport-offset));
   }
 
   .app-main:not(.app-main--workspace) {
@@ -382,6 +389,7 @@ body {
   margin-bottom: 1.5rem;
   padding-bottom: 1rem;
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
 .brand-row {
@@ -1921,6 +1929,38 @@ body {
   height: 2rem;
 }
 
+.audio-segment-row__listen-transcript {
+  margin-top: 0.55rem;
+  padding: 0.45rem 0.55rem;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--body-secondary);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: min(12rem, 36vh);
+  overflow-y: auto;
+}
+
+.audio-segment-row--listen-only .audio-segment-version {
+  margin-top: 0.55rem;
+  padding: 0.45rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+}
+
+.audio-segment-version__meta {
+  font-size: 0.78rem;
+  margin-bottom: 0.35rem;
+}
+
+.audio-segment-version__actions {
+  margin-top: 0.35rem;
+}
+
 .audio-segments-dialog__add {
   margin-top: 0.25rem;
 }
@@ -1978,6 +2018,31 @@ body {
   white-space: pre-wrap;
 }
 
+.transcript-rewrite-dialog__minimax {
+  margin-top: 0.65rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--border);
+}
+
+.transcript-rewrite-dialog__pre {
+  margin: 0.35rem 0 0.5rem;
+  padding: 0.5rem 0.65rem;
+  min-height: 3rem;
+  max-height: 10rem;
+  overflow: auto;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.transcript-rewrite-dialog__delivery-notes {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
 .transcript-rewrite-dialog__save-opt {
   display: flex;
   align-items: flex-start;
@@ -1996,6 +2061,11 @@ body {
 
 .transcript-rewrite-versions-dialog {
   width: min(96vw, 520px);
+}
+
+/* 顶栏「关闭」= 快捷关浮层；底栏「返回逐字稿」= 读完列表后的主出口（行为一致，文案区分场景） */
+.transcript-rewrite-versions-dialog__footer {
+  justify-content: flex-end;
 }
 
 .transcript-rewrite-versions-dialog__sub {
@@ -2018,10 +2088,30 @@ body {
   background: var(--card);
 }
 
+.tr-version-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
 .tr-version-card__meta {
   font-size: 0.72rem;
   color: var(--muted);
-  margin-bottom: 0.35rem;
+  margin-bottom: 0;
+  min-width: 0;
+}
+
+.tr-version-card__delete {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  padding: 0.15rem 0.35rem;
+  color: var(--muted);
+}
+
+.tr-version-card__delete:hover {
+  color: var(--danger, #c62828);
 }
 
 .tr-version-card__snippet {
@@ -2036,6 +2126,37 @@ body {
   display: flex;
   justify-content: flex-end;
   gap: 0.35rem;
+}
+
+.tr-version-card__hints {
+  margin: 0.45rem 0 0.5rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: 8px;
+  border: 1px dashed var(--border);
+  background: var(--accent-dim);
+}
+
+.tr-version-card__hints-title {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 0.35rem;
+}
+
+.tr-version-card__hints-pre {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, monospace;
+  color: var(--body-secondary);
+}
+
+.tr-version-card__hints-note {
+  margin: 0.35rem 0 0;
+  font-size: 0.8rem;
+  line-height: 1.45;
 }
 
 /* 外部 API 配置弹窗 */
@@ -2321,9 +2442,9 @@ body {
   margin-top: 0.15rem;
 }
 
-/* 生成单段音频 — 二次确认 */
+/* 生成单段音频 — 二次确认（可编辑本次合成参数） */
 .audio-generate-confirm-dialog {
-  width: min(96vw, 520px);
+  width: min(96vw, 640px);
 }
 
 .audio-generate-confirm-dialog__head .audio-generate-confirm-dialog__title-row {
@@ -2350,7 +2471,20 @@ body {
   margin-top: 0;
 }
 
-/* 确认弹窗内仅展示只读信息：灰色正文，不用输入框样式 */
+.audio-generate-confirm__preface {
+  margin: 0 0 0.5rem;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.audio-generate-confirm__form-wrap {
+  max-height: min(42vh, 24rem);
+  overflow-y: auto;
+  padding-right: 0.2rem;
+  margin-bottom: 0.35rem;
+}
+
+/* 逐字稿预览：只读灰字 */
 .audio-generate-confirm__body-text {
   margin: 0;
   padding: 0;
@@ -2359,7 +2493,7 @@ body {
   white-space: pre-wrap;
   word-break: break-word;
   color: var(--muted);
-  max-height: 12rem;
+  max-height: 10rem;
   overflow-y: auto;
   font-family: inherit;
 }

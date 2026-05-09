@@ -1,0 +1,79 @@
+{
+  "fps": 30,
+  "slides": [
+    {
+      "imageRelative": "ppt_course_data/tasks/2555ebfb-ca07-4982-bf41-03d80b37dbad/previews/slide-0000/full.png",
+      "durationInFrames": 162,
+      "shapeRelatives": [
+        "ppt_course_data/tasks/2555ebfb-ca07-4982-bf41-03d80b37dbad/previews/slide-0000/shapes/shape-0000.png",
+        "ppt_course_data/tasks/2555ebfb-ca07-4982-bf41-03d80b37dbad/previews/slide-0000/shapes/shape-0001.png"
+      ],
+      "audioRelatives": [
+        "ppt_course_data/tasks/2555ebfb-ca07-4982-bf41-03d80b37dbad/audio/slide-0000/seg-000-Slide1_好的大家好_0.mp3"
+      ],
+      "audioSegmentDurationInFrames": [
+        162
+      ],
+      "caption": {
+        "title": "洋葱学园质检标准",
+        "subtitle": "质检组制作"
+      }
+    },
+    {
+      "imageRelative": "ppt_course_data/tasks/2555ebfb-ca07-4982-bf41-03d80b37dbad/previews/slide-0001/full.png",
+      "durationInFrames": 599,
+      "shapeRelatives": [
+        "ppt_course_data/tasks/2555ebfb-ca07-4982-bf41-03d80b37dbad/previews/slide-0001/shapes/shape-0000.png",
+        "ppt_course_data/tasks/2555ebfb-ca07-4982-bf41-03d80b37dbad/previews/slide-0001/shapes/shape-0001.png"
+      ],
+      "audioRelatives": [
+        "ppt_course_data/tasks/2555ebfb-ca07-4982-bf41-03d80b37dbad/audio/slide-0001/seg-000-Slide2_好正式开始之前呢_e5a67f820ed2.mp3"
+      ],
+      "audioSegmentDurationInFrames": [
+        599
+      ],
+      "caption": {
+        "title": "质检问题级别",
+        "subtitle": "Part1～Part4：红线、致命、严重、普通问题 · 目录"
+      }
+    },
+    {
+      "imageRelative": "ppt_course_data/tasks/2555ebfb-ca07-4982-bf41-03d80b37dbad/previews/slide-0002/full.png",
+      "durationInFrames": 744,
+      "shapeRelatives": [
+        "ppt_course_data/tasks/2555ebfb-ca07-4982-bf41-03d80b37dbad/previews/slide-0002/shapes/shape-0000.png",
+        "ppt_course_data/tasks/2555ebfb-ca07-4982-bf41-03d80b37dbad/previews/slide-0002/shapes/shape-0001.png",
+        "ppt_course_data/tasks/2555ebfb-ca07-4982-bf41-03d80b37dbad/previews/slide-0002/shapes/shape-0002.png",
+        "ppt_course_data/tasks/2555ebfb-ca07-4982-bf41-03d80b37dbad/previews/slide-0002/shapes/shape-0003.png"
+      ],
+      "audioRelatives": [
+        "ppt_course_data/tasks/2555ebfb-ca07-4982-bf41-03d80b37dbad/audio/slide-0002/seg-000-Slide3_新来的小伙伴们好欢_f3951c7f35f3.mp3"
+      ],
+      "audioSegmentDurationInFrames": [
+        744
+      ],
+      "caption": {
+        "title": "红线问题",
+        "subtitle": "影响公司品牌形象、作弊诚信问题 · 信息及安全 / 用户冲突 / 业绩舞弊"
+      }
+    },
+    {
+      "imageRelative": "ppt_course_data/tasks/2555ebfb-ca07-4982-bf41-03d80b37dbad/previews/slide-0003/full.png",
+      "durationInFrames": 1216,
+      "shapeRelatives": [
+        "ppt_course_data/tasks/2555ebfb-ca07-4982-bf41-03d80b37dbad/previews/slide-0003/shapes/shape-0000.png",
+        "ppt_course_data/tasks/2555ebfb-ca07-4982-bf41-03d80b37dbad/previews/slide-0003/shapes/shape-0001.png"
+      ],
+      "audioRelatives": [
+        "ppt_course_data/tasks/2555ebfb-ca07-4982-bf41-03d80b37dbad/audio/slide-0003/seg-000-Slide4_那么第一个任务来了_27c2f15b244c.mp3"
+      ],
+      "audioSegmentDurationInFrames": [
+        1216
+      ],
+      "caption": {
+        "title": "信息及安全",
+        "subtitle": "用户信息、宣传物料合规、禁止私下资金往来 · 红线一经发现严肃处理"
+      }
+    }
+  ]
+}

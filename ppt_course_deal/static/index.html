@@ -17,7 +17,7 @@
         }
       })();
     </script>
-    <link rel="stylesheet" href="/assets/styles.css?v=2.52" />
+    <link rel="stylesheet" href="/assets/styles.css?v=2.64" />
   </head>
   <body>
     <div class="app">
@@ -683,12 +683,170 @@
           </header>
           <div class="external-settings-dialog__body">
             <h3 class="audio-generate-confirm__subtitle">合成参数</h3>
-            <div
-              id="audio-generate-confirm-config"
-              class="audio-generate-confirm__body-text"
-              role="region"
-              aria-label="合成参数预览"
-            ></div>
+            <p class="muted audio-generate-confirm__preface">
+              以下为服务端默认与本机「音频生成参数」合并后的初始值；仅作用于<strong>本次</strong>「开始生成」。持久偏好请在「进入音频生成设置」中保存。
+            </p>
+            <div class="audio-generate-confirm__form-wrap">
+              <div class="field-grid">
+                <label class="field">
+                  <span class="field__label">Group ID（可选）</span>
+                  <input
+                    type="text"
+                    id="audio-confirm-group"
+                    class="field__input"
+                    autocomplete="off"
+                    placeholder="与外部配置一致时可留空"
+                  />
+                </label>
+                <label class="field">
+                  <span class="field__label">合成模型 model</span>
+                  <select id="audio-confirm-model" class="field__input">
+                    <optgroup label="Turbo（推荐 · 默认 speech-2.8-turbo）">
+                      <option value="speech-2.8-turbo">speech-2.8-turbo</option>
+                      <option value="speech-2.6-turbo">speech-2.6-turbo</option>
+                      <option value="speech-02-turbo">speech-02-turbo</option>
+                      <option value="speech-01-turbo">speech-01-turbo</option>
+                    </optgroup>
+                    <optgroup label="HD（部分套餐无额度 · 置底）">
+                      <option value="speech-2.8-hd">speech-2.8-hd</option>
+                      <option value="speech-2.6-hd">speech-2.6-hd</option>
+                      <option value="speech-02-hd">speech-02-hd</option>
+                      <option value="speech-01-hd">speech-01-hd</option>
+                    </optgroup>
+                  </select>
+                </label>
+                <label class="field field--wide">
+                  <span class="field__label">音色 voice_id</span>
+                  <div class="voice-id-combobox" data-voice-combobox>
+                    <div class="voice-id-combobox__row">
+                      <input
+                        type="text"
+                        id="audio-confirm-voice"
+                        class="field__input voice-id-combobox__input"
+                        autocomplete="off"
+                        placeholder="可输入自定义 ID，或点右侧按钮筛选普通话音色"
+                      />
+                      <button
+                        type="button"
+                        class="voice-id-combobox__toggle"
+                        aria-expanded="false"
+                        aria-label="展开普通话音色列表"
+                        title="从列表选择"
+                      >
+                        ▾
+                      </button>
+                    </div>
+                    <div class="voice-id-combobox__panel" hidden>
+                      <input
+                        type="search"
+                        class="field__input voice-id-combobox__filter"
+                        placeholder="筛选名称或 voice_id…"
+                        aria-label="筛选普通话音色"
+                      />
+                      <ul class="voice-id-combobox__list" role="listbox" aria-label="普通话音色"></ul>
+                    </div>
+                  </div>
+                </label>
+                <label class="field">
+                  <span class="field__label">语言增强 language_boost</span>
+                  <select id="audio-confirm-lang" class="field__input">
+                    <option value="Chinese">Chinese</option>
+                    <option value="English">English</option>
+                    <option value="Japanese">Japanese</option>
+                    <option value="Korean">Korean</option>
+                    <option value="auto">auto</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="field__label">音频格式 audio_setting.format</span>
+                  <select id="audio-confirm-audio-fmt" class="field__input">
+                    <option value="mp3">mp3</option>
+                    <option value="pcm">pcm</option>
+                    <option value="flac">flac</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="field__label">输出编码 output_format</span>
+                  <select id="audio-confirm-out-fmt" class="field__input">
+                    <option value="url">url（默认）</option>
+                    <option value="hex">hex</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="field__label">采样率 sample_rate</span>
+                  <select id="audio-confirm-sr" class="field__input">
+                    <option value="16000">16000</option>
+                    <option value="32000" selected>32000</option>
+                    <option value="44100">44100</option>
+                    <option value="48000">48000</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="field__label">码率 bitrate</span>
+                  <input
+                    type="number"
+                    id="audio-confirm-bitrate"
+                    class="field__input"
+                    min="32000"
+                    step="8000"
+                    value="128000"
+                  />
+                </label>
+                <label class="field">
+                  <span class="field__label">语速 speed（0.5–2）</span>
+                  <input
+                    type="number"
+                    id="audio-confirm-speed"
+                    class="field__input"
+                    min="0.5"
+                    max="2"
+                    step="0.1"
+                    value="1"
+                  />
+                </label>
+                <label class="field">
+                  <span class="field__label">音量 vol（0–10）</span>
+                  <input
+                    type="number"
+                    id="audio-confirm-vol"
+                    class="field__input"
+                    min="0.1"
+                    max="10"
+                    step="0.1"
+                    value="1"
+                  />
+                </label>
+                <label class="field">
+                  <span class="field__label">音高 pitch（-12–12）</span>
+                  <input
+                    type="number"
+                    id="audio-confirm-pitch"
+                    class="field__input"
+                    min="-12"
+                    max="12"
+                    step="1"
+                    value="0"
+                  />
+                </label>
+                <label class="field">
+                  <span class="field__label">情绪 emotion（可选）</span>
+                  <select id="audio-confirm-emotion" class="field__input">
+                    <option value="">（自动）</option>
+                    <option value="happy">happy</option>
+                    <option value="calm">calm</option>
+                    <option value="fluent">fluent</option>
+                    <option value="whisper">whisper</option>
+                    <option value="sad">sad</option>
+                  </select>
+                </label>
+                <div class="field field--wide">
+                  <label class="audio-gen-settings-dialog__stream">
+                    <input type="checkbox" id="audio-confirm-stream" />
+                    <span>流式 stream（非流式合成请保持关闭）</span>
+                  </label>
+                </div>
+              </div>
+            </div>
             <h3 class="audio-generate-confirm__subtitle">
               逐字稿预览 <span id="audio-generate-confirm-seg-label" class="audio-generate-confirm__seg"></span>
             </h3>
@@ -736,6 +894,14 @@
               </div>
             </div>
             <p id="tr-rewrite-warnings" class="transcript-rewrite-dialog__warnings muted hidden"></p>
+            <div id="tr-rewrite-minimax-section" class="transcript-rewrite-dialog__minimax hidden">
+              <p class="transcript-rewrite-dialog__label">MiniMax 合成参数建议</p>
+              <pre id="tr-rewrite-minimax-hints" class="field__input transcript-rewrite-dialog__pre muted"></pre>
+              <p id="tr-rewrite-delivery-notes" class="transcript-rewrite-dialog__delivery-notes muted hidden"></p>
+              <button type="button" class="btn btn-text" id="btn-tr-rewrite-apply-minimax" disabled>
+                写入本机合成参数
+              </button>
+            </div>
             <label class="transcript-rewrite-dialog__save-opt">
               <input type="checkbox" id="tr-rewrite-save-version" checked />
               <span>采用后将改写稿存入本段「口播版本库」</span>
@@ -758,7 +924,14 @@
           <header class="external-settings-dialog__head">
             <h2 class="external-settings-dialog__title" id="transcript-rewrite-versions-title">口播版本库</h2>
             <form method="dialog">
-              <button type="submit" class="btn btn-text" aria-label="关闭">关闭</button>
+              <button
+                type="submit"
+                class="btn btn-text transcript-rewrite-versions-dialog__close-toolbar"
+                aria-label="关闭口播版本库"
+                title="关闭口播版本库（未采用的条目仍会保留在版本库中）"
+              >
+                关闭
+              </button>
             </form>
           </header>
           <div class="external-settings-dialog__body">
@@ -766,8 +939,16 @@
             <div id="tr-versions-list" class="transcript-rewrite-versions-dialog__list"></div>
             <p id="tr-versions-empty" class="muted hidden">暂无保存的版本。可在「口播稿优化」结果中勾选保存，或采用改写稿时自动存入。</p>
           </div>
-          <footer class="external-settings-dialog__footer">
-            <button type="button" class="btn btn-text" id="btn-tr-versions-close">关闭</button>
+          <footer class="external-settings-dialog__footer transcript-rewrite-versions-dialog__footer">
+            <button
+              type="button"
+              class="btn btn-secondary transcript-rewrite-versions-dialog__close-foot"
+              id="btn-tr-versions-close"
+              aria-label="关闭口播版本库并返回本页逐字稿与音频"
+              title="关闭版本库，回到「本页逐字稿与音频」继续编辑或生成"
+            >
+              返回逐字稿
+            </button>
           </footer>
         </div>
       </dialog>
@@ -1247,6 +1428,6 @@
       </div>
     </div>
 
-    <script src="/assets/app.js?v=2.56" defer></script>
+    <script src="/assets/app.js?v=2.69" defer></script>
   </body>
 </html>
