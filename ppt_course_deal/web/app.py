@@ -1,12 +1,37 @@
 from __future__ import annotations
 
+import json
 import logging
 import mimetypes
 from contextlib import asynccontextmanager
 import os
 import shutil
+import sys
 import tempfile
 from pathlib import Path
+
+
+def _ensure_repo_root_for_rebuilder() -> None:
+    """
+    ``pip install -e .`` 若在 pyproject 加入 ``ppt_course_rebuilder`` 之前完成，
+    虚拟环境里可能没有注册该包。若在源码树内运行，将仓库根目录加入 ``sys.path`` 兜底。
+    """
+    try:
+        import ppt_course_rebuilder  # noqa: F401
+
+        return
+    except ModuleNotFoundError:
+        pass
+    here = Path(__file__).resolve()
+    repo_root = here.parents[2]
+    pkg = repo_root / "ppt_course_rebuilder" / "__init__.py"
+    if pkg.is_file():
+        rs = str(repo_root)
+        if rs not in sys.path:
+            sys.path.insert(0, rs)
+
+
+_ensure_repo_root_for_rebuilder()
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import quote
 from uuid import UUID, uuid4
@@ -58,6 +83,7 @@ from ppt_course_deal.minimax_client import (
     synthesize_to_mp3_bytes_traced,
 )
 from ppt_course_deal.pipeline import transform_pptx
+from ppt_course_deal.raw_material_manifest import build_raw_material_manifest
 from ppt_course_deal.slide_render import describe_preview_render_env, render_pptx_to_pngs
 from ppt_course_deal.shape_image_export import list_slide_shape_files
 from ppt_course_deal.slide_visual_generation import (
@@ -83,6 +109,13 @@ from ppt_course_deal.transcript_import import (
     merge_with_resolutions,
     prepare_import,
 )
+from ppt_course_rebuilder.director import rebuild_course_from_raw_manifest
+from ppt_course_rebuilder.review import (
+    approve_scene as rebuilder_approve_scene,
+    export_approved_manifest as rebuilder_export_approved_manifest,
+    reject_scene as rebuilder_reject_scene,
+)
+
 from ppt_course_deal.transcript_rewrite import (
     REWRITE_MINIMAL_SYSTEM,
     build_user_prompt_with_skill,
@@ -125,6 +158,10 @@ def get_max_upload_bytes() -> int:
 
 class TaskRenameBody(BaseModel):
     filename: str = Field(min_length=1, max_length=200)
+
+
+class SceneRejectBody(BaseModel):
+    reason: Optional[str] = Field(default="", max_length=4000)
 
 
 class GenerateSlideVisualBody(BaseModel):
@@ -448,6 +485,99 @@ def create_app() -> FastAPI:
                 detail="无法更新名称（任务不存在或名称无效）",
             )
         return {"ok": True, "filename": name}
+
+    @application.post("/api/tasks/{task_id}/raw-material-manifest")
+    def post_raw_material_manifest(task_id: str) -> Dict[str, Any]:
+        """生成并写入 raw_material_manifest.json。"""
+        try:
+            manifest = build_raw_material_manifest(task_id)
+        except FileNotFoundError as err:
+            raise HTTPException(status_code=404, detail=str(err)) from err
+        slides = manifest.get("slides") or []
+        out_path = tasks_dir() / task_id / "raw_material_manifest.json"
+        return {
+            "ok": True,
+            "task_id": task_id,
+            "path": str(out_path),
+            "slide_count": len(slides),
+            "shapes_total": sum(len(s.get("shapes") or []) for s in slides),
+        }
+
+    @application.post("/api/tasks/{task_id}/rebuild-course")
+    def post_rebuild_course(task_id: str) -> Dict[str, Any]:
+        """生成 director_manifest.json（必要时先生成 raw manifest）。"""
+        if load_task(task_id) is None:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        raw_path = tasks_dir() / task_id / "raw_material_manifest.json"
+        if not raw_path.is_file():
+            build_raw_material_manifest(task_id)
+        dm_path = tasks_dir() / task_id / "director_manifest.json"
+        dm = rebuild_course_from_raw_manifest(
+            str(raw_path),
+            str(dm_path),
+            None,
+        )
+        assets = dm.get("assets") or []
+        scenes = dm.get("scenes") or []
+        return {
+            "ok": True,
+            "task_id": task_id,
+            "director_manifest_path": str(dm_path),
+            "raw_material_manifest_path": str(raw_path),
+            "scene_count": len(scenes),
+            "asset_count": len(assets),
+        }
+
+    @application.get("/api/tasks/{task_id}/director-manifest")
+    def get_director_manifest(task_id: str) -> Dict[str, Any]:
+        path = tasks_dir() / task_id / "director_manifest.json"
+        if load_task(task_id) is None:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="尚未生成导演脚本，请先「生成课程化导演脚本」")
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as err:
+            raise HTTPException(status_code=500, detail="导演脚本文件损坏") from err
+
+    @application.post("/api/tasks/{task_id}/approve-scene/{scene_id}")
+    def post_approve_scene(task_id: str, scene_id: str) -> Dict[str, Any]:
+        if load_task(task_id) is None:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        path = tasks_dir() / task_id / "director_manifest.json"
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="尚未生成导演脚本")
+        try:
+            return rebuilder_approve_scene(str(path), scene_id)
+        except ValueError as err:
+            raise HTTPException(status_code=404, detail=str(err)) from err
+
+    @application.post("/api/tasks/{task_id}/reject-scene/{scene_id}")
+    def post_reject_scene(
+        task_id: str,
+        scene_id: str,
+        payload: Optional[SceneRejectBody] = Body(default=None),
+    ) -> Dict[str, Any]:
+        if load_task(task_id) is None:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        path = tasks_dir() / task_id / "director_manifest.json"
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="尚未生成导演脚本")
+        reason = (payload.reason if payload else "") or ""
+        try:
+            return rebuilder_reject_scene(str(path), scene_id, reason)
+        except ValueError as err:
+            raise HTTPException(status_code=404, detail=str(err)) from err
+
+    @application.post("/api/tasks/{task_id}/export-approved-director-manifest")
+    def post_export_approved_director_manifest(task_id: str) -> Dict[str, Any]:
+        if load_task(task_id) is None:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        src = tasks_dir() / task_id / "director_manifest.json"
+        if not src.is_file():
+            raise HTTPException(status_code=404, detail="尚未生成导演脚本")
+        out = tasks_dir() / task_id / "approved_director_manifest.json"
+        return rebuilder_export_approved_manifest(str(src), str(out))
 
     @application.get("/api/tasks/{task_id}/preview/{slide_index:int}")
     def task_preview_png(task_id: str, slide_index: int) -> FileResponse:

@@ -2933,6 +2933,119 @@ body {
   word-break: break-all;
 }
 
+.director-panel {
+  margin-top: 1rem;
+  padding: 1rem 1rem 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+.director-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.35rem;
+}
+
+.director-panel__title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--heading-strong);
+}
+
+.director-panel__hint {
+  margin: 0 0 0.75rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.director-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.65rem;
+  margin-bottom: 0.85rem;
+}
+
+.director-panel__summary-inner p {
+  margin: 0.2rem 0;
+  font-size: 0.82rem;
+  color: var(--body-secondary);
+}
+
+.director-panel__empty {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.director-panel__scenes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  max-height: min(42vh, 28rem);
+  overflow-y: auto;
+  padding-right: 0.2rem;
+  scrollbar-gutter: stable;
+}
+
+.director-scene-card {
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  font-size: 0.78rem;
+  color: var(--body-secondary);
+}
+
+.director-scene-card__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.65rem;
+  align-items: baseline;
+  margin-bottom: 0.45rem;
+  font-size: 0.72rem;
+}
+
+.director-scene-card__id {
+  font-family: ui-monospace, monospace;
+  color: var(--accent);
+}
+
+.director-scene-card__type {
+  color: var(--warn-fg);
+}
+
+.director-scene-card__review {
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.director-scene-card p {
+  margin: 0.2rem 0;
+}
+
+.director-scene-card__block {
+  margin: 0.35rem 0;
+  padding: 0.45rem 0.5rem;
+  max-height: 6.5rem;
+  overflow: auto;
+  border-radius: 6px;
+  background: var(--bg);
+  border: 1px dashed var(--notes-dashed);
+  font-size: 0.74rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.director-scene-card__actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.45rem;
+}
+
 @media (max-width: 520px) {
   .field-grid {
     grid-template-columns: 1fr;

@@ -23,7 +23,7 @@ ppt-course = "ppt_course_deal.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["ppt_course_deal*"]
+include = ["ppt_course_deal*", "ppt_course_rebuilder*"]
 
 [tool.setuptools.package-data]
 ppt_course_deal = [

@@ -17,7 +17,7 @@
         }
       })();
     </script>
-    <link rel="stylesheet" href="/assets/styles.css?v=2.67" />
+    <link rel="stylesheet" href="/assets/styles.css?v=2.68" />
   </head>
   <body>
     <div class="app">
@@ -411,6 +411,31 @@
                       </div>
                       </div>
                     </div>
+                  </section>
+
+                  <section class="director-panel" id="director-panel" aria-label="课程重构与导演脚本">
+                    <div class="director-panel__head">
+                      <span class="director-panel__title">课程重构 / 导演脚本</span>
+                    </div>
+                    <p class="director-panel__hint">
+                      将当前任务的预览与解析结果汇总为原始素材清单，并由内置导演模块生成可审核的镜头脚本（启发式初版，未接 LLM / 生图 API）。
+                    </p>
+                    <div class="director-panel__actions">
+                      <button type="button" class="btn btn-secondary" id="btn-director-raw-manifest">
+                        生成原始素材 Manifest
+                      </button>
+                      <button type="button" class="btn btn-secondary" id="btn-director-rebuild">
+                        生成课程化导演脚本
+                      </button>
+                      <button type="button" class="btn btn-text" id="btn-director-refresh">
+                        刷新导演脚本
+                      </button>
+                      <button type="button" class="btn btn-text" id="btn-director-export">
+                        导出已审核脚本
+                      </button>
+                    </div>
+                    <div class="director-panel__summary" id="director-summary"></div>
+                    <div class="director-panel__scenes" id="director-scenes"></div>
                   </section>
 
                   <section class="audio-workbench" id="audio-workbench" aria-label="音频工作台">
@@ -1587,6 +1612,6 @@
       </div>
     </div>
 
-    <script src="/assets/app.js?v=2.72" defer></script>
+    <script src="/assets/app.js?v=2.73" defer></script>
   </body>
 </html>

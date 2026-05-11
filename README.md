@@ -10,12 +10,12 @@
 
 | 中文定位 | 代码位置 | 典型用法 |
 |----------|----------|----------|
-| **课件处理与工作台** | Python 包 **`ppt_course_deal`**（PyPI 元数据名 `ppt-course-mvp`，命令 **`ppt-course`**） | **默认主力**：本机 **Web 工作台**（上传、预览、已存任务、课程化下载、音频与外部 API 等）+ CLI **`ppt-course transform` / `serve`**；课程化走 **启发式规则流水线**，**不依赖** Rebuilder 里的 LLM。 |
-| **视频渲染（Remotion）** | 目录 **`ppt_course_renderer/`** | 与 `ppt_course_deal` **平行**：接收每页图、TTS 音频、逐字稿，生成 Remotion 合成数据并导出成片；见该目录 **README** 与 [remotion-dev/remotion](https://github.com/remotion-dev/remotion)。已用 **`create-video`** 初始化空白模板（`npm run dev` / `npx remotion render`）；与 deal 的 **manifest 契约与 Web 触发渲染** 仍待接线。 |
-| **AI 课程重构管线（Rebuilder）** | 目录 **`ppt_course_rebuilder/`** | **可选、当前非主线**：需 **OpenAI 兼容 API**，跑「分析 → 规划 → 模板生成」与 `output/` 等产物。与 deal / renderer **未做自动串联**；完整 Agent 向扩展可在 deal→renderer 管线调通后再推进。 |
+| **课件处理与工作台** | Python 包 **`ppt_course_deal`**（PyPI 元数据名 `ppt-course-mvp`，命令 **`ppt-course`**） | **唯一 Web 入口**：本机 **FastAPI + 静态前端**（上传、预览、已存任务、音频与外部 API、**原始素材清单 / 导演脚本** 等）+ CLI **`ppt-course transform` / `serve`** 等。课件版式课程化仍为 **启发式规则**（与导演模块独立）。 |
+| **视频渲染（Remotion）** | 目录 **`ppt_course_renderer/`** | 与 `ppt_course_deal` **平行**：接收每页图、TTS 音频、逐字稿，生成 Remotion 合成数据并导出成片；见该目录 **README**。已用 **`create-video`** 初始化模板；**本阶段未**将 Remotion Studio 嵌入 deal；**导演 manifest → input-props** 自动映射仍待接线。 |
+| **课程导演模块（Rebuilder 库）** | 目录 **`ppt_course_rebuilder/`**（包名 **`ppt_course_rebuilder`**） | 作为 **Python 库**被 **`ppt_course_deal` import**：读 **`raw_material_manifest.json`**，写 **`director_manifest.json`**（初版 **启发式**，无 LLM）。**不**单独起 Web、**不**单独监听端口。目录内历史 **`main.py` / `src/`** CLI（OpenAI 规划 + 新版 PPTX）仍为可选批处理，与导演包 **并存**。 |
 | **GitHub Pages 静态介绍页** | 目录 **`github-pages/`** | **与运行时代码隔离**：仅 HTML/CSS/截图占位；本地预览见该目录 **README**；发布需在仓库 **Settings → Pages** 选择根目录、`/docs` 或 **GitHub Actions** 将本目录产物上线。 |
 
-**不是**「Web = 调试用、Rebuilder = 正式」：日常以 **deal 工作台** 为主；**renderer** 负责成片；Rebuilder 是另一条 **AI 重型** 批处理线。
+日常以 **deal 工作台** 为唯一产品入口；**renderer** 负责成片；**导演模块**负责「原始素材 → 导演脚本 → 审核」中间层（详见 **`docs/deal_rebuilder_integration.md`**、**`docs/director_manifest_contract.md`**）。
 
 ---
 
@@ -51,9 +51,10 @@ brew install poppler
 
 单文件上传默认上限 **50MB**；若课件更大，可在启动前设置 **`PPT_COURSE_MAX_UPLOAD_MB`**（例如 `200` 或 `500`）并重启 `ppt-course serve`。前方若有 Nginx 等反代，需同步放宽 `client_max_body_size`。
 
-## AI 课程重构管线（子项目，可选）
+## 课程导演模块（`ppt_course_rebuilder` 包）
 
-- 进入 **`ppt_course_rebuilder/`**，按该目录内 **`README.md`** 单独建 venv、配置 `.env` 后执行 `python main.py ...`（与根目录 `pip install -e .` 无强制关系）。
+- 与 **`pip install -e .`** 一并安装；由 **deal Web** 调用（「课程重构 / 导演脚本」区域），无需单独启动服务。
+- **CLI 旧管线**（`main.py`、AI 规划 PPTX）仍为可选：见 **`ppt_course_rebuilder/README.md`**。
 
 ## 视频渲染（子项目，建设中）
 

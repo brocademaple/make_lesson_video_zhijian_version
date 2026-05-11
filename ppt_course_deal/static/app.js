@@ -127,6 +127,12 @@
   const btnImportTranscriptPreview = document.getElementById("btn-import-transcript-preview");
   const btnImportTranscriptBack = document.getElementById("btn-import-transcript-back");
   const btnImportTranscriptApply = document.getElementById("btn-import-transcript-apply");
+  const directorSummary = document.getElementById("director-summary");
+  const directorScenes = document.getElementById("director-scenes");
+  const btnDirectorRawManifest = document.getElementById("btn-director-raw-manifest");
+  const btnDirectorRebuild = document.getElementById("btn-director-rebuild");
+  const btnDirectorRefresh = document.getElementById("btn-director-refresh");
+  const btnDirectorExport = document.getElementById("btn-director-export");
 
   var AUDIO_GEN_LS_KEY = "ppt_course_audio_gen_overrides";
 
@@ -174,6 +180,8 @@
   let pendingAudioConfirmMinimaxOverlay = null;
   /** @type {string | null} */
   let currentTaskId = null;
+  /** @type {any | null} */
+  let directorManifestCache = null;
   /** 上传解析会话为 session；从已存任务打开为 stored */
   let previewMode = "session";
 
@@ -1082,6 +1090,7 @@
       statusLine.textContent = msg;
       setImportTranscriptButtonVisible();
       refreshGenerateSlideVisualEnabled();
+      void refreshDirectorManifest(true);
     } catch (_) {}
   }
 
@@ -1099,6 +1108,276 @@
     var d = document.createElement("div");
     d.textContent = s;
     return d.innerHTML;
+  }
+
+  function renderDirectorManifest(dm) {
+    directorManifestCache = dm;
+    if (directorSummary) {
+      var course = (dm && dm.course) || {};
+      var assets = (dm && dm.assets) || [];
+      var scenes = (dm && dm.scenes) || [];
+      directorSummary.innerHTML =
+        '<div class="director-panel__summary-inner">' +
+        "<p><strong>课程标题</strong>：" +
+        escapeHtmlText(course.title || "—") +
+        "</p>" +
+        "<p><strong>课程目标</strong>：" +
+        escapeHtmlText(course.goal || "—") +
+        "</p>" +
+        "<p><strong>素材数量</strong>：" +
+        assets.length +
+        "　<strong>镜头数量</strong>：" +
+        scenes.length +
+        "</p>" +
+        "</div>";
+    }
+    if (!directorScenes) return;
+    var list = (dm && dm.scenes) || [];
+    if (!list.length) {
+      directorScenes.innerHTML =
+        '<p class="director-panel__empty">暂无镜头。请先生成课程化导演脚本。</p>';
+      return;
+    }
+    var buf = [];
+    for (var i = 0; i < list.length; i++) {
+      var sc = list[i];
+      var sd = sc.screen_design || {};
+      var vs = sd.visual_strategy || "";
+      var rf = (sc.risk_flags || []).join("、");
+      buf.push(
+        '<article class="director-scene-card" data-scene-id="' +
+          escapeHtmlText(sc.scene_id || "") +
+          '">' +
+          '<header class="director-scene-card__head">' +
+          '<span class="director-scene-card__id">' +
+          escapeHtmlText(sc.scene_id || "") +
+          "</span>" +
+          '<span class="director-scene-card__type">' +
+          escapeHtmlText(sc.scene_type || "") +
+          "</span>" +
+          '<span class="director-scene-card__review">' +
+          escapeHtmlText(sc.review_status || "") +
+          "</span>" +
+          "</header>" +
+          "<p><strong>标题</strong>：" +
+          escapeHtmlText(sc.title || "") +
+          "</p>" +
+          "<p><strong>来源页</strong>：" +
+          escapeHtmlText(JSON.stringify(sc.source_slide_ids || [])) +
+          "</p>" +
+          "<p><strong>学习目标</strong>：" +
+          escapeHtmlText(sc.learning_goal || "") +
+          "</p>" +
+          '<pre class="director-scene-card__block">' +
+          escapeHtmlText(sc.onscreen_text || "") +
+          "</pre>" +
+          '<pre class="director-scene-card__block">' +
+          escapeHtmlText(sc.narration || "") +
+          "</pre>" +
+          '<pre class="director-scene-card__block">' +
+          escapeHtmlText(sc.tts_text || "") +
+          "</pre>" +
+          '<pre class="director-scene-card__block">' +
+          escapeHtmlText(sc.subtitle_text || "") +
+          "</pre>" +
+          "<p><strong>画面策略</strong>：" +
+          escapeHtmlText(vs) +
+          "</p>" +
+          "<p><strong>风险标记</strong>：" +
+          escapeHtmlText(rf || "—") +
+          "</p>" +
+          '<div class="director-scene-card__actions">' +
+          '<button type="button" class="btn btn-text director-scene-approve">审核通过</button>' +
+          '<button type="button" class="btn btn-text director-scene-reject">驳回</button>' +
+          "</div>" +
+          "</article>"
+      );
+    }
+    directorScenes.innerHTML = buf.join("");
+  }
+
+  async function refreshDirectorManifest(silent) {
+    if (!currentTaskId) {
+      if (directorSummary) {
+        directorSummary.innerHTML =
+          '<p class="director-panel__empty">需任务已持久化（解析返回 task_id，或从已存任务打开）。</p>';
+      }
+      if (directorScenes) directorScenes.innerHTML = "";
+      directorManifestCache = null;
+      return;
+    }
+    try {
+      var res = await fetch(
+        "/api/tasks/" + encodeURIComponent(currentTaskId) + "/director-manifest"
+      );
+      if (res.status === 404) {
+        if (!silent && statusLine) {
+          statusLine.textContent = "尚未生成导演脚本，可先点击「生成课程化导演脚本」。";
+        }
+        if (directorSummary) {
+          directorSummary.innerHTML =
+            '<p class="director-panel__empty">尚未生成导演脚本。</p>';
+        }
+        if (directorScenes) directorScenes.innerHTML = "";
+        directorManifestCache = null;
+        return;
+      }
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      var dm = await res.json();
+      renderDirectorManifest(dm);
+    } catch (e) {
+      if (!silent && statusLine) {
+        statusLine.textContent =
+          "刷新导演脚本失败：" + (e instanceof Error ? e.message : String(e));
+      }
+    }
+  }
+
+  async function postDirectorRawManifest() {
+    if (!currentTaskId) return;
+    try {
+      if (btnDirectorRawManifest) btnDirectorRawManifest.disabled = true;
+      var res = await fetch(
+        "/api/tasks/" + encodeURIComponent(currentTaskId) + "/raw-material-manifest",
+        { method: "POST" }
+      );
+      var j = await res.json().catch(function () {
+        return {};
+      });
+      if (!res.ok) throw new Error(j.detail || "请求失败");
+      if (statusLine) {
+        statusLine.textContent =
+          "已生成 raw_material_manifest.json（" +
+          (j.slide_count || 0) +
+          " 页，" +
+          (j.shapes_total || 0) +
+          " 个 shape 素材）。";
+      }
+    } catch (e) {
+      if (statusLine) {
+        statusLine.textContent =
+          "生成原始素材清单失败：" + (e instanceof Error ? e.message : String(e));
+      }
+    } finally {
+      if (btnDirectorRawManifest) btnDirectorRawManifest.disabled = false;
+    }
+  }
+
+  async function postDirectorRebuild() {
+    if (!currentTaskId) return;
+    try {
+      if (btnDirectorRebuild) btnDirectorRebuild.disabled = true;
+      var res = await fetch(
+        "/api/tasks/" + encodeURIComponent(currentTaskId) + "/rebuild-course",
+        { method: "POST" }
+      );
+      var j = await res.json().catch(function () {
+        return {};
+      });
+      if (!res.ok) throw new Error(j.detail || "请求失败");
+      if (statusLine) {
+        statusLine.textContent =
+          "已生成导演脚本：镜头 " +
+          (j.scene_count || 0) +
+          "，素材 " +
+          (j.asset_count || 0) +
+          "。";
+      }
+      await refreshDirectorManifest(true);
+    } catch (e) {
+      if (statusLine) {
+        statusLine.textContent =
+          "生成导演脚本失败：" + (e instanceof Error ? e.message : String(e));
+      }
+    } finally {
+      if (btnDirectorRebuild) btnDirectorRebuild.disabled = false;
+    }
+  }
+
+  async function postDirectorExport() {
+    if (!currentTaskId) return;
+    try {
+      if (btnDirectorExport) btnDirectorExport.disabled = true;
+      var res = await fetch(
+        "/api/tasks/" +
+          encodeURIComponent(currentTaskId) +
+          "/export-approved-director-manifest",
+        { method: "POST" }
+      );
+      var j = await res.json().catch(function () {
+        return {};
+      });
+      if (!res.ok) throw new Error(j.detail || "请求失败");
+      if (statusLine) {
+        statusLine.textContent =
+          "已导出 approved_director_manifest.json（审核通过 " +
+          (j.approved_scene_count || 0) +
+          " 条，驳回项 " +
+          (j.rejected_item_count || 0) +
+          "）。";
+      }
+    } catch (e) {
+      if (statusLine) {
+        statusLine.textContent =
+          "导出失败：" + (e instanceof Error ? e.message : String(e));
+      }
+    } finally {
+      if (btnDirectorExport) btnDirectorExport.disabled = false;
+    }
+  }
+
+  async function directorApproveScene(sceneId) {
+    if (!currentTaskId || !sceneId) return;
+    try {
+      var res = await fetch(
+        "/api/tasks/" +
+          encodeURIComponent(currentTaskId) +
+          "/approve-scene/" +
+          encodeURIComponent(sceneId),
+        { method: "POST" }
+      );
+      var j = await res.json().catch(function () {
+        return {};
+      });
+      if (!res.ok) throw new Error(j.detail || "请求失败");
+      if (statusLine) statusLine.textContent = "镜头 " + sceneId + " 已标记为审核通过。";
+      await refreshDirectorManifest(true);
+    } catch (e) {
+      if (statusLine) {
+        statusLine.textContent =
+          "审核失败：" + (e instanceof Error ? e.message : String(e));
+      }
+    }
+  }
+
+  async function directorRejectScene(sceneId) {
+    if (!currentTaskId || !sceneId) return;
+    var reason = window.prompt("驳回原因（可留空）", "");
+    if (reason === null) return;
+    try {
+      var res = await fetch(
+        "/api/tasks/" +
+          encodeURIComponent(currentTaskId) +
+          "/reject-scene/" +
+          encodeURIComponent(sceneId),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reason: reason || "" }),
+        }
+      );
+      var j = await res.json().catch(function () {
+        return {};
+      });
+      if (!res.ok) throw new Error(j.detail || "请求失败");
+      if (statusLine) statusLine.textContent = "镜头 " + sceneId + " 已驳回。";
+      await refreshDirectorManifest(true);
+    } catch (e) {
+      if (statusLine) {
+        statusLine.textContent =
+          "驳回失败：" + (e instanceof Error ? e.message : String(e));
+      }
+    }
   }
 
   function resetImportTranscriptDialog() {
@@ -3129,6 +3408,7 @@
       refreshTaskList();
       refreshGenerateSlideVisualEnabled();
       void refreshGenVisualCoverage();
+      void refreshDirectorManifest(true);
     } catch (err) {
       showErr(errorUpload, err instanceof Error ? err.message : String(err));
       uploadPanel.querySelector(".drop-title").textContent = "上传培训用 .pptx";
@@ -3173,6 +3453,9 @@
     refreshGenerateSlideVisualEnabled();
     updatePvSourceTabsUi();
     updateAiVisualToolbarBtn();
+    directorManifestCache = null;
+    if (directorSummary) directorSummary.innerHTML = "";
+    if (directorScenes) directorScenes.innerHTML = "";
   }
 
   dropzone.addEventListener("click", function () {
@@ -3711,6 +3994,44 @@
       audioWorkbenchStatus.textContent = "保存中…";
       var ok = await saveAudioWorkspaceRemote();
       audioWorkbenchStatus.textContent = ok ? "已保存逐字稿" : "保存失败";
+    });
+  }
+
+  if (directorScenes) {
+    directorScenes.addEventListener("click", function (e) {
+      var t = e.target;
+      if (!(t instanceof HTMLElement)) return;
+      var card = t.closest(".director-scene-card");
+      if (!card || !(card instanceof HTMLElement)) return;
+      var sid = card.getAttribute("data-scene-id") || "";
+      if (!sid) return;
+      if (t.closest(".director-scene-approve")) {
+        void directorApproveScene(sid);
+        return;
+      }
+      if (t.closest(".director-scene-reject")) {
+        void directorRejectScene(sid);
+      }
+    });
+  }
+  if (btnDirectorRawManifest) {
+    btnDirectorRawManifest.addEventListener("click", function () {
+      void postDirectorRawManifest();
+    });
+  }
+  if (btnDirectorRebuild) {
+    btnDirectorRebuild.addEventListener("click", function () {
+      void postDirectorRebuild();
+    });
+  }
+  if (btnDirectorRefresh) {
+    btnDirectorRefresh.addEventListener("click", function () {
+      void refreshDirectorManifest(true);
+    });
+  }
+  if (btnDirectorExport) {
+    btnDirectorExport.addEventListener("click", function () {
+      void postDirectorExport();
     });
   }
 
