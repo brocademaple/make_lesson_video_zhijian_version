@@ -130,9 +130,11 @@
   const directorSummary = document.getElementById("director-summary");
   const directorScenes = document.getElementById("director-scenes");
   const btnDirectorRawManifest = document.getElementById("btn-director-raw-manifest");
+  const btnDirectorCourseMaterial = document.getElementById("btn-director-course-material");
   const btnDirectorRebuild = document.getElementById("btn-director-rebuild");
   const btnDirectorRefresh = document.getElementById("btn-director-refresh");
   const btnDirectorExport = document.getElementById("btn-director-export");
+  const directorMaterials = document.getElementById("director-materials");
   const remotionSummary = document.getElementById("remotion-summary");
   const remotionCommand = document.getElementById("remotion-command");
   const btnRemotionGenerate = document.getElementById("btn-remotion-generate");
@@ -1099,6 +1101,7 @@
       statusLine.textContent = msg;
       setImportTranscriptButtonVisible();
       refreshGenerateSlideVisualEnabled();
+      void refreshCourseMaterial(true);
       void refreshDirectorManifest(true);
       void refreshRemotionStatus(true);
       void refreshWorkspaceStatus(true);
@@ -1119,6 +1122,136 @@
     var d = document.createElement("div");
     d.textContent = s;
     return d.innerHTML;
+  }
+
+  function renderCourseMaterial(material) {
+    if (!directorMaterials) return;
+    if (!currentTaskId) {
+      directorMaterials.innerHTML = "";
+      return;
+    }
+    var slidesList = (material && material.slides) || [];
+    var assets = (material && material.assets) || [];
+    var audio = (material && material.audio) || {};
+    if (!slidesList.length) {
+      directorMaterials.innerHTML =
+        '<p class="director-panel__empty">尚未生成素材标记。请先点击「生成素材标记」。</p>';
+      return;
+    }
+    var roleCounts = {};
+    slidesList.forEach(function (slide) {
+      var tags = slide.material_tags || [];
+      tags.forEach(function (tag) {
+        roleCounts[tag] = (roleCounts[tag] || 0) + 1;
+      });
+    });
+    var topTags = Object.keys(roleCounts)
+      .sort(function (a, b) {
+        return roleCounts[b] - roleCounts[a];
+      })
+      .slice(0, 8)
+      .map(function (tag) {
+        return tag + " " + roleCounts[tag];
+      })
+      .join(" / ");
+    var visibleSlides = slidesList.slice(0, 8);
+    var cards = visibleSlides
+      .map(function (slide) {
+        var tags = (slide.material_tags || []).slice(0, 6).join("、") || "content";
+        var assetTags = (slide.assets || [])
+          .slice(0, 4)
+          .map(function (asset) {
+            var semantic = (asset.semantic_tags || []).slice(0, 3).join("/");
+            return (asset.asset_type || "asset") + (semantic ? " · " + semantic : "");
+          })
+          .join("\n");
+        var audioSegments = slide.audio_segments || [];
+        var audioReady = audioSegments.filter(function (seg) {
+          return !!seg.audio_relative;
+        }).length;
+        return (
+          '<article class="material-card">' +
+          '<div class="material-card__head">' +
+          '<span class="material-card__index">P' +
+          escapeHtmlText(String((slide.slide_index || 0) + 1)) +
+          "</span>" +
+          '<span class="material-card__layout">' +
+          escapeHtmlText(slide.recommended_layout || "full_slide") +
+          "</span>" +
+          "</div>" +
+          "<h3>" +
+          escapeHtmlText(slide.title || "未命名页面") +
+          "</h3>" +
+          '<p class="material-card__role">' +
+          escapeHtmlText(slide.material_role || "knowledge_material") +
+          "</p>" +
+          '<p class="material-card__purpose">' +
+          escapeHtmlText(slide.teaching_purpose || "") +
+          "</p>" +
+          '<p class="material-card__tags">' +
+          escapeHtmlText(tags) +
+          "</p>" +
+          '<p class="material-card__meta">音频 ' +
+          audioReady +
+          "/" +
+          audioSegments.length +
+          " · 素材 " +
+          ((slide.assets || []).length || 0) +
+          "</p>" +
+          (assetTags
+            ? '<pre class="material-card__assets">' + escapeHtmlText(assetTags) + "</pre>"
+            : "") +
+          "</article>"
+        );
+      })
+      .join("");
+    directorMaterials.innerHTML =
+      '<div class="material-board">' +
+      '<div class="material-board__summary">' +
+      "<p><strong>素材层</strong>：" +
+      slidesList.length +
+      " 页，" +
+      assets.length +
+      " 个资产，已生成音频段 " +
+      (audio.generated_segment_count || 0) +
+      "。</p>" +
+      "<p><strong>高频标签</strong>：" +
+      escapeHtmlText(topTags || "—") +
+      "</p>" +
+      "</div>" +
+      '<div class="material-board__cards">' +
+      cards +
+      "</div>" +
+      (slidesList.length > visibleSlides.length
+        ? '<p class="material-board__more">仅预览前 ' +
+          visibleSlides.length +
+          " 页；完整素材层已保存到本地 course_material.json。</p>"
+        : "") +
+      "</div>";
+  }
+
+  async function refreshCourseMaterial(silent) {
+    if (!currentTaskId) {
+      renderCourseMaterial(null);
+      return;
+    }
+    try {
+      var res = await fetch(
+        "/api/tasks/" + encodeURIComponent(currentTaskId) + "/course-material"
+      );
+      if (res.status === 404) {
+        renderCourseMaterial(null);
+        return;
+      }
+      var material = await res.json();
+      if (!res.ok) throw new Error(material.detail || "请求失败");
+      renderCourseMaterial(material);
+    } catch (e) {
+      if (!silent && statusLine) {
+        statusLine.textContent =
+          "刷新素材标记失败：" + (e instanceof Error ? e.message : String(e));
+      }
+    }
   }
 
   function renderDirectorManifest(dm) {
@@ -1305,6 +1438,40 @@
       }
     } finally {
       if (btnDirectorRawManifest) btnDirectorRawManifest.disabled = false;
+    }
+  }
+
+  async function postCourseMaterial() {
+    if (!currentTaskId) return;
+    try {
+      if (btnDirectorCourseMaterial) btnDirectorCourseMaterial.disabled = true;
+      var res = await fetch(
+        "/api/tasks/" + encodeURIComponent(currentTaskId) + "/course-material",
+        { method: "POST" }
+      );
+      var j = await res.json().catch(function () {
+        return {};
+      });
+      if (!res.ok) throw new Error(j.detail || "请求失败");
+      await refreshCourseMaterial(true);
+      void refreshWorkspaceStatus(true);
+      if (statusLine) {
+        statusLine.textContent =
+          "已生成 course_material.json：素材页 " +
+          (j.slide_count || 0) +
+          "，资产 " +
+          (j.asset_count || 0) +
+          "，音频段 " +
+          (j.generated_segment_count || 0) +
+          "。";
+      }
+    } catch (e) {
+      if (statusLine) {
+        statusLine.textContent =
+          "生成素材标记失败：" + (e instanceof Error ? e.message : String(e));
+      }
+    } finally {
+      if (btnDirectorCourseMaterial) btnDirectorCourseMaterial.disabled = false;
     }
   }
 
@@ -4518,6 +4685,11 @@
       void postDirectorRawManifest();
     });
   }
+  if (btnDirectorCourseMaterial) {
+    btnDirectorCourseMaterial.addEventListener("click", function () {
+      void postCourseMaterial();
+    });
+  }
   if (btnDirectorRebuild) {
     btnDirectorRebuild.addEventListener("click", function () {
       void postDirectorRebuild();
@@ -4525,6 +4697,7 @@
   }
   if (btnDirectorRefresh) {
     btnDirectorRefresh.addEventListener("click", function () {
+      void refreshCourseMaterial(true);
       void refreshDirectorManifest(true);
     });
   }

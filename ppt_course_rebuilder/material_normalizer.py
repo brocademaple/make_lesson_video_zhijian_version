@@ -7,7 +7,13 @@ from pathlib import Path
 from typing import Any
 
 from ppt_course_rebuilder.manifest_reader import read_json, write_json
-from ppt_course_rebuilder.material_tagger import infer_layout, tag_asset, tag_slide_text
+from ppt_course_rebuilder.material_tagger import (
+    infer_layout,
+    material_role,
+    tag_asset,
+    tag_slide_text,
+    teaching_purpose,
+)
 from ppt_course_rebuilder.models import utc_now_iso
 
 
@@ -143,6 +149,8 @@ def build_course_material(
                 "speaker_notes": str(slide.get("speaker_notes") or ""),
                 "full_page_png": full_page_png,
                 "material_tags": tags,
+                "material_role": material_role(tags),
+                "teaching_purpose": teaching_purpose(tags),
                 "recommended_layout": infer_layout(tags),
                 "assets": asset_refs,
                 "audio_segments": _audio_segments_for_slide(

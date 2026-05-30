@@ -427,14 +427,17 @@
 
                   <section class="director-panel" id="director-panel" aria-label="课程重构与导演脚本">
                     <div class="director-panel__head">
-                      <span class="director-panel__title">课程重构 / 导演脚本</span>
+                      <span class="director-panel__title">素材理解 / 课程重构 / 导演脚本</span>
                     </div>
                     <p class="director-panel__hint">
-                      将当前任务的预览与解析结果汇总为原始素材清单，并由内置导演模块生成可审核的镜头脚本；默认优先使用 OpenAI-compatible LLM，失败自动回退启发式。
+                      将当前任务的预览与解析结果先沉淀为可复用素材层，再标记每页/素材在课程里的作用，最后由导演模块生成可审核的镜头脚本。
                     </p>
                     <div class="director-panel__actions">
                       <button type="button" class="btn btn-secondary" id="btn-director-raw-manifest">
                         生成原始素材 Manifest
+                      </button>
+                      <button type="button" class="btn btn-secondary" id="btn-director-course-material">
+                        生成素材标记
                       </button>
                       <button type="button" class="btn btn-secondary" id="btn-director-rebuild">
                         生成课程化导演脚本
@@ -446,6 +449,7 @@
                         导出已审核脚本
                       </button>
                     </div>
+                    <div class="director-panel__materials" id="director-materials"></div>
                     <div class="director-panel__summary" id="director-summary"></div>
                     <div class="director-panel__scenes" id="director-scenes"></div>
                   </section>

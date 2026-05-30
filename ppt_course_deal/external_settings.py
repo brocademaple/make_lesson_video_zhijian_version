@@ -138,7 +138,7 @@ DEFAULT_DIRECTOR_LLM: dict[str, Any] = {
 }
 
 DEFAULT_TTS: dict[str, Any] = {
-    "provider": "minimax",
+    "provider": "edge_tts",
     "fallback_enabled": True,
     "fallback_provider": "edge_tts",
     "edge_tts": {
