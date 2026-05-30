@@ -64,14 +64,17 @@ from ppt_course_deal.external_settings import (
     DEFAULT_TRANSCRIPT_REWRITE_EXTRA_INSTRUCTIONS,
     get_director_llm_for_server_call,
     get_minimax_for_server_call,
+    get_tts_for_server_call,
     get_transcript_rewrite_for_server_call,
     load_raw,
     merge_agent_update,
     merge_director_llm_update,
     merge_minimax_update,
+    merge_tts_update,
     merge_transcript_rewrite_update,
     public_director_llm,
     public_minimax,
+    public_tts,
     public_transcript_rewrite,
     save_raw,
 )
@@ -82,7 +85,6 @@ from ppt_course_deal.minimax_connect_archive import (
 )
 from ppt_course_deal.minimax_client import (
     MiniMaxTTSError,
-    synthesize_to_mp3_bytes,
     synthesize_to_mp3_bytes_traced,
 )
 from ppt_course_deal.pipeline import transform_pptx
@@ -97,6 +99,7 @@ from ppt_course_deal.slide_visual_generation import (
     latest_generated_visual_path,
     save_generated_visual,
 )
+from ppt_course_deal.speech_synthesis import SpeechSynthesisError, synthesize_speech
 from ppt_course_deal.task_storage import (
     delete_task,
     get_data_root,
@@ -194,6 +197,7 @@ class GenerateSlideVisualBody(BaseModel):
 
 class ExternalPutBody(BaseModel):
     minimax: Optional[Dict[str, Any]] = None
+    tts: Optional[Dict[str, Any]] = None
     agent: Optional[Dict[str, Any]] = None
     transcript_rewrite: Optional[Dict[str, Any]] = None
     director_llm: Optional[Dict[str, Any]] = None
@@ -721,6 +725,7 @@ def create_app() -> FastAPI:
                 task_id,
                 fps=body.fps,
                 no_audio_frames=body.no_audio_frames,
+                max_scenes=body.max_slides,
             )
         except ValueError as err:
             raise HTTPException(status_code=400, detail=str(err)) from err
@@ -1045,6 +1050,7 @@ def create_app() -> FastAPI:
         raw = load_raw()
         return {
             "minimax": public_minimax(raw.get("minimax") or {}),
+            "tts": public_tts(raw.get("tts") or {}),
             "agent": raw.get("agent") or {},
             "transcript_rewrite": public_transcript_rewrite(
                 raw.get("transcript_rewrite") or {}
@@ -1064,6 +1070,11 @@ def create_app() -> FastAPI:
             raw["minimax"] = merge_minimax_update(
                 raw.get("minimax") or {},
                 dict(payload.minimax),
+            )
+        if payload.tts is not None:
+            raw["tts"] = merge_tts_update(
+                raw.get("tts") or {},
+                dict(payload.tts),
             )
         if payload.agent is not None:
             raw["agent"] = merge_agent_update(
@@ -1333,11 +1344,13 @@ def create_app() -> FastAPI:
             get_minimax_for_server_call(),
             payload.minimax_overrides,
         )
+        tts = get_tts_for_server_call()
         try:
-            audio_bytes = synthesize_to_mp3_bytes(mm, text)
-        except MiniMaxTTSError as e:
+            synth = synthesize_speech(minimax=mm, tts=tts, text=text)
+        except SpeechSynthesisError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
-        fmt = (mm.get("audio_format") or "mp3").lower()
+        audio_bytes = synth.audio_bytes
+        fmt = (synth.audio_format or "mp3").lower()
         if fmt not in ("mp3", "pcm", "flac"):
             fmt = "mp3"
         uniq = uuid4().hex[:12]
@@ -1370,6 +1383,9 @@ def create_app() -> FastAPI:
             "version_id": version_id,
             "duration_sec": duration_sec,
             "slide_duration_sec": slide_durs,
+            "tts_provider": synth.provider,
+            "tts_fallback_used": synth.fallback_used,
+            "tts_primary_error": synth.primary_error,
             "url": (
                 f"/api/audio/workspace/file?kind={kind}&key={quote(key, safe='')}"
                 f"&slide_index={payload.slide_index}"

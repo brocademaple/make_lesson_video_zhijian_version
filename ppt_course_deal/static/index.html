@@ -256,6 +256,8 @@
               <button type="button" class="btn btn-text" id="btn-workflow-refresh">刷新状态</button>
             </div>
             <div class="task-workflow__steps" id="task-workflow-steps" role="list"></div>
+            <div class="task-workflow__pipeline" id="task-workflow-pipeline" aria-label="DL 到成片流水线"></div>
+            <div class="task-workflow__artifacts" id="task-workflow-artifacts" aria-label="核心产物路径"></div>
           </section>
           <div class="preview-toolbar">
             <div class="toolbar-info">
@@ -1165,7 +1167,43 @@
               <p class="external-settings-dialog__hint">
                 用于「音频工作台」调用 MiniMax T2A HTTP（<code>/v1/t2a_v2</code>）。密钥仅存于本机数据目录。默认 API Base 为
                 <code>api.minimaxi.com</code>（控制台 / 文档常用）；若使用国际节点请改为 <code>api.minimax.io</code>，二者密钥与路由可能不一致。
+                MiniMax 不可用时可自动回退到 <code>edge-tts</code>，无需额外 API Key，先保证能读出文字并打通成片链路。
               </p>
+              <div class="external-settings-dialog__subpanel">
+                <p class="external-settings-dialog__subpanel-title">语音合成 Provider</p>
+                <div class="field-grid">
+                  <label class="field">
+                    <span class="field__label">主 Provider</span>
+                    <select id="cfg-tts-provider" class="field__input">
+                      <option value="minimax">MiniMax（优先）</option>
+                      <option value="edge_tts">edge-tts（无需 Key）</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">MiniMax 失败时兜底</span>
+                    <select id="cfg-tts-fallback-enabled" class="field__input">
+                      <option value="true">启用 edge-tts 兜底</option>
+                      <option value="false">不兜底，直接报错</option>
+                    </select>
+                  </label>
+                  <label class="field field--wide">
+                    <span class="field__label">edge-tts 中文音色</span>
+                    <input type="text" id="cfg-tts-edge-voice" class="field__input" autocomplete="off" value="zh-CN-XiaoxiaoNeural" />
+                  </label>
+                  <label class="field">
+                    <span class="field__label">edge rate</span>
+                    <input type="text" id="cfg-tts-edge-rate" class="field__input" value="+0%" />
+                  </label>
+                  <label class="field">
+                    <span class="field__label">edge volume</span>
+                    <input type="text" id="cfg-tts-edge-volume" class="field__input" value="+0%" />
+                  </label>
+                  <label class="field">
+                    <span class="field__label">edge pitch</span>
+                    <input type="text" id="cfg-tts-edge-pitch" class="field__input" value="+0Hz" />
+                  </label>
+                </div>
+              </div>
               <div class="field-grid">
                 <label class="field">
                   <span class="field__label">API Base</span>

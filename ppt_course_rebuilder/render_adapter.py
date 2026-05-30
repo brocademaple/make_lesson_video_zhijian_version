@@ -58,16 +58,46 @@ def _audio_for_slide(task_id: str, slide_index: int, *, fps: int) -> tuple[list[
     return audio_rels, segment_frames
 
 
+def _scene_plan_entries(
+    director_manifest: dict[str, Any],
+    *,
+    max_scenes: int | None = None,
+) -> list[dict[str, Any]]:
+    raw_scenes = director_manifest.get("scenes") or []
+    if max_scenes is not None:
+        raw_scenes = raw_scenes[:max_scenes]
+    entries: list[dict[str, Any]] = []
+    for scene in raw_scenes:
+        if not isinstance(scene, dict):
+            continue
+        screen_design = scene.get("screen_design")
+        entries.append(
+            {
+                "scene_id": str(scene.get("scene_id") or ""),
+                "source_slide_ids": scene.get("source_slide_ids") or [],
+                "layout": str(screen_design.get("layout") or "full_slide")
+                if isinstance(screen_design, dict)
+                else "full_slide",
+                "title": str(scene.get("title") or ""),
+            }
+        )
+    return entries
+
+
 def director_manifest_to_props(
     task_id: str,
     director_manifest: dict[str, Any],
     *,
     fps: int = 30,
     no_audio_frames: int = 90,
+    max_scenes: int | None = None,
 ) -> dict[str, Any]:
     task_root = get_data_root() / "tasks" / task_id
     slides: list[dict[str, Any]] = []
-    for scene_index, scene in enumerate(director_manifest.get("scenes") or []):
+    raw_scenes = director_manifest.get("scenes") or []
+    if max_scenes is not None:
+        raw_scenes = raw_scenes[:max_scenes]
+    for scene_index, scene in enumerate(raw_scenes):
         if not isinstance(scene, dict):
             continue
         source_ids = scene.get("source_slide_ids")
@@ -105,6 +135,7 @@ def write_render_plan_from_task(
     *,
     fps: int = 30,
     no_audio_frames: int = 90,
+    max_scenes: int | None = None,
     root: Path | None = None,
 ) -> dict[str, Any]:
     task_root = get_data_root() / "tasks" / task_id
@@ -115,6 +146,7 @@ def write_render_plan_from_task(
         fallback = create_render_task(
             task_id,
             fps=fps,
+            max_slides=max_scenes,
             no_audio_frames=no_audio_frames,
             root=root,
         )
@@ -126,6 +158,7 @@ def write_render_plan_from_task(
         manifest,
         fps=fps,
         no_audio_frames=no_audio_frames,
+        max_scenes=max_scenes,
     )
     paths = render_task_paths(task_id, root=root)
     paths["output_video"].parent.mkdir(parents=True, exist_ok=True)
@@ -140,18 +173,7 @@ def write_render_plan_from_task(
         "output_video_path": str(paths["output_video"]),
         "render_command": render_command_for_task(task_id, root=root),
         "props_summary": summarize_props(props),
-        "scenes": [
-            {
-                "scene_id": str(scene.get("scene_id") or ""),
-                "source_slide_ids": scene.get("source_slide_ids") or [],
-                "layout": str((scene.get("screen_design") or {}).get("layout") or "full_slide")
-                if isinstance(scene.get("screen_design"), dict)
-                else "full_slide",
-                "title": str(scene.get("title") or ""),
-            }
-            for scene in manifest.get("scenes") or []
-            if isinstance(scene, dict)
-        ],
+        "scenes": _scene_plan_entries(manifest, max_scenes=max_scenes),
     }
     render_plan_path = paths["task_dir"] / "render_plan.json"
     write_json(render_plan_path, plan)
