@@ -16,6 +16,8 @@ dependencies = [
     "uvicorn[standard]>=0.32,<1",
     "python-multipart>=0.0.9",
     "tinytag>=1.10,<2",
+    "openai>=1.40,<2",
+    "python-dotenv>=1.0,<2",
 ]
 
 [project.scripts]

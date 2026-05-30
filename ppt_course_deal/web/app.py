@@ -62,12 +62,15 @@ from ppt_course_deal.deck_sessions import create_session, get_session
 from ppt_course_deal.extract import parse_pptx_bytes
 from ppt_course_deal.external_settings import (
     DEFAULT_TRANSCRIPT_REWRITE_EXTRA_INSTRUCTIONS,
+    get_director_llm_for_server_call,
     get_minimax_for_server_call,
     get_transcript_rewrite_for_server_call,
     load_raw,
     merge_agent_update,
+    merge_director_llm_update,
     merge_minimax_update,
     merge_transcript_rewrite_update,
+    public_director_llm,
     public_minimax,
     public_transcript_rewrite,
     save_raw,
@@ -84,6 +87,7 @@ from ppt_course_deal.minimax_client import (
 )
 from ppt_course_deal.pipeline import transform_pptx
 from ppt_course_deal.raw_material_manifest import build_raw_material_manifest
+from ppt_course_deal.remotion_input_props import create_render_task, render_task_status
 from ppt_course_deal.slide_render import describe_preview_render_env, render_pptx_to_pngs
 from ppt_course_deal.shape_image_export import list_slide_shape_files
 from ppt_course_deal.slide_visual_generation import (
@@ -110,6 +114,10 @@ from ppt_course_deal.transcript_import import (
     prepare_import,
 )
 from ppt_course_rebuilder.director import rebuild_course_from_raw_manifest
+from ppt_course_rebuilder.director_validator import validate_director_manifest
+from ppt_course_rebuilder.llm_client import DirectorLLMClient
+from ppt_course_rebuilder.material_normalizer import build_course_material
+from ppt_course_rebuilder.render_adapter import write_render_plan_from_task
 from ppt_course_rebuilder.review import (
     approve_scene as rebuilder_approve_scene,
     export_approved_manifest as rebuilder_export_approved_manifest,
@@ -164,6 +172,18 @@ class SceneRejectBody(BaseModel):
     reason: Optional[str] = Field(default="", max_length=4000)
 
 
+class RebuildCourseBody(BaseModel):
+    use_llm: bool = True
+    llm_max_slides: Optional[int] = Field(default=None, ge=1)
+
+
+class RemotionRenderTaskBody(BaseModel):
+    fps: int = Field(default=30, ge=1, le=120)
+    max_slides: Optional[int] = Field(default=None, ge=1)
+    no_audio_frames: int = Field(default=90, ge=1, le=60 * 60 * 120)
+    bundle_audio: bool = False
+
+
 class GenerateSlideVisualBody(BaseModel):
     """文生图请求体；使用与口播稿优化相同的 ``transcript_rewrite`` API Base / Key。"""
 
@@ -176,6 +196,90 @@ class ExternalPutBody(BaseModel):
     minimax: Optional[Dict[str, Any]] = None
     agent: Optional[Dict[str, Any]] = None
     transcript_rewrite: Optional[Dict[str, Any]] = None
+    director_llm: Optional[Dict[str, Any]] = None
+
+
+def _read_json_file(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def build_task_workspace_status(task_id: str, task: dict[str, Any]) -> dict[str, Any]:
+    """聚合 Deal / Rebuilder / Remotion 的任务级状态，供工作台流程条使用。"""
+    task_root = tasks_dir() / task_id
+    raw_path = task_root / "raw_material_manifest.json"
+    material_path = task_root / "course_material.json"
+    director_path = task_root / "director_manifest.json"
+    approved_path = task_root / "approved_director_manifest.json"
+    raw = _read_json_file(raw_path)
+    material = _read_json_file(material_path)
+    director = _read_json_file(director_path)
+    approved = _read_json_file(approved_path)
+
+    slide_count = int(task.get("slide_count") or len(task.get("slides") or []) or 0)
+    audio_meta = load_meta("task", task_id)
+    transcript_segments = audio_meta.get("transcript_segments")
+    generated_files = audio_meta.get("generated_files")
+    if not isinstance(transcript_segments, list):
+        transcript_segments = []
+    if not isinstance(generated_files, dict):
+        generated_files = {}
+    slide_durations = slide_duration_seconds_list(audio_meta, slide_count) if slide_count else []
+    slides_with_audio = sum(1 for value in slide_durations if isinstance(value, (int, float)))
+    scenes = director.get("scenes") if isinstance(director.get("scenes"), list) else []
+    assets = director.get("assets") if isinstance(director.get("assets"), list) else []
+    review = director.get("review") if isinstance(director.get("review"), dict) else {}
+    generation = director.get("generation") if isinstance(director.get("generation"), dict) else {}
+    approved_scenes = approved.get("scenes") if isinstance(approved.get("scenes"), list) else []
+    remotion = render_task_status(task_id)
+    render_plan_path = Path(remotion.get("task_dir") or "") / "render_plan.json"
+    render_plan = _read_json_file(render_plan_path)
+
+    return {
+        "task_id": task_id,
+        "filename": task.get("filename") or "",
+        "slide_count": slide_count,
+        "deal": {
+            "ready": True,
+            "images_available": bool(task.get("images_available")),
+            "preview_count": int(task.get("preview_count") or 0),
+            "preview_source": task.get("preview_source") or "",
+            "images_error": task.get("images_error") or "",
+        },
+        "audio": {
+            "ready": slides_with_audio > 0,
+            "transcript_slide_count": len(transcript_segments),
+            "generated_segment_count": len(generated_files),
+            "slides_with_audio": slides_with_audio,
+            "slide_duration_sec": slide_durations,
+        },
+        "rebuilder": {
+            "raw_manifest_exists": raw_path.is_file(),
+            "raw_slide_count": len(raw.get("slides") or []),
+            "course_material_exists": material_path.is_file(),
+            "course_material_slide_count": len(material.get("slides") or []),
+            "director_manifest_exists": director_path.is_file(),
+            "approved_manifest_exists": approved_path.is_file(),
+            "scene_count": len(scenes),
+            "asset_count": len(assets),
+            "approved_scene_count": len(approved_scenes),
+            "review": review,
+            "planning_mode": generation.get("planning_mode") or "",
+            "llm_error": generation.get("llm_error") or "",
+            "quality_checks": director.get("quality_checks") or {},
+        },
+        "remotion": {
+            **remotion,
+            "render_plan_exists": render_plan_path.is_file(),
+            "render_plan_path": str(render_plan_path),
+            "render_plan_source": render_plan.get("source") or "",
+        },
+    }
 
 
 class MiniMaxTestBody(BaseModel):
@@ -234,6 +338,10 @@ class TranscriptRewriteBody(BaseModel):
 
 class TranscriptRewriteTestBody(BaseModel):
     transcript_rewrite: Optional[Dict[str, Any]] = None
+
+
+class DirectorLLMTestBody(BaseModel):
+    director_llm: Optional[Dict[str, Any]] = None
 
 
 _AUDIO_GEN_OVERRIDE_KEYS = frozenset(
@@ -463,6 +571,14 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="任务不存在")
         return data
 
+    @application.get("/api/tasks/{task_id}/workspace-status")
+    def get_task_workspace_status(task_id: str) -> Dict[str, Any]:
+        """统一任务状态：Deal / Rebuilder / Remotion / Audio 子系统就绪情况。"""
+        data = load_task(task_id)
+        if data is None:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        return {"ok": True, **build_task_workspace_status(task_id, data)}
+
     @application.delete("/api/tasks/{task_id}")
     def delete_task_api(task_id: str) -> Dict[str, bool]:
         ok = delete_task(task_id)
@@ -503,30 +619,150 @@ def create_app() -> FastAPI:
             "shapes_total": sum(len(s.get("shapes") or []) for s in slides),
         }
 
+    @application.post("/api/tasks/{task_id}/course-material")
+    def post_course_material(task_id: str) -> Dict[str, Any]:
+        """生成 Rebuilder 的 course_material.json 中间层。"""
+        if load_task(task_id) is None:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        raw_path = tasks_dir() / task_id / "raw_material_manifest.json"
+        if not raw_path.is_file():
+            build_raw_material_manifest(task_id)
+        out_path = tasks_dir() / task_id / "course_material.json"
+        material = build_course_material(raw_path, out_path)
+        return {
+            "ok": True,
+            "task_id": task_id,
+            "path": str(out_path),
+            "slide_count": len(material.get("slides") or []),
+            "asset_count": len(material.get("assets") or []),
+            "generated_segment_count": (
+                (material.get("audio") or {}).get("generated_segment_count") or 0
+            ),
+        }
+
+    @application.get("/api/tasks/{task_id}/course-material")
+    def get_course_material(task_id: str) -> Dict[str, Any]:
+        if load_task(task_id) is None:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        path = tasks_dir() / task_id / "course_material.json"
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="尚未生成 course_material.json")
+        return _read_json_file(path)
+
     @application.post("/api/tasks/{task_id}/rebuild-course")
-    def post_rebuild_course(task_id: str) -> Dict[str, Any]:
+    def post_rebuild_course(
+        task_id: str,
+        payload: Optional[RebuildCourseBody] = Body(default=None),
+    ) -> Dict[str, Any]:
         """生成 director_manifest.json（必要时先生成 raw manifest）。"""
         if load_task(task_id) is None:
             raise HTTPException(status_code=404, detail="任务不存在")
         raw_path = tasks_dir() / task_id / "raw_material_manifest.json"
         if not raw_path.is_file():
             build_raw_material_manifest(task_id)
+        material_path = tasks_dir() / task_id / "course_material.json"
+        if not material_path.is_file():
+            build_course_material(raw_path, material_path)
         dm_path = tasks_dir() / task_id / "director_manifest.json"
+        opts: dict[str, Any] = {
+            "use_llm": True if payload is None else payload.use_llm,
+        }
+        if payload is not None and payload.llm_max_slides is not None:
+            opts["llm_max_slides"] = payload.llm_max_slides
         dm = rebuild_course_from_raw_manifest(
             str(raw_path),
             str(dm_path),
-            None,
+            opts,
         )
         assets = dm.get("assets") or []
         scenes = dm.get("scenes") or []
+        generation = dm.get("generation") or {}
         return {
             "ok": True,
             "task_id": task_id,
             "director_manifest_path": str(dm_path),
             "raw_material_manifest_path": str(raw_path),
+            "course_material_path": str(material_path),
             "scene_count": len(scenes),
             "asset_count": len(assets),
+            "quality_checks": dm.get("quality_checks") or {},
+            "planning_mode": generation.get("planning_mode") or "",
+            "llm_model": generation.get("llm_model") or "",
+            "llm_error": generation.get("llm_error") or "",
         }
+
+    @application.post("/api/tasks/{task_id}/director-validate")
+    def post_director_validate(task_id: str) -> Dict[str, Any]:
+        if load_task(task_id) is None:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        dm_path = tasks_dir() / task_id / "director_manifest.json"
+        if not dm_path.is_file():
+            raise HTTPException(status_code=404, detail="尚未生成导演脚本，请先生成")
+        material_path = tasks_dir() / task_id / "course_material.json"
+        raw_path = tasks_dir() / task_id / "raw_material_manifest.json"
+        dm = _read_json_file(dm_path)
+        material = _read_json_file(material_path) or _read_json_file(raw_path)
+        checks = validate_director_manifest(dm, material)
+        dm["quality_checks"] = checks
+        dm_path.write_text(json.dumps(dm, ensure_ascii=False, indent=2), encoding="utf-8")
+        return {"ok": True, "task_id": task_id, "quality_checks": checks}
+
+    @application.post("/api/tasks/{task_id}/remotion-render-plan")
+    def post_remotion_render_plan(
+        task_id: str,
+        payload: Optional[RemotionRenderTaskBody] = Body(default=None),
+    ) -> Dict[str, Any]:
+        """按 approved/director manifest 生成 render_plan 与 input-props。"""
+        if load_task(task_id) is None:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        body = payload or RemotionRenderTaskBody()
+        try:
+            data = write_render_plan_from_task(
+                task_id,
+                fps=body.fps,
+                no_audio_frames=body.no_audio_frames,
+            )
+        except ValueError as err:
+            raise HTTPException(status_code=400, detail=str(err)) from err
+        return {"ok": True, "task_id": task_id, **data}
+
+    @application.get("/api/tasks/{task_id}/remotion-render-task")
+    def get_remotion_render_task(task_id: str) -> Dict[str, Any]:
+        """查看该任务对应的 Remotion 渲染任务文件与成片状态。"""
+        if load_task(task_id) is None:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        status = render_task_status(task_id)
+        render_plan_path = Path(status.get("task_dir") or "") / "render_plan.json"
+        render_plan = _read_json_file(render_plan_path)
+        return {
+            "ok": True,
+            "task_id": task_id,
+            **status,
+            "render_plan_exists": render_plan_path.is_file(),
+            "render_plan_path": str(render_plan_path),
+            "render_plan_source": render_plan.get("source") or "",
+        }
+
+    @application.post("/api/tasks/{task_id}/remotion-render-task")
+    def post_remotion_render_task(
+        task_id: str,
+        payload: Optional[RemotionRenderTaskBody] = Body(default=None),
+    ) -> Dict[str, Any]:
+        """生成 Remotion render_tasks/<task>/input-props.json，并返回渲染命令。"""
+        if load_task(task_id) is None:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        body = payload or RemotionRenderTaskBody()
+        try:
+            data = create_render_task(
+                task_id,
+                fps=body.fps,
+                max_slides=body.max_slides,
+                no_audio_frames=body.no_audio_frames,
+                bundle_audio=body.bundle_audio,
+            )
+        except ValueError as err:
+            raise HTTPException(status_code=400, detail=str(err)) from err
+        return {"ok": True, "task_id": task_id, **data}
 
     @application.get("/api/tasks/{task_id}/director-manifest")
     def get_director_manifest(task_id: str) -> Dict[str, Any]:
@@ -813,6 +1049,7 @@ def create_app() -> FastAPI:
             "transcript_rewrite": public_transcript_rewrite(
                 raw.get("transcript_rewrite") or {}
             ),
+            "director_llm": public_director_llm(raw.get("director_llm") or {}),
             "transcript_rewrite_defaults": {
                 "extra_instructions": DEFAULT_TRANSCRIPT_REWRITE_EXTRA_INSTRUCTIONS,
             },
@@ -838,8 +1075,44 @@ def create_app() -> FastAPI:
                 raw.get("transcript_rewrite") or {},
                 dict(payload.transcript_rewrite),
             )
+        if payload.director_llm is not None:
+            raw["director_llm"] = merge_director_llm_update(
+                raw.get("director_llm") or {},
+                dict(payload.director_llm),
+            )
         save_raw(raw)
         return get_external_settings()
+
+    @application.post("/api/settings/external/director-llm/test")
+    def test_director_llm_connection(
+        body: Optional[DirectorLLMTestBody] = Body(default=None),
+    ) -> Dict[str, Any]:
+        cfg = dict(get_director_llm_for_server_call())
+        if body is not None and body.director_llm:
+            cfg = merge_director_llm_update(cfg, dict(body.director_llm))
+        if not cfg.get("enabled"):
+            raise HTTPException(status_code=400, detail="请先启用「导演模型」")
+        if not str(cfg.get("api_key") or "").strip():
+            raise HTTPException(status_code=400, detail="请先填写 Director LLM API Key")
+        try:
+            client = DirectorLLMClient(
+                api_key=str(cfg.get("api_key") or ""),
+                base_url=str(cfg.get("api_base") or ""),
+                model=str(cfg.get("model") or ""),
+            )
+            data = client.call_json(
+                system="你是连通测试助手，只输出 JSON object。",
+                user='请输出 {"ok": true, "role": "director_llm"}',
+                temperature=0,
+            )
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"导演模型连通失败：{e}") from e
+        return {
+            "ok": True,
+            "detail": "导演模型 API 可连通",
+            "model": str(cfg.get("model") or ""),
+            "echo": data,
+        }
 
     @application.post("/api/settings/external/transcript-rewrite/test")
     def test_transcript_rewrite_connection(

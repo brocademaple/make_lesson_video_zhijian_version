@@ -11,16 +11,18 @@ import { enableTailwind } from '@remotion/tailwind-v4';
 
 /**
  * `input-props` 里素材路径为「相对仓库根」的 `ppt_course_data/...`。
- * 默认 `public/` 只在 renderer 子目录内；把静态根设为仓库根后，`staticFile('ppt_course_data/...')`
- * 才能稳定命中磁盘文件（不必依赖 `public/ppt_course_data` 符号链接）。
+ * 通过 tracked symlink `public/ppt_course_data -> ../../ppt_course_data` 暴露课件数据。
+ * 不把 public dir 设为仓库根，避免 Remotion 打包时复制 `.git`、agent skills、
+ * node_modules 等与渲染无关的本地目录。
  */
 const workspaceRoot =
   process.env.REMOTION_WORKSPACE_ROOT &&
   process.env.REMOTION_WORKSPACE_ROOT.length > 0
     ? path.resolve(process.env.REMOTION_WORKSPACE_ROOT)
     : path.resolve(process.cwd(), "..");
+const publicRoot = path.join(workspaceRoot, "ppt_course_renderer", "public");
 
-Config.setPublicDir(workspaceRoot);
+Config.setPublicDir(publicRoot);
 
 Config.setVideoImageFormat("jpeg");
 Config.setOverwriteOutput(true);

@@ -4,7 +4,8 @@
 
 ## 范围与当前阶段
 
-- **导演脚本生成**当前为**启发式规则**（关键词分镜、固定口播模板），**未**接入真实 LLM。
+- **导演脚本生成**默认优先读取本机 `ppt_course_data/config/external_apis.json` 中的 `director_llm` 配置；未启用、缺密钥或调用失败时自动回退**启发式规则**（关键词分镜、固定口播模板）。兼容环境变量 `AI_API_KEY` / `AI_BASE_URL` / `AI_MODEL` 作为兜底。
+- **MiMo Director LLM** 推荐配置：`provider=mimo`、`api_base=https://token-plan-cn.xiaomimimo.com/v1`、`model=mimo-v2.5-pro`。该配置独立于口播稿优化 API。
 - **口播 / TTS / 字幕**由规则生成；**未**依赖真实音频文件做字级对齐。
 - **生图 / 外部 Skill**字段仅占位；**未**调用 production 级文生图 API。
 - **`audio_hash`** 在没有音频成品时可为占位或与内容无关的稳定哈希；后续接入 TTS 成片后可改为绑定音频文件。
@@ -18,6 +19,7 @@
 | 文件 | 说明 |
 |------|------|
 | `raw_material_manifest.json` | 由 **`ppt_course_deal.raw_material_manifest.build_raw_material_manifest`** 从 `meta.json`、`previews/` 汇总 |
+| `course_material.json` | 由 **`ppt_course_rebuilder.material_normalizer.build_course_material`** 生成，统一聚合页文本、整页图、shape 图、音频段、AI 配图与素材标签 |
 | `director_manifest.json` | 由 **`ppt_course_rebuilder.director.rebuild_course_from_raw_manifest`** 写出 |
 | `approved_director_manifest.json` | 由 **`ppt_course_rebuilder.review.export_approved_manifest`** 导出（仅审核通过的 `scenes`，另附 `rejected_items`） |
 
@@ -58,7 +60,11 @@
 | `task_id` | string | 与任务一致 |
 | `course` | object | `CourseInfo`：标题、受众、目标、版本 |
 | `assets` | array | `AssetSpec`，由 **`tag_assets`** 汇总 |
+| `course_outline` | array | 课程大纲，按镜头或章节组织 |
+| `chapters` | array | 章节结构，含章节标题与关联 scene |
+| `render_intent` | object | 企业培训视频风格、默认布局策略与支持的 layout |
 | `scenes` | array | `SceneSpec`，每页至少一条镜头（初版） |
+| `quality_checks` | object | `director_validator` 输出：errors / warnings / 高风险保真检查 |
 | `review` | object | 汇总：`pending_count` / `approved_count` / `rejected_count` |
 | `generated_at` | string | ISO8601 UTC |
 
@@ -72,6 +78,7 @@
 - **字幕**：`subtitle.segments`：`{ start_sec, end_sec, text }[]`（句级，均匀时长）
 - **时间与哈希**：`timing.estimated_duration_sec`、`content_hash`、`asset_hash`、`audio_hash`、`render_cache_key`
 - **画面**：`screen_design`（含 `visual_strategy`）、`visual_generation`（占位）
+- **渲染意图**：`render_intent`、`source_evidence`（保留关键原文证据）
 - **审核**：`review_status`（`pending` \| `approved` \| `rejected`）、可选 `reject_reason`、`risk_flags`、`version`
 
 ### AssetSpec（素材）
@@ -80,6 +87,11 @@
 
 `asset_type` 初版可能为 `full_slide`、`logo`、`icon`、`screenshot`、`decoration`、`unknown` 等；**unknown 不得导致流水线失败**。
 
-## 与 Remotion 的衔接（后续）
+## 与 Remotion 的衔接
 
-当前 **`ppt_course_renderer`** 仍主要消费 **`input-props.json`**（音频路径、时长、图片路径等）。将 **`director_manifest`** 转为 **`input-props`** 的映射规则可在导演层稳定后再实现；本文不预设已实现自动化映射。
+当前 **`ppt_course_renderer`** 仍消费 **`input-props.json`**（音频路径、时长、图片路径等）。Rebuilder 现有 **Render Adapter** 会优先读取 `approved_director_manifest.json`，否则读取 `director_manifest.json`，并写出：
+
+- `ppt_course_renderer/render_tasks/task-<task_id>/render_plan.json`
+- `ppt_course_renderer/render_tasks/task-<task_id>/input-props.json`
+
+Web 使用 **`POST /api/tasks/{task_id}/remotion-render-plan`**，CLI 使用 **`ppt-course remotion-render-plan <task_id>`**。若没有导演脚本，adapter 会回退到 Deal 元数据直出的旧 `input-props` 生成逻辑。

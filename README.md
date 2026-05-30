@@ -11,8 +11,8 @@
 | 中文定位 | 代码位置 | 典型用法 |
 |----------|----------|----------|
 | **课件处理与工作台** | Python 包 **`ppt_course_deal`**（PyPI 元数据名 `ppt-course-mvp`，命令 **`ppt-course`**） | **唯一 Web 入口**：本机 **FastAPI + 静态前端**（上传、预览、已存任务、音频与外部 API、**原始素材清单 / 导演脚本** 等）+ CLI **`ppt-course transform` / `serve`** 等。课件版式课程化仍为 **启发式规则**（与导演模块独立）。 |
-| **视频渲染（Remotion）** | 目录 **`ppt_course_renderer/`** | 与 `ppt_course_deal` **平行**：接收每页图、TTS 音频、逐字稿，生成 Remotion 合成数据并导出成片；见该目录 **README**。已用 **`create-video`** 初始化模板；**本阶段未**将 Remotion Studio 嵌入 deal；**导演 manifest → input-props** 自动映射仍待接线。 |
-| **课程导演模块（Rebuilder 库）** | 目录 **`ppt_course_rebuilder/`**（包名 **`ppt_course_rebuilder`**） | 作为 **Python 库**被 **`ppt_course_deal` import**：读 **`raw_material_manifest.json`**，写 **`director_manifest.json`**（初版 **启发式**，无 LLM）。**不**单独起 Web、**不**单独监听端口。目录内历史 **`main.py` / `src/`** CLI（OpenAI 规划 + 新版 PPTX）仍为可选批处理，与导演包 **并存**。 |
+| **视频渲染（Remotion）** | 目录 **`ppt_course_renderer/`** | 与 `ppt_course_deal` **平行**：接收每页图、TTS 音频、逐字稿，生成 Remotion 合成数据并导出成片；见该目录 **README**。工作台可为已存任务生成 **`render_tasks/<task>/render_plan.json`** / **`input-props.json`** 并返回本地渲染命令；**本阶段未**将 Remotion Studio 嵌入 deal。 |
+| **课程导演模块（Rebuilder 库）** | 目录 **`ppt_course_rebuilder/`**（包名 **`ppt_course_rebuilder`**） | 作为 **Python 库**被 **`ppt_course_deal` import**：读 **`raw_material_manifest.json`**，生成 **`course_material.json`**，写 **`director_manifest.json`**，再通过 adapter 转成 Remotion **`render_plan/input-props`**；默认优先使用本机 **`director_llm`**（MiMo / OpenAI 兼容），失败自动回退 **启发式**。**不**单独起 Web、**不**单独监听端口。 |
 | **GitHub Pages 静态介绍页** | 目录 **`github-pages/`** | **与运行时代码隔离**：仅 HTML/CSS/截图占位；本地预览见该目录 **README**；发布需在仓库 **Settings → Pages** 选择根目录、`/docs` 或 **GitHub Actions** 将本目录产物上线。 |
 
 日常以 **deal 工作台** 为唯一产品入口；**renderer** 负责成片；**导演模块**负责「原始素材 → 导演脚本 → 审核」中间层（详见 **`docs/deal_rebuilder_integration.md`**、**`docs/director_manifest_contract.md`**）。

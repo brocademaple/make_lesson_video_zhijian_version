@@ -97,6 +97,8 @@ export const CourseDeckComposition: React.FC<CourseDeckProps> = ({
                     slideIndex={i}
                     title={slide.caption.title}
                     subtitle={slide.caption.subtitle}
+                    layout={slide.layout}
+                    riskFlags={slide.riskFlags}
                   />
                 ) : null}
               </AbsoluteFill>

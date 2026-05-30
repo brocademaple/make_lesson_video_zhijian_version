@@ -182,6 +182,118 @@ def cmd_bundle_task_audio(
         typer.echo(f"  … 共 {len(paths)} 个")
 
 
+@app.command("rebuild-director")
+def cmd_rebuild_director(
+    task_id: str = typer.Argument(..., help="已存任务 task_id"),
+    output: Optional[Path] = typer.Option(
+        None,
+        "-o",
+        "--output",
+        help="导演脚本输出路径；默认写入任务目录 director_manifest.json",
+    ),
+    llm: bool = typer.Option(
+        True,
+        "--llm/--no-llm",
+        help="启用百炼/OpenAI-compatible LLM 规划；失败会自动回退启发式",
+    ),
+    llm_max_slides: Optional[int] = typer.Option(
+        None,
+        "--llm-max-slides",
+        min=1,
+        help="LLM 最多读取前几页原始素材；默认读取该任务全部页",
+    ),
+) -> None:
+    """从已存任务生成 raw_material_manifest，并调用 rebuilder 写出 director_manifest。"""
+    from ppt_course_deal.raw_material_manifest import build_raw_material_manifest
+    from ppt_course_rebuilder.director import rebuild_course_from_raw_manifest
+
+    try:
+        raw = build_raw_material_manifest(task_id)
+    except ValueError as e:
+        typer.secho(str(e), fg=typer.colors.RED)
+        raise typer.Exit(1) from e
+
+    task_root = Path(str(raw.get("task_root") or ""))
+    raw_path = task_root / "raw_material_manifest.json"
+    out_path = output or (task_root / "director_manifest.json")
+    options: dict[str, object] = {"use_llm": llm}
+    if llm_max_slides is not None:
+        options["llm_max_slides"] = llm_max_slides
+
+    dm = rebuild_course_from_raw_manifest(
+        str(raw_path),
+        str(out_path),
+        options=options,
+    )
+    generation = dm.get("generation") or {}
+    planning_mode = generation.get("planning_mode") or "unknown"
+    typer.secho(f"已写入 {out_path}", fg=typer.colors.GREEN)
+    typer.echo(
+        f"规划模式：{planning_mode}；课程标题：{(dm.get('course') or {}).get('title') or ''}；"
+        f"镜头数：{len(dm.get('scenes') or [])}"
+    )
+    if generation.get("llm_error"):
+        typer.secho(f"LLM 回退原因：{generation['llm_error']}", fg=typer.colors.YELLOW)
+
+
+@app.command("course-material")
+def cmd_course_material(
+    task_id: str = typer.Argument(..., help="已存任务 task_id"),
+    output: Optional[Path] = typer.Option(
+        None,
+        "-o",
+        "--output",
+        help="输出路径；默认写入任务目录 course_material.json",
+    ),
+) -> None:
+    """生成 Rebuilder 的 course_material.json 中间层。"""
+    from ppt_course_deal.raw_material_manifest import build_raw_material_manifest
+    from ppt_course_rebuilder.material_normalizer import build_course_material
+
+    try:
+        raw = build_raw_material_manifest(task_id)
+    except ValueError as e:
+        typer.secho(str(e), fg=typer.colors.RED)
+        raise typer.Exit(1) from e
+    task_root = Path(str(raw.get("task_root") or ""))
+    raw_path = task_root / "raw_material_manifest.json"
+    out_path = output or (task_root / "course_material.json")
+    material = build_course_material(raw_path, out_path)
+    typer.secho(f"已写入 {out_path}", fg=typer.colors.GREEN)
+    typer.echo(
+        f"页数：{len(material.get('slides') or [])}；素材数：{len(material.get('assets') or [])}"
+    )
+
+
+@app.command("remotion-render-plan")
+def cmd_remotion_render_plan(
+    task_id: str = typer.Argument(..., help="已存任务 task_id"),
+    fps: int = typer.Option(30, "--fps", help="与 Remotion Composition 的 fps 一致"),
+    no_audio_frames: int = typer.Option(
+        90,
+        "--no-audio-frames",
+        help="镜头尚无分段 mp3 时的占位帧数",
+    ),
+) -> None:
+    """由 approved/director manifest 生成 render_plan.json 与 input-props.json。"""
+    from ppt_course_rebuilder.render_adapter import write_render_plan_from_task
+
+    try:
+        data = write_render_plan_from_task(
+            task_id,
+            fps=fps,
+            no_audio_frames=no_audio_frames,
+        )
+    except ValueError as e:
+        typer.secho(str(e), fg=typer.colors.RED)
+        raise typer.Exit(1) from e
+    typer.secho(f"已写入 {data.get('input_props_path')}", fg=typer.colors.GREEN)
+    if data.get("render_plan_path"):
+        typer.echo(f"Render Plan：{data['render_plan_path']}")
+    typer.echo(f"来源：{data.get('source') or 'fallback'}")
+    typer.echo(data.get("render_command") or "")
+
+
 def main() -> None:
     app()
 
