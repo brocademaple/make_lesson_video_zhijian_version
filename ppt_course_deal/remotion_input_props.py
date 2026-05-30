@@ -17,6 +17,9 @@ from ppt_course_deal.task_audio_bundle import task_bundle_audio_dir
 from ppt_course_deal.task_storage import get_data_root
 
 
+DEFAULT_RENDER_TASK_NAME_PREFIX = "task-"
+
+
 def repo_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
@@ -39,6 +42,127 @@ def probe_duration_sec(path: Path) -> float:
     if d is None or float(d) <= 0:
         raise ValueError(f"无法读取音频时长：{path}")
     return float(d)
+
+
+def _load_task_meta(task_root: Path) -> dict[str, Any]:
+    meta_path = task_root / "meta.json"
+    if not meta_path.is_file():
+        return {}
+    try:
+        data = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _clean_one_line(value: Any, *, limit: int) -> str:
+    text = " ".join(str(value or "").split())
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 1)].rstrip() + "…"
+
+
+def _caption_for_slide(task_meta: dict[str, Any], slide_index: int) -> dict[str, str] | None:
+    slides = task_meta.get("slides")
+    if not isinstance(slides, list) or slide_index >= len(slides):
+        return None
+    slide = slides[slide_index]
+    if not isinstance(slide, dict):
+        return None
+
+    title = _clean_one_line(slide.get("title") or f"第 {slide_index + 1} 页", limit=60)
+    text_blocks = slide.get("text_blocks")
+    subtitle_source = ""
+    if isinstance(text_blocks, list):
+        for block in text_blocks:
+            candidate = _clean_one_line(block, limit=120)
+            if candidate and candidate != title:
+                subtitle_source = candidate
+                break
+    if not subtitle_source:
+        subtitle_source = _clean_one_line(slide.get("text"), limit=120)
+        if subtitle_source == title:
+            subtitle_source = ""
+
+    if not title and not subtitle_source:
+        return None
+    caption: dict[str, str] = {"title": title or f"第 {slide_index + 1} 页"}
+    if subtitle_source:
+        caption["subtitle"] = subtitle_source
+    return caption
+
+
+def safe_render_task_name(task_id: str) -> str:
+    text = "".join(ch if ch.isalnum() or ch in "-_." else "-" for ch in task_id.strip())
+    text = text.strip(".-_")
+    if not text:
+        text = "unknown-task"
+    if not text.startswith(DEFAULT_RENDER_TASK_NAME_PREFIX):
+        text = f"{DEFAULT_RENDER_TASK_NAME_PREFIX}{text}"
+    return text
+
+
+def renderer_root() -> Path:
+    return repo_root() / "ppt_course_renderer"
+
+
+def render_task_dir(task_id: str, *, root: Path | None = None) -> Path:
+    base = root or renderer_root()
+    return base / "render_tasks" / safe_render_task_name(task_id)
+
+
+def render_task_paths(task_id: str, *, root: Path | None = None) -> dict[str, Path]:
+    task_dir = render_task_dir(task_id, root=root)
+    return {
+        "task_dir": task_dir,
+        "input_props": task_dir / "input-props.json",
+        "output_video": task_dir / "out" / "video.mp4",
+    }
+
+
+def summarize_props(props: dict[str, Any]) -> dict[str, Any]:
+    slides = props.get("slides") or []
+    if not isinstance(slides, list):
+        slides = []
+    total_frames = 0
+    audio_slide_count = 0
+    missing_audio_slide_indexes: list[int] = []
+    for idx, slide in enumerate(slides):
+        if not isinstance(slide, dict):
+            missing_audio_slide_indexes.append(idx)
+            continue
+        frames = slide.get("durationInFrames")
+        if isinstance(frames, bool):
+            frames = 0
+        if isinstance(frames, (int, float)):
+            total_frames += int(frames)
+        audio_rels = slide.get("audioRelatives") or slide.get("audioRelative")
+        if audio_rels:
+            audio_slide_count += 1
+        else:
+            missing_audio_slide_indexes.append(idx)
+    fps = props.get("fps")
+    if isinstance(fps, bool) or not isinstance(fps, (int, float)) or fps <= 0:
+        fps = 30
+    return {
+        "slide_count": len(slides),
+        "total_frames": total_frames,
+        "duration_sec": round(total_frames / float(fps), 3) if total_frames else 0,
+        "audio_slide_count": audio_slide_count,
+        "missing_audio_slide_indexes": missing_audio_slide_indexes,
+    }
+
+
+def render_command_for_task(task_id: str, *, root: Path | None = None) -> str:
+    base = root or renderer_root()
+    task_name = safe_render_task_name(task_id)
+    input_rel = Path("render_tasks") / task_name / "input-props.json"
+    output_rel = Path("render_tasks") / task_name / "out" / "video.mp4"
+    return (
+        f"cd {base} && "
+        f"npx remotion render src/index.ts MyVideoTest1 {output_rel.as_posix()} "
+        f"--props {input_rel.as_posix()}"
+    )
 
 
 def build_props(
@@ -66,6 +190,7 @@ def build_props(
     n = min(sc, max_slides) if max_slides is not None else sc
 
     root = remotion_workspace_root or repo_root()
+    task_meta = _load_task_meta(task_root)
     meta = load_meta("task", task_id)
     raw_dur = meta.get("segment_duration_sec") or {}
     if not isinstance(raw_dur, dict):
@@ -117,6 +242,9 @@ def build_props(
             "imageRelative": image_rel,
             "durationInFrames": no_audio_frames,
         }
+        caption = _caption_for_slide(task_meta, i)
+        if caption:
+            slide_obj["caption"] = caption
         if shape_rels:
             slide_obj["shapeRelatives"] = shape_rels
 
@@ -142,7 +270,7 @@ def write_props_file(
     no_audio_frames: int = 90,
     remotion_workspace_root: Path | None = None,
     bundle_audio: bool = False,
-) -> None:
+) -> dict[str, Any]:
     props = build_props(
         task_id,
         fps=fps,
@@ -156,3 +284,62 @@ def write_props_file(
         json.dumps(props, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+    return props
+
+
+def create_render_task(
+    task_id: str,
+    *,
+    fps: int = 30,
+    max_slides: int | None = None,
+    no_audio_frames: int = 90,
+    remotion_workspace_root: Path | None = None,
+    bundle_audio: bool = False,
+    root: Path | None = None,
+) -> dict[str, Any]:
+    paths = render_task_paths(task_id, root=root)
+    paths["output_video"].parent.mkdir(parents=True, exist_ok=True)
+    props = write_props_file(
+        task_id,
+        paths["input_props"],
+        fps=fps,
+        max_slides=max_slides,
+        no_audio_frames=no_audio_frames,
+        remotion_workspace_root=remotion_workspace_root or repo_root(),
+        bundle_audio=bundle_audio,
+    )
+    summary = summarize_props(props)
+    return {
+        "task_name": safe_render_task_name(task_id),
+        "task_dir": str(paths["task_dir"]),
+        "input_props_path": str(paths["input_props"]),
+        "output_video_path": str(paths["output_video"]),
+        "render_command": render_command_for_task(task_id, root=root),
+        **summary,
+    }
+
+
+def render_task_status(task_id: str, *, root: Path | None = None) -> dict[str, Any]:
+    paths = render_task_paths(task_id, root=root)
+    input_exists = paths["input_props"].is_file()
+    output_exists = paths["output_video"].is_file()
+    output_size_bytes = paths["output_video"].stat().st_size if output_exists else 0
+    summary: dict[str, Any] = {}
+    if input_exists:
+        try:
+            props = json.loads(paths["input_props"].read_text(encoding="utf-8"))
+            if isinstance(props, dict):
+                summary = summarize_props(props)
+        except (OSError, json.JSONDecodeError):
+            summary = {"input_props_error": "input-props.json 无法读取或不是合法 JSON"}
+    return {
+        "task_name": safe_render_task_name(task_id),
+        "task_dir": str(paths["task_dir"]),
+        "input_props_path": str(paths["input_props"]),
+        "input_props_exists": input_exists,
+        "output_video_path": str(paths["output_video"]),
+        "output_video_exists": output_exists,
+        "output_video_size_bytes": output_size_bytes,
+        "render_command": render_command_for_task(task_id, root=root),
+        **summary,
+    }

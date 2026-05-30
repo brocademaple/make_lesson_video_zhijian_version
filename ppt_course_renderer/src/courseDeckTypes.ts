@@ -17,6 +17,12 @@ export type CourseDeckSlideSpec = {
   audioRelatives?: string[];
   /** 与 audioRelatives 等长：每段口播在成片中的帧数 */
   audioSegmentDurationInFrames?: number[];
+  /** 来自 director/render_plan 的镜头标识，用于调试与未来缓存。 */
+  sceneId?: string;
+  /** 初版 scene-aware layout：full_slide / rule_card / split_panel / case_dialogue / summary。 */
+  layout?: "full_slide" | "rule_card" | "split_panel" | "case_dialogue" | "summary" | string;
+  /** 高风险规则、金额、处罚等标记；模板仅做轻量提示，不改变原 PPT 证据。 */
+  riskFlags?: string[];
   /**
    * 可选：底部信息条（通常来自 deal **`meta.json`** 的标题 + 摘要），用于「音画之上还有一点叙事锚点」，
    * 而非单纯轮播 PNG。

@@ -21,11 +21,13 @@ def ai_api_key() -> Optional[str]:
 
 
 def ai_base_url() -> str:
-    return os.getenv("AI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+    return os.getenv(
+        "AI_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    ).rstrip("/")
 
 
 def ai_model() -> str:
-    return os.getenv("AI_MODEL", "gpt-4.1-mini")
+    return os.getenv("AI_MODEL", "qwen-plus")
 
 
 def output_dir() -> Path:

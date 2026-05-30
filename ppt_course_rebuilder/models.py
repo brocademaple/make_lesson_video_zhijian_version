@@ -86,6 +86,8 @@ class SceneSpec(BaseModel):
     subtitle: SceneSubtitle = Field(default_factory=SceneSubtitle)
     timing: SceneTiming = Field(default_factory=SceneTiming)
     screen_design: SceneScreenDesign = Field(default_factory=SceneScreenDesign)
+    render_intent: dict[str, Any] = Field(default_factory=dict)
+    source_evidence: list[dict[str, Any]] = Field(default_factory=list)
     visual_generation: Optional[dict[str, Any]] = None
     review_status: str = "pending"
     reject_reason: Optional[str] = None
@@ -109,6 +111,11 @@ class DirectorManifest(BaseModel):
     course: CourseInfo = Field(default_factory=CourseInfo)
     assets: list[AssetSpec] = Field(default_factory=list)
     scenes: list[SceneSpec] = Field(default_factory=list)
+    course_outline: list[dict[str, Any]] = Field(default_factory=list)
+    chapters: list[dict[str, Any]] = Field(default_factory=list)
+    render_intent: dict[str, Any] = Field(default_factory=dict)
+    quality_checks: dict[str, Any] = Field(default_factory=dict)
+    generation: dict[str, Any] = Field(default_factory=dict)
     review: SceneReview = Field(default_factory=SceneReview)
     generated_at: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()

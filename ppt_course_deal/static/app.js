@@ -133,6 +133,13 @@
   const btnDirectorRebuild = document.getElementById("btn-director-rebuild");
   const btnDirectorRefresh = document.getElementById("btn-director-refresh");
   const btnDirectorExport = document.getElementById("btn-director-export");
+  const remotionSummary = document.getElementById("remotion-summary");
+  const remotionCommand = document.getElementById("remotion-command");
+  const btnRemotionGenerate = document.getElementById("btn-remotion-generate");
+  const btnRemotionRefresh = document.getElementById("btn-remotion-refresh");
+  const taskWorkflowTitle = document.getElementById("task-workflow-title");
+  const taskWorkflowSteps = document.getElementById("task-workflow-steps");
+  const btnWorkflowRefresh = document.getElementById("btn-workflow-refresh");
 
   var AUDIO_GEN_LS_KEY = "ppt_course_audio_gen_overrides";
 
@@ -1091,6 +1098,8 @@
       setImportTranscriptButtonVisible();
       refreshGenerateSlideVisualEnabled();
       void refreshDirectorManifest(true);
+      void refreshRemotionStatus(true);
+      void refreshWorkspaceStatus(true);
     } catch (_) {}
   }
 
@@ -1116,6 +1125,10 @@
       var course = (dm && dm.course) || {};
       var assets = (dm && dm.assets) || [];
       var scenes = (dm && dm.scenes) || [];
+      var generation = (dm && dm.generation) || {};
+      var llmError = generation.llm_error || "";
+      var outline = (dm && dm.course_outline) || [];
+      var checks = (dm && dm.quality_checks) || {};
       directorSummary.innerHTML =
         '<div class="director-panel__summary-inner">' +
         "<p><strong>课程标题</strong>：" +
@@ -1128,7 +1141,24 @@
         assets.length +
         "　<strong>镜头数量</strong>：" +
         scenes.length +
+        "　<strong>大纲项</strong>：" +
+        outline.length +
         "</p>" +
+        "<p><strong>质量检查</strong>：" +
+        escapeHtmlText(
+          (checks.error_count || 0) +
+            " 个错误，" +
+            (checks.warning_count || 0) +
+            " 个提醒"
+        ) +
+        "</p>" +
+        "<p><strong>规划模式</strong>：" +
+        escapeHtmlText(generation.planning_mode || "—") +
+        (generation.llm_model ? "　<strong>模型</strong>：" + escapeHtmlText(generation.llm_model) : "") +
+        "</p>" +
+        (llmError
+          ? "<p><strong>LLM 回退原因</strong>：" + escapeHtmlText(llmError) + "</p>"
+          : "") +
         "</div>";
     }
     if (!directorScenes) return;
@@ -1143,7 +1173,14 @@
       var sc = list[i];
       var sd = sc.screen_design || {};
       var vs = sd.visual_strategy || "";
+      var layout = sd.layout || (sc.render_intent && sc.render_intent.layout) || "";
       var rf = (sc.risk_flags || []).join("、");
+      var ev = (sc.source_evidence || [])
+        .map(function (item) {
+          return (item && item.slide_id ? item.slide_id + "：" : "") + ((item && item.quote) || "");
+        })
+        .filter(Boolean)
+        .join("\n");
       buf.push(
         '<article class="director-scene-card" data-scene-id="' +
           escapeHtmlText(sc.scene_id || "") +
@@ -1181,11 +1218,17 @@
           escapeHtmlText(sc.subtitle_text || "") +
           "</pre>" +
           "<p><strong>画面策略</strong>：" +
-          escapeHtmlText(vs) +
+          escapeHtmlText((layout ? layout + " · " : "") + vs) +
           "</p>" +
           "<p><strong>风险标记</strong>：" +
           escapeHtmlText(rf || "—") +
           "</p>" +
+          (ev
+            ? "<p><strong>原文证据</strong></p>" +
+              '<pre class="director-scene-card__block">' +
+              escapeHtmlText(ev) +
+              "</pre>"
+            : "") +
           '<div class="director-scene-card__actions">' +
           '<button type="button" class="btn btn-text director-scene-approve">审核通过</button>' +
           '<button type="button" class="btn btn-text director-scene-reject">驳回</button>' +
@@ -1269,7 +1312,11 @@
       if (btnDirectorRebuild) btnDirectorRebuild.disabled = true;
       var res = await fetch(
         "/api/tasks/" + encodeURIComponent(currentTaskId) + "/rebuild-course",
-        { method: "POST" }
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ use_llm: true }),
+        }
       );
       var j = await res.json().catch(function () {
         return {};
@@ -1281,9 +1328,13 @@
           (j.scene_count || 0) +
           "，素材 " +
           (j.asset_count || 0) +
+          "；规划模式 " +
+          (j.planning_mode || "unknown") +
+          (j.llm_error ? "（已回退）" : "") +
           "。";
       }
       await refreshDirectorManifest(true);
+      void refreshWorkspaceStatus(true);
     } catch (e) {
       if (statusLine) {
         statusLine.textContent =
@@ -1342,6 +1393,7 @@
       if (!res.ok) throw new Error(j.detail || "请求失败");
       if (statusLine) statusLine.textContent = "镜头 " + sceneId + " 已标记为审核通过。";
       await refreshDirectorManifest(true);
+      void refreshWorkspaceStatus(true);
     } catch (e) {
       if (statusLine) {
         statusLine.textContent =
@@ -1372,11 +1424,242 @@
       if (!res.ok) throw new Error(j.detail || "请求失败");
       if (statusLine) statusLine.textContent = "镜头 " + sceneId + " 已驳回。";
       await refreshDirectorManifest(true);
+      void refreshWorkspaceStatus(true);
     } catch (e) {
       if (statusLine) {
         statusLine.textContent =
           "驳回失败：" + (e instanceof Error ? e.message : String(e));
       }
+    }
+  }
+
+  function renderRemotionStatus(data) {
+    if (!remotionSummary) return;
+    if (!currentTaskId) {
+      remotionSummary.innerHTML =
+        '<p class="remotion-panel__empty">需任务已持久化后才能生成 Remotion 渲染任务。</p>';
+      if (remotionCommand) {
+        remotionCommand.classList.add("hidden");
+        remotionCommand.textContent = "";
+      }
+      return;
+    }
+    var inputReady = Boolean(data && data.input_props_exists);
+    var outputReady = Boolean(data && data.output_video_exists);
+    var missing = (data && data.missing_audio_slide_indexes) || [];
+    var missingText = missing.length
+      ? "缺音频页：" + missing.map(function (i) { return i + 1; }).join("、")
+      : "所有导出页均有音频";
+    remotionSummary.innerHTML =
+      '<div class="remotion-panel__summary-inner">' +
+      "<p><strong>入参</strong>：" +
+      (inputReady ? "已生成" : "未生成") +
+      "</p>" +
+      "<p><strong>成片</strong>：" +
+      (outputReady ? "已存在" : "未检测到") +
+      "</p>" +
+      "<p><strong>页数</strong>：" +
+      escapeHtmlText((data && data.slide_count) || "—") +
+      "　<strong>总帧数</strong>：" +
+      escapeHtmlText((data && data.total_frames) || "—") +
+      "　<strong>时长</strong>：" +
+      escapeHtmlText((data && data.duration_sec) || "—") +
+      " 秒</p>" +
+      "<p><strong>音频覆盖</strong>：" +
+      escapeHtmlText(missingText) +
+      "</p>" +
+      "<p><strong>Render Plan</strong>：" +
+      escapeHtmlText(
+        data && data.render_plan_exists
+          ? (data.render_plan_source || "director") + " · " + (data.render_plan_path || "")
+          : "未生成"
+      ) +
+      "</p>" +
+      "<p><strong>input-props</strong>：" +
+      escapeHtmlText((data && data.input_props_path) || "—") +
+      "</p>" +
+      "<p><strong>输出文件</strong>：" +
+      escapeHtmlText((data && data.output_video_path) || "—") +
+      "</p>" +
+      "</div>";
+    if (remotionCommand) {
+      var cmd = (data && data.render_command) || "";
+      remotionCommand.textContent = cmd;
+      remotionCommand.classList.toggle("hidden", !cmd);
+    }
+  }
+
+  function workflowStep(label, state, detail, targetId) {
+    var stateClass = state === "ready" ? "ready" : state === "warn" ? "warn" : "todo";
+    var stateLabel = state === "ready" ? "已就绪" : state === "warn" ? "需注意" : "待处理";
+    return (
+      '<button type="button" class="task-workflow-step task-workflow-step--' +
+      stateClass +
+      '" data-workflow-target="' +
+      escapeHtmlText(targetId || "") +
+      '" role="listitem">' +
+      '<span class="task-workflow-step__state">' +
+      stateLabel +
+      "</span>" +
+      '<span class="task-workflow-step__label">' +
+      escapeHtmlText(label) +
+      "</span>" +
+      '<span class="task-workflow-step__detail">' +
+      escapeHtmlText(detail || "") +
+      "</span>" +
+      "</button>"
+    );
+  }
+
+  function renderWorkspaceStatus(data) {
+    if (taskWorkflowTitle) {
+      taskWorkflowTitle.textContent =
+        data && data.filename ? data.filename : currentTaskId ? "已存任务" : "任务流";
+    }
+    if (!taskWorkflowSteps) return;
+    if (!currentTaskId || !data) {
+      taskWorkflowSteps.innerHTML =
+        '<p class="task-workflow__empty">打开已存任务后显示 Deal / Rebuilder / Remotion 状态。</p>';
+      return;
+    }
+    var deal = data.deal || {};
+    var audio = data.audio || {};
+    var rebuilder = data.rebuilder || {};
+    var remotion = data.remotion || {};
+    var dealState = deal.images_available ? "ready" : "warn";
+    var directorState = rebuilder.director_manifest_exists
+      ? "ready"
+      : rebuilder.course_material_exists || rebuilder.raw_manifest_exists
+        ? "warn"
+        : "todo";
+    var audioState = audio.slides_with_audio > 0 ? "ready" : "todo";
+    var remotionState = remotion.output_video_exists
+      ? "ready"
+      : remotion.input_props_exists
+        ? "warn"
+        : "todo";
+    taskWorkflowSteps.innerHTML =
+      workflowStep(
+        "Deal 素材",
+        dealState,
+        (data.slide_count || 0) + " 页，预览 " + (deal.preview_count || 0) + " 页",
+        "preview-surface",
+      ) +
+      workflowStep(
+        "Rebuilder 导演",
+        directorState,
+        rebuilder.director_manifest_exists
+          ? (rebuilder.scene_count || 0) + " 镜头 · " + (rebuilder.planning_mode || "unknown")
+          : rebuilder.course_material_exists
+            ? "已有 course_material，待生成导演脚本"
+            : rebuilder.raw_manifest_exists
+              ? "已有 raw manifest，待规范化素材"
+            : "待生成素材清单",
+        "director-panel",
+      ) +
+      workflowStep(
+        "Audio 口播",
+        audioState,
+        (audio.slides_with_audio || 0) + " 页已有音频，" + (audio.generated_segment_count || 0) + " 段",
+        "audio-workbench",
+      ) +
+      workflowStep(
+        "Remotion 成片",
+        remotionState,
+        remotion.output_video_exists
+          ? "已检测到 MP4"
+          : remotion.input_props_exists
+            ? (remotion.render_plan_source || "入参已生成") + "，待渲染"
+            : "待生成 input-props",
+        "remotion-panel",
+      );
+  }
+
+  async function refreshWorkspaceStatus(silent) {
+    if (!currentTaskId) {
+      renderWorkspaceStatus(null);
+      return;
+    }
+    try {
+      var res = await fetch(
+        "/api/tasks/" + encodeURIComponent(currentTaskId) + "/workspace-status"
+      );
+      var j = await res.json().catch(function () {
+        return {};
+      });
+      if (!res.ok) throw new Error(j.detail || "请求失败");
+      renderWorkspaceStatus(j);
+    } catch (e) {
+      if (!silent && statusLine) {
+        statusLine.textContent =
+          "刷新任务流状态失败：" + (e instanceof Error ? e.message : String(e));
+      }
+      renderWorkspaceStatus(null);
+    }
+  }
+
+  async function refreshRemotionStatus(silent) {
+    if (!currentTaskId) {
+      renderRemotionStatus(null);
+      return;
+    }
+    try {
+      var res = await fetch(
+        "/api/tasks/" + encodeURIComponent(currentTaskId) + "/remotion-render-task"
+      );
+      var j = await res.json().catch(function () {
+        return {};
+      });
+      if (!res.ok) throw new Error(j.detail || "请求失败");
+      renderRemotionStatus(j);
+    } catch (e) {
+      if (!silent && statusLine) {
+        statusLine.textContent =
+          "刷新 Remotion 状态失败：" + (e instanceof Error ? e.message : String(e));
+      }
+      renderRemotionStatus(null);
+    }
+  }
+
+  async function postRemotionRenderTask() {
+    if (!currentTaskId) return;
+    try {
+      if (btnRemotionGenerate) btnRemotionGenerate.disabled = true;
+      var res = await fetch(
+        "/api/tasks/" + encodeURIComponent(currentTaskId) + "/remotion-render-plan",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fps: 30,
+            no_audio_frames: 90,
+            bundle_audio: false,
+          }),
+        }
+      );
+      var j = await res.json().catch(function () {
+        return {};
+      });
+      if (!res.ok) throw new Error(j.detail || "请求失败");
+      renderRemotionStatus(j);
+      void refreshWorkspaceStatus(true);
+      if (statusLine) {
+        statusLine.textContent =
+          "已生成 Remotion 渲染任务：" +
+          (j.slide_count || 0) +
+          " 个镜头/页面，" +
+          (j.audio_slide_count || 0) +
+          " 项含音频。来源：" +
+          (j.source || "fallback") +
+          "。";
+      }
+    } catch (e) {
+      if (statusLine) {
+        statusLine.textContent =
+          "生成 Remotion 渲染任务失败：" + (e instanceof Error ? e.message : String(e));
+      }
+    } finally {
+      if (btnRemotionGenerate) btnRemotionGenerate.disabled = false;
     }
   }
 
@@ -3409,6 +3692,8 @@
       refreshGenerateSlideVisualEnabled();
       void refreshGenVisualCoverage();
       void refreshDirectorManifest(true);
+      void refreshRemotionStatus(true);
+      void refreshWorkspaceStatus(true);
     } catch (err) {
       showErr(errorUpload, err instanceof Error ? err.message : String(err));
       uploadPanel.querySelector(".drop-title").textContent = "上传培训用 .pptx";
@@ -3456,6 +3741,12 @@
     directorManifestCache = null;
     if (directorSummary) directorSummary.innerHTML = "";
     if (directorScenes) directorScenes.innerHTML = "";
+    if (remotionSummary) remotionSummary.innerHTML = "";
+    if (remotionCommand) {
+      remotionCommand.textContent = "";
+      remotionCommand.classList.add("hidden");
+    }
+    renderWorkspaceStatus(null);
   }
 
   dropzone.addEventListener("click", function () {
@@ -3532,6 +3823,7 @@
     var tabs = document.querySelectorAll("[data-settings-tab]");
     var panelMini = document.getElementById("panel-minimax");
     var panelTr = document.getElementById("panel-transcript-rewrite");
+    var panelDirector = document.getElementById("panel-director-llm");
     var panelAg = document.getElementById("panel-agent");
     tabs.forEach(function (btn) {
       var on = btn.getAttribute("data-settings-tab") === name;
@@ -3540,6 +3832,7 @@
     });
     if (panelMini) panelMini.classList.toggle("hidden", name !== "minimax");
     if (panelTr) panelTr.classList.toggle("hidden", name !== "transcript-rewrite");
+    if (panelDirector) panelDirector.classList.toggle("hidden", name !== "director-llm");
     if (panelAg) panelAg.classList.toggle("hidden", name !== "agent");
   }
 
@@ -3763,8 +4056,25 @@
     var trExtra = document.getElementById("cfg-tr-extra");
     if (trExtra) trExtra.value = tr.extra_instructions != null ? String(tr.extra_instructions) : "";
 
+    var director = j.director_llm || {};
+    var directorEnabled = document.getElementById("cfg-director-enabled");
+    if (directorEnabled) directorEnabled.value = director.enabled ? "true" : "false";
+    var directorProvider = document.getElementById("cfg-director-provider");
+    if (directorProvider) directorProvider.value = director.provider || "mimo";
+    var directorBase = document.getElementById("cfg-director-base");
+    if (directorBase) directorBase.value = director.api_base || "https://token-plan-cn.xiaomimimo.com/v1";
+    var directorKey = document.getElementById("cfg-director-key");
+    if (directorKey) {
+      directorKey.value = typeof director.api_key === "string" ? director.api_key : "";
+      directorKey.type = "password";
+    }
+    var directorModel = document.getElementById("cfg-director-model");
+    if (directorModel) directorModel.value = director.model || "mimo-v2.5-pro";
+
     var trTestMsg = document.getElementById("cfg-tr-test-msg");
     if (trTestMsg) trTestMsg.textContent = "";
+    var directorTestMsg = document.getElementById("cfg-director-test-msg");
+    if (directorTestMsg) directorTestMsg.textContent = "";
     var testMsg = document.getElementById("cfg-mm-test-msg");
     if (testMsg) testMsg.textContent = "";
   }
@@ -3777,6 +4087,17 @@
       api_key: document.getElementById("cfg-tr-key").value.trim(),
       model: document.getElementById("cfg-tr-model").value,
       extra_instructions: extraEl ? extraEl.value : "",
+    };
+  }
+
+  function collectDirectorLLMPayload() {
+    var enabledEl = document.getElementById("cfg-director-enabled");
+    return {
+      enabled: enabledEl ? enabledEl.value === "true" : false,
+      provider: document.getElementById("cfg-director-provider").value,
+      api_base: document.getElementById("cfg-director-base").value.trim(),
+      api_key: document.getElementById("cfg-director-key").value.trim(),
+      model: document.getElementById("cfg-director-model").value.trim() || "mimo-v2.5-pro",
     };
   }
 
@@ -3846,6 +4167,7 @@
       var payload = {
         minimax: collectMinimaxSettingsPayload(),
         transcript_rewrite: collectTranscriptRewritePayload(),
+        director_llm: collectDirectorLLMPayload(),
         agent: {
           note: agentNoteEl ? agentNoteEl.value : "",
           provider: document.getElementById("cfg-agent-provider").value,
@@ -3922,6 +4244,36 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             transcript_rewrite: collectTranscriptRewritePayload(),
+          }),
+        });
+        var j = await res.json().catch(function () {
+          return {};
+        });
+        if (!res.ok) {
+          if (msg)
+            msg.textContent =
+              (j.detail && (typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail))) ||
+              "失败";
+          return;
+        }
+        if (msg) msg.textContent = j.detail || "成功";
+      } catch (_) {
+        if (msg) msg.textContent = "网络错误";
+      }
+    });
+  }
+
+  var btnDirectorTest = document.getElementById("btn-director-test");
+  if (btnDirectorTest) {
+    btnDirectorTest.addEventListener("click", async function () {
+      var msg = document.getElementById("cfg-director-test-msg");
+      if (msg) msg.textContent = "测试中…";
+      try {
+        var res = await fetch("/api/settings/external/director-llm/test", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            director_llm: collectDirectorLLMPayload(),
           }),
         });
         var j = await res.json().catch(function () {
@@ -4032,6 +4384,37 @@
   if (btnDirectorExport) {
     btnDirectorExport.addEventListener("click", function () {
       void postDirectorExport();
+    });
+  }
+  if (btnRemotionGenerate) {
+    btnRemotionGenerate.addEventListener("click", function () {
+      void postRemotionRenderTask();
+    });
+  }
+  if (btnRemotionRefresh) {
+    btnRemotionRefresh.addEventListener("click", function () {
+      void refreshRemotionStatus(false);
+      void refreshWorkspaceStatus(true);
+    });
+  }
+  if (btnWorkflowRefresh) {
+    btnWorkflowRefresh.addEventListener("click", function () {
+      void refreshWorkspaceStatus(false);
+      void refreshDirectorManifest(true);
+      void refreshRemotionStatus(true);
+    });
+  }
+  if (taskWorkflowSteps) {
+    taskWorkflowSteps.addEventListener("click", function (e) {
+      var t = e.target;
+      if (!(t instanceof HTMLElement)) return;
+      var btn = t.closest("[data-workflow-target]");
+      if (!btn || !(btn instanceof HTMLElement)) return;
+      var id = btn.getAttribute("data-workflow-target") || "";
+      var el = id ? document.getElementById(id) : null;
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
     });
   }
 

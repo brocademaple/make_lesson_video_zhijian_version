@@ -17,7 +17,7 @@
         }
       })();
     </script>
-    <link rel="stylesheet" href="/assets/styles.css?v=2.68" />
+    <link rel="stylesheet" href="/assets/styles.css?v=2.80" />
   </head>
   <body>
     <div class="app">
@@ -247,6 +247,16 @@
 
           <section class="workspace hidden" id="workspace">
         <main class="preview-area">
+          <section class="task-workflow" id="task-workflow" aria-label="任务工作流">
+            <div class="task-workflow__head">
+              <div>
+                <p class="task-workflow__eyebrow">统一工作台</p>
+                <h1 class="task-workflow__title" id="task-workflow-title">任务流</h1>
+              </div>
+              <button type="button" class="btn btn-text" id="btn-workflow-refresh">刷新状态</button>
+            </div>
+            <div class="task-workflow__steps" id="task-workflow-steps" role="list"></div>
+          </section>
           <div class="preview-toolbar">
             <div class="toolbar-info">
               <div class="toolbar-info__top">
@@ -418,7 +428,7 @@
                       <span class="director-panel__title">课程重构 / 导演脚本</span>
                     </div>
                     <p class="director-panel__hint">
-                      将当前任务的预览与解析结果汇总为原始素材清单，并由内置导演模块生成可审核的镜头脚本（启发式初版，未接 LLM / 生图 API）。
+                      将当前任务的预览与解析结果汇总为原始素材清单，并由内置导演模块生成可审核的镜头脚本；默认优先使用 OpenAI-compatible LLM，失败自动回退启发式。
                     </p>
                     <div class="director-panel__actions">
                       <button type="button" class="btn btn-secondary" id="btn-director-raw-manifest">
@@ -436,6 +446,25 @@
                     </div>
                     <div class="director-panel__summary" id="director-summary"></div>
                     <div class="director-panel__scenes" id="director-scenes"></div>
+                  </section>
+
+                  <section class="remotion-panel" id="remotion-panel" aria-label="Remotion 成片任务">
+                    <div class="remotion-panel__head">
+                      <span class="remotion-panel__title">Remotion 成片</span>
+                    </div>
+                    <p class="remotion-panel__hint">
+                      为当前已存任务生成 <code>render_tasks</code> 入参；音频、时长、标题条与预览图会写入同一个 <code>input-props.json</code>。
+                    </p>
+                    <div class="remotion-panel__actions">
+                      <button type="button" class="btn btn-secondary" id="btn-remotion-generate">
+                        生成渲染任务
+                      </button>
+                      <button type="button" class="btn btn-text" id="btn-remotion-refresh">
+                        刷新状态
+                      </button>
+                    </div>
+                    <div class="remotion-panel__summary" id="remotion-summary"></div>
+                    <pre class="remotion-panel__command hidden" id="remotion-command"></pre>
                   </section>
 
                   <section class="audio-workbench" id="audio-workbench" aria-label="音频工作台">
@@ -1124,6 +1153,9 @@
             <button type="button" class="external-settings-dialog__tab" role="tab" id="tab-transcript-rewrite" aria-selected="false" data-settings-tab="transcript-rewrite">
               口播稿优化 API
             </button>
+            <button type="button" class="external-settings-dialog__tab" role="tab" id="tab-director-llm" aria-selected="false" data-settings-tab="director-llm">
+              导演模型
+            </button>
             <button type="button" class="external-settings-dialog__tab" role="tab" id="tab-agent" aria-selected="false" data-settings-tab="agent">
               智能体（预留）
             </button>
@@ -1433,6 +1465,65 @@
                 <span class="external-settings-dialog__test-msg" id="cfg-tr-test-msg"></span>
               </div>
             </div>
+            <div class="settings-tab-panel hidden" id="panel-director-llm" role="tabpanel">
+              <p class="external-settings-dialog__hint">
+                用于 Rebuilder 的<strong>导演脚本规划</strong>：素材理解、课程结构、分镜策略和风险标记。默认按 MiMo Token Plan 的
+                OpenAI 兼容 <code>/v1/chat/completions</code> 调用，模型 <code>mimo-v2.5-pro</code>。它与口播稿优化配置相互独立。
+              </p>
+              <div class="field-grid">
+                <label class="field">
+                  <span class="field__label">启用</span>
+                  <select id="cfg-director-enabled" class="field__input">
+                    <option value="false">未启用（启发式导演）</option>
+                    <option value="true">启用 Director LLM</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="field__label">Provider</span>
+                  <select id="cfg-director-provider" class="field__input">
+                    <option value="mimo">MiMo Token Plan</option>
+                    <option value="openai_compatible">OpenAI 兼容 API</option>
+                  </select>
+                </label>
+                <label class="field field--wide">
+                  <span class="field__label">API Base</span>
+                  <input
+                    type="text"
+                    id="cfg-director-base"
+                    class="field__input"
+                    autocomplete="off"
+                    placeholder="https://token-plan-cn.xiaomimimo.com/v1"
+                  />
+                </label>
+                <label class="field field--wide">
+                  <span class="field__label">API Key</span>
+                  <input
+                    type="password"
+                    id="cfg-director-key"
+                    class="field__input"
+                    autocomplete="off"
+                    autocapitalize="off"
+                    spellcheck="false"
+                    placeholder="tp-xxxxx"
+                  />
+                  <span class="field__hint muted">密钥仅写入本机 <code>ppt_course_data/config/external_apis.json</code>；清空保存可删除。</span>
+                </label>
+                <label class="field field--wide">
+                  <span class="field__label">模型 model</span>
+                  <input
+                    type="text"
+                    id="cfg-director-model"
+                    class="field__input"
+                    autocomplete="off"
+                    value="mimo-v2.5-pro"
+                  />
+                </label>
+              </div>
+              <div class="external-settings-dialog__footer-actions">
+                <button type="button" class="btn btn-text" id="btn-director-test">连通测试</button>
+                <span class="external-settings-dialog__test-msg" id="cfg-director-test-msg"></span>
+              </div>
+            </div>
             <div class="settings-tab-panel hidden" id="panel-agent" role="tabpanel">
               <p class="external-settings-dialog__hint">
                 预留用于后续接入<strong>可自主规划与执行</strong>的智能体（如 Claude Code、自定义 Agent）。当前项目仍通过外部
@@ -1612,6 +1703,6 @@
       </div>
     </div>
 
-    <script src="/assets/app.js?v=2.73" defer></script>
+    <script src="/assets/app.js?v=2.80" defer></script>
   </body>
 </html>

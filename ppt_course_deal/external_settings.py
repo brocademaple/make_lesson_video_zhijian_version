@@ -129,6 +129,14 @@ DEFAULT_TRANSCRIPT_REWRITE: dict[str, Any] = {
     "extra_instructions": DEFAULT_TRANSCRIPT_REWRITE_EXTRA_INSTRUCTIONS,
 }
 
+DEFAULT_DIRECTOR_LLM: dict[str, Any] = {
+    "enabled": False,
+    "provider": "mimo",
+    "api_base": "https://token-plan-cn.xiaomimimo.com/v1",
+    "api_key": "",
+    "model": "mimo-v2.5-pro",
+}
+
 
 def config_path() -> Path:
     d = get_data_root() / CONFIG_DIRNAME
@@ -143,6 +151,7 @@ def load_raw() -> dict[str, Any]:
             "minimax": {**DEFAULT_MINIMAX},
             "agent": {**DEFAULT_AGENT},
             "transcript_rewrite": {**DEFAULT_TRANSCRIPT_REWRITE},
+            "director_llm": {**DEFAULT_DIRECTOR_LLM},
         }
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -152,22 +161,30 @@ def load_raw() -> dict[str, Any]:
             "minimax": {**DEFAULT_MINIMAX},
             "agent": {**DEFAULT_AGENT},
             "transcript_rewrite": {**DEFAULT_TRANSCRIPT_REWRITE},
+            "director_llm": {**DEFAULT_DIRECTOR_LLM},
         }
     mm = {**DEFAULT_MINIMAX, **(data.get("minimax") or {})}
     ag = {**DEFAULT_AGENT, **(data.get("agent") or {})}
     tr = {**DEFAULT_TRANSCRIPT_REWRITE, **(data.get("transcript_rewrite") or {})}
+    dl = {**DEFAULT_DIRECTOR_LLM, **(data.get("director_llm") or {})}
     extra = tr.get("extra_instructions")
     if isinstance(extra, str):
         if should_clear_legacy_builtin_long_extra(
             extra
         ) or should_migrate_legacy_extra_instructions(extra):
             tr["extra_instructions"] = DEFAULT_TRANSCRIPT_REWRITE_EXTRA_INSTRUCTIONS
-            to_save = {**data, "minimax": mm, "agent": ag, "transcript_rewrite": tr}
+            to_save = {
+                **data,
+                "minimax": mm,
+                "agent": ag,
+                "transcript_rewrite": tr,
+                "director_llm": dl,
+            }
             try:
                 save_raw(to_save)
             except OSError:
                 logger.warning("迁移口播追加规则写盘失败", exc_info=True)
-    return {"minimax": mm, "agent": ag, "transcript_rewrite": tr}
+    return {"minimax": mm, "agent": ag, "transcript_rewrite": tr, "director_llm": dl}
 
 
 def save_raw(data: dict[str, Any]) -> None:
@@ -212,6 +229,38 @@ def merge_transcript_rewrite_update(
 def get_transcript_rewrite_for_server_call() -> dict[str, Any]:
     raw = load_raw()
     return raw.get("transcript_rewrite") or {**DEFAULT_TRANSCRIPT_REWRITE}
+
+
+def public_director_llm(cfg: dict[str, Any]) -> dict[str, Any]:
+    """供 GET 返回；本机工作台回显密钥以便编辑。"""
+    key = cfg.get("api_key") or ""
+    out = {k: v for k, v in cfg.items() if k != "api_key"}
+    out.update(mask_key(str(key) if key else None))
+    out["api_key"] = str(key).strip() if str(key).strip() else ""
+    return out
+
+
+def merge_director_llm_update(
+    existing: dict[str, Any], body: dict[str, Any]
+) -> dict[str, Any]:
+    merged = {**existing}
+    for k, v in body.items():
+        if k == "api_key":
+            if isinstance(v, str):
+                merged["api_key"] = normalize_minimax_api_key(v) if v.strip() else ""
+            continue
+        if k == "enabled":
+            merged["enabled"] = bool(v)
+            continue
+        if v is not None:
+            merged[k] = v
+    return merged
+
+
+def get_director_llm_for_server_call() -> dict[str, Any]:
+    """含明文 api_key，仅服务端 Director LLM 调用。"""
+    raw = load_raw()
+    return raw.get("director_llm") or {**DEFAULT_DIRECTOR_LLM}
 
 
 def public_minimax(mm: dict[str, Any]) -> dict[str, Any]:
