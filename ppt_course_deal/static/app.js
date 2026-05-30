@@ -139,6 +139,8 @@
   const btnRemotionRefresh = document.getElementById("btn-remotion-refresh");
   const taskWorkflowTitle = document.getElementById("task-workflow-title");
   const taskWorkflowSteps = document.getElementById("task-workflow-steps");
+  const taskWorkflowPipeline = document.getElementById("task-workflow-pipeline");
+  const taskWorkflowArtifacts = document.getElementById("task-workflow-artifacts");
   const btnWorkflowRefresh = document.getElementById("btn-workflow-refresh");
 
   var AUDIO_GEN_LS_KEY = "ppt_course_audio_gen_overrides";
@@ -1511,6 +1513,109 @@
     );
   }
 
+  function workflowPipelineNode(label, state, detail) {
+    var stateClass = state === "ready" ? "ready" : state === "warn" ? "warn" : "todo";
+    return (
+      '<span class="task-pipeline-node task-pipeline-node--' +
+      stateClass +
+      '">' +
+      '<span class="task-pipeline-node__dot"></span>' +
+      '<span class="task-pipeline-node__text">' +
+      escapeHtmlText(label) +
+      "</span>" +
+      '<span class="task-pipeline-node__detail">' +
+      escapeHtmlText(detail || "") +
+      "</span>" +
+      "</span>"
+    );
+  }
+
+  function workflowArtifact(label, value, state) {
+    var stateClass = state === "ready" ? "ready" : state === "warn" ? "warn" : "todo";
+    return (
+      '<div class="task-artifact task-artifact--' +
+      stateClass +
+      '">' +
+      '<span class="task-artifact__label">' +
+      escapeHtmlText(label) +
+      "</span>" +
+      '<code class="task-artifact__value">' +
+      escapeHtmlText(value || "待生成") +
+      "</code>" +
+      "</div>"
+    );
+  }
+
+  function renderWorkflowDetails(data, states) {
+    if (taskWorkflowPipeline) {
+      if (!currentTaskId || !data) {
+        taskWorkflowPipeline.innerHTML = "";
+      } else {
+        var deal = data.deal || {};
+        var audio = data.audio || {};
+        var rebuilder = data.rebuilder || {};
+        var remotion = data.remotion || {};
+        taskWorkflowPipeline.innerHTML =
+          workflowPipelineNode(
+            "PPT",
+            "ready",
+            data.slide_count ? data.slide_count + " 页" : "已载入"
+          ) +
+          workflowPipelineNode(
+            "DL 解析 / 切图",
+            states.dealState,
+            (deal.preview_count || 0) + "/" + (data.slide_count || 0) + " 预览"
+          ) +
+          workflowPipelineNode(
+            "CourseMaterial",
+            rebuilder.course_material_exists ? "ready" : rebuilder.raw_manifest_exists ? "warn" : "todo",
+            rebuilder.course_material_exists
+              ? (rebuilder.course_material_slide_count || 0) + " 页素材"
+              : "待规范化"
+          ) +
+          workflowPipelineNode(
+            "DirectorManifest",
+            states.directorState,
+            rebuilder.director_manifest_exists
+              ? (rebuilder.scene_count || 0) + " 镜头"
+              : "待导演规划"
+          ) +
+          workflowPipelineNode(
+            "RenderPlan / Props",
+            remotion.render_plan_exists || remotion.input_props_exists ? "ready" : "todo",
+            remotion.render_plan_source || "待生成"
+          ) +
+          workflowPipelineNode(
+            "MP4",
+            states.remotionState,
+            remotion.output_video_exists ? "已生成" : "待渲染"
+          );
+        if (!audio.slides_with_audio) {
+          taskWorkflowPipeline.innerHTML += workflowPipelineNode(
+            "Audio",
+            "warn",
+            "暂无口播音频，可用 edge-tts 兜底"
+          );
+        }
+      }
+    }
+    if (taskWorkflowArtifacts) {
+      if (!currentTaskId || !data) {
+        taskWorkflowArtifacts.innerHTML = "";
+      } else {
+        var taskRoot = "ppt_course_data/tasks/" + currentTaskId;
+        var r = data.remotion || {};
+        taskWorkflowArtifacts.innerHTML =
+          workflowArtifact("Raw Material", taskRoot + "/raw_material_manifest.json", data.rebuilder && data.rebuilder.raw_manifest_exists ? "ready" : "todo") +
+          workflowArtifact("Course Material", taskRoot + "/course_material.json", data.rebuilder && data.rebuilder.course_material_exists ? "ready" : "todo") +
+          workflowArtifact("Director Manifest", taskRoot + "/director_manifest.json", data.rebuilder && data.rebuilder.director_manifest_exists ? "ready" : "todo") +
+          workflowArtifact("Render Plan", r.render_plan_path || "", r.render_plan_exists ? "ready" : "todo") +
+          workflowArtifact("Input Props", r.input_props_path || "", r.input_props_exists ? "ready" : "todo") +
+          workflowArtifact("Output MP4", r.output_video_path || "", r.output_video_exists ? "ready" : "todo");
+      }
+    }
+  }
+
   function renderWorkspaceStatus(data) {
     if (taskWorkflowTitle) {
       taskWorkflowTitle.textContent =
@@ -1519,7 +1624,8 @@
     if (!taskWorkflowSteps) return;
     if (!currentTaskId || !data) {
       taskWorkflowSteps.innerHTML =
-        '<p class="task-workflow__empty">打开已存任务后显示 Deal / Rebuilder / Remotion 状态。</p>';
+        '<p class="task-workflow__empty">打开已存任务后显示 DL / Rebuilder / Audio / Remotion 的平台状态。</p>';
+      renderWorkflowDetails(data, {});
       return;
     }
     var deal = data.deal || {};
@@ -1573,6 +1679,12 @@
             : "待生成 input-props",
         "remotion-panel",
       );
+    renderWorkflowDetails(data, {
+      dealState: dealState,
+      directorState: directorState,
+      audioState: audioState,
+      remotionState: remotionState,
+    });
   }
 
   async function refreshWorkspaceStatus(silent) {
@@ -3586,7 +3698,10 @@
       }
       updateAudioWorkbenchPlayer();
       if (audioWorkbenchStatus) {
-        audioWorkbenchStatus.textContent = "第 " + (seg + 1) + " 段已生成并已下载，可试听";
+        var providerText = j.tts_provider ? " · " + j.tts_provider : "";
+        var fallbackText = j.tts_fallback_used ? "（MiniMax 失败，已自动兜底）" : "";
+        audioWorkbenchStatus.textContent =
+          "第 " + (seg + 1) + " 段已生成并已下载，可试听" + providerText + fallbackText;
       }
       renderAudioSegmentRows();
     } catch (e) {
@@ -4021,6 +4136,21 @@
     var em = document.getElementById("cfg-mm-emotion");
     if (em) em.value = mm.emotion || "";
 
+    var tts = j.tts || {};
+    var edge = tts.edge_tts || {};
+    var ttsProvider = document.getElementById("cfg-tts-provider");
+    if (ttsProvider) ttsProvider.value = tts.provider || "minimax";
+    var ttsFallback = document.getElementById("cfg-tts-fallback-enabled");
+    if (ttsFallback) ttsFallback.value = tts.fallback_enabled === false ? "false" : "true";
+    var ttsEdgeVoice = document.getElementById("cfg-tts-edge-voice");
+    if (ttsEdgeVoice) ttsEdgeVoice.value = edge.voice || "zh-CN-XiaoxiaoNeural";
+    var ttsEdgeRate = document.getElementById("cfg-tts-edge-rate");
+    if (ttsEdgeRate) ttsEdgeRate.value = edge.rate || "+0%";
+    var ttsEdgeVolume = document.getElementById("cfg-tts-edge-volume");
+    if (ttsEdgeVolume) ttsEdgeVolume.value = edge.volume || "+0%";
+    var ttsEdgePitch = document.getElementById("cfg-tts-edge-pitch");
+    if (ttsEdgePitch) ttsEdgePitch.value = edge.pitch || "+0Hz";
+
     var ag = j.agent || {};
     var note = document.getElementById("cfg-agent-note");
     if (note) note.value = ag.note || "";
@@ -4101,6 +4231,22 @@
     };
   }
 
+  function collectTTSPayload() {
+    var providerEl = document.getElementById("cfg-tts-provider");
+    var fallbackEl = document.getElementById("cfg-tts-fallback-enabled");
+    return {
+      provider: providerEl ? providerEl.value : "minimax",
+      fallback_enabled: fallbackEl ? fallbackEl.value !== "false" : true,
+      fallback_provider: "edge_tts",
+      edge_tts: {
+        voice: document.getElementById("cfg-tts-edge-voice").value.trim() || "zh-CN-XiaoxiaoNeural",
+        rate: document.getElementById("cfg-tts-edge-rate").value.trim() || "+0%",
+        volume: document.getElementById("cfg-tts-edge-volume").value.trim() || "+0%",
+        pitch: document.getElementById("cfg-tts-edge-pitch").value.trim() || "+0Hz",
+      },
+    };
+  }
+
   document.querySelectorAll("[data-settings-tab]").forEach(function (btn) {
     btn.addEventListener("click", function () {
       var name = btn.getAttribute("data-settings-tab");
@@ -4166,6 +4312,7 @@
       var agentNoteEl = document.getElementById("cfg-agent-note");
       var payload = {
         minimax: collectMinimaxSettingsPayload(),
+        tts: collectTTSPayload(),
         transcript_rewrite: collectTranscriptRewritePayload(),
         director_llm: collectDirectorLLMPayload(),
         agent: {

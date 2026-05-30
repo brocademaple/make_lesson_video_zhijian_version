@@ -269,6 +269,12 @@ def cmd_course_material(
 def cmd_remotion_render_plan(
     task_id: str = typer.Argument(..., help="已存任务 task_id"),
     fps: int = typer.Option(30, "--fps", help="与 Remotion Composition 的 fps 一致"),
+    max_slides: Optional[int] = typer.Option(
+        None,
+        "--max-slides",
+        min=1,
+        help="最多导出前几个导演镜头/页面（默认该任务全部镜头）",
+    ),
     no_audio_frames: int = typer.Option(
         90,
         "--no-audio-frames",
@@ -283,6 +289,7 @@ def cmd_remotion_render_plan(
             task_id,
             fps=fps,
             no_audio_frames=no_audio_frames,
+            max_scenes=max_slides,
         )
     except ValueError as e:
         typer.secho(str(e), fg=typer.colors.RED)

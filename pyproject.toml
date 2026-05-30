@@ -18,6 +18,7 @@ dependencies = [
     "tinytag>=1.10,<2",
     "openai>=1.40,<2",
     "python-dotenv>=1.0,<2",
+    "edge-tts>=7.0,<8",
 ]
 
 [project.scripts]

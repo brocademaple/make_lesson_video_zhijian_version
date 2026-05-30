@@ -3,92 +3,163 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>PPT 课件工作台 · 产品概览</title>
+    <title>text2classvideo · AI Native 培训视频生产中台</title>
     <meta
       name="description"
-      content="文字密集型培训 PPT 解析、整页预览、已存任务、课程化导出与 MiniMax 音频工作台。"
+      content="从培训 PPT 到可审核导演脚本，再到 Remotion 成片的 AI Native 视频生产中台。"
     />
     <link rel="stylesheet" href="assets/css/site.css" />
   </head>
   <body>
     <header class="site-header">
       <div class="site-header__inner">
-        <span class="site-logo">PPT 课件工作台</span>
+        <a class="site-logo" href="#top" aria-label="回到首页">text2classvideo</a>
         <nav class="site-nav" aria-label="页面内导航">
-          <a href="#features">能力</a>
-          <a href="#shots">界面</a>
+          <a href="#platform">中台</a>
+          <a href="#pipeline">流程</a>
+          <a href="#case">样片</a>
+          <a href="#run">运行</a>
         </nav>
       </div>
     </header>
 
-    <main class="site-main">
-      <section class="hero">
-        <h1 class="hero__title">培训课件解析 · 预览 · 课程化 · 口播音频</h1>
-        <p class="hero__lead">
-          本页为静态产品介绍，与仓库内 <code>ppt_course_deal</code> 运行时代码分离。截图请置于
-          <code>assets/images/</code> 并在下方替换占位。
-        </p>
+    <main id="top">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero__content">
+          <p class="hero__eyebrow">AI Native Training Video Platform</p>
+          <h1 id="hero-title">把企业培训 PPT 变成可审核、可渲染、可迭代的视频生产链路</h1>
+          <p class="hero__lead">
+            DL 负责拆解与预览，Rebuilder 作为导演中枢重构素材与脚本，Remotion 按确定性计划生成培训视频。
+            当前版本聚焦内部培训风格：清晰、克制、证据可追溯。
+          </p>
+          <div class="hero__actions">
+            <a class="button button--primary" href="#pipeline">查看链路</a>
+            <a class="button" href="#run">本地运行</a>
+          </div>
+        </div>
+        <div class="hero__visual" aria-label="平台生产链路示意">
+          <div class="studio-frame">
+            <div class="studio-frame__bar">
+              <span></span><span></span><span></span>
+            </div>
+            <div class="studio-frame__body">
+              <div class="studio-stage">
+                <div class="studio-stage__preview">PPT</div>
+                <div class="studio-stage__caption">Source Evidence</div>
+              </div>
+              <div class="studio-stack">
+                <span>CourseMaterial</span>
+                <span>DirectorManifest</span>
+                <span>RenderPlan</span>
+              </div>
+              <div class="studio-console">
+                <span class="studio-console__line studio-console__line--wide"></span>
+                <span class="studio-console__line"></span>
+                <span class="studio-console__line studio-console__line--accent"></span>
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
 
-      <section class="section" id="features">
-        <h2 class="section__title">产品能力</h2>
-        <p class="section__desc">扁平信息架构，便于在 GitHub Pages 上快速扫读。</p>
-        <div class="feature-grid">
-          <article class="feature-card">
-            <div class="feature-card__icon">解</div>
-            <h3 class="feature-card__title">解析与持久化</h3>
-            <p class="feature-card__text">上传 .pptx，抽取文本结构；任务落盘至本机数据目录，支持已存任务列表与再次打开。</p>
+      <section class="section section--compact" id="platform" aria-labelledby="platform-title">
+        <div class="section__head">
+          <p class="section__eyebrow">Platform v0.1</p>
+          <h2 id="platform-title">当前平台完成度</h2>
+          <p>
+            项目已经有三段工程骨架，今天的目标是把它们产品化为一个可展示的中台，而不是三个分散工具。
+          </p>
+        </div>
+        <div class="metric-grid">
+          <article class="metric-card">
+            <span class="metric-card__value">70%</span>
+            <h3>工程闭环</h3>
+            <p>DL、Rebuilder、Remotion 均有入口；TTS 已加入 edge-tts 兜底。</p>
           </article>
-          <article class="feature-card">
-            <div class="feature-card__icon">览</div>
-            <h3 class="feature-card__title">整页预览</h3>
-            <p class="feature-card__text">可选 LibreOffice + Poppler 将每页渲染为 PNG，缩略图与大图联动浏览。</p>
+          <article class="metric-card">
+            <span class="metric-card__value">45%</span>
+            <h3>产品形态</h3>
+            <p>工作台开始统一呈现模块状态、产物路径和下一步动作。</p>
           </article>
-          <article class="feature-card">
-            <div class="feature-card__icon">课</div>
-            <h3 class="feature-card__title">课程化 PPTX</h3>
-            <p class="feature-card__text">启发式流水线生成更偏录课稿的版式，浏览器内一键下载。</p>
-          </article>
-          <article class="feature-card">
-            <div class="feature-card__icon">音</div>
-            <h3 class="feature-card__title">音频工作台</h3>
-            <p class="feature-card__text">逐页逐字稿、MiniMax T2A 合成参数与试听；与外部 API 配置分离存储。</p>
+          <article class="metric-card">
+            <span class="metric-card__value">35%</span>
+            <h3>品位展示</h3>
+            <p>展示页正在从 README 式说明升级为产品叙事与真实案例链路。</p>
           </article>
         </div>
       </section>
 
-      <section class="section" id="shots">
-        <h2 class="section__title">运行界面</h2>
-        <p class="section__desc">以下为占位；替换为真实截图后即为扁平产品展示墙。</p>
-        <div class="shot-grid">
-          <figure class="shot-card">
-            <div class="shot-card__frame" aria-hidden="true">
-              <!-- <img src="assets/images/upload-home.png" alt="上传与已存任务" /> -->
-              在此放置<br />上传 / 任务列表截图
-            </div>
-            <figcaption class="shot-card__cap">主页：上传区与已存任务</figcaption>
-          </figure>
-          <figure class="shot-card">
-            <div class="shot-card__frame" aria-hidden="true">
-              <!-- <img src="assets/images/workbench.png" alt="工作台预览" /> -->
-              在此放置<br />工作台预览截图
-            </div>
-            <figcaption class="shot-card__cap">工作台：缩略图与当前页大图</figcaption>
-          </figure>
-          <figure class="shot-card">
-            <div class="shot-card__frame" aria-hidden="true">
-              <!-- <img src="assets/images/audio.png" alt="音频工作台" /> -->
-              在此放置<br />音频工作台截图
-            </div>
-            <figcaption class="shot-card__cap">音频：逐字稿与合成</figcaption>
-          </figure>
+      <section class="section" id="pipeline" aria-labelledby="pipeline-title">
+        <div class="section__head">
+          <p class="section__eyebrow">Pipeline</p>
+          <h2 id="pipeline-title">DL → Rebuilder → Remotion</h2>
+          <p>每一步都落成可检查的 JSON 或媒体文件，便于人工审核、自动测试和稳定复现。</p>
+        </div>
+        <div class="pipeline">
+          <article class="pipeline-step">
+            <span class="pipeline-step__num">01</span>
+            <h3>Deal / DL</h3>
+            <p>上传 PPT，抽取文本、备注、shape 图片并渲染逐页预览图，形成 raw material manifest。</p>
+          </article>
+          <article class="pipeline-step">
+            <span class="pipeline-step__num">02</span>
+            <h3>Rebuilder</h3>
+            <p>归一化素材，给页面和风险内容打标签，生成带证据链的 director manifest。</p>
+          </article>
+          <article class="pipeline-step">
+            <span class="pipeline-step__num">03</span>
+            <h3>Audio</h3>
+            <p>逐页逐段生成口播音频；MiniMax 不可用时自动切换到 edge-tts 保证链路不断。</p>
+          </article>
+          <article class="pipeline-step">
+            <span class="pipeline-step__num">04</span>
+            <h3>Remotion</h3>
+            <p>将审核后的导演脚本转为 render plan / input-props，由 React 模板确定性渲染 MP4。</p>
+          </article>
         </div>
       </section>
 
-      <footer class="site-footer">
-        静态页源码目录：<code>github-pages/</code> · 与 Python 包无耦合 ·
-        <a href="https://github.com/brocademaple/make_lesson_video_zhijian_version">GitHub 仓库</a>
-      </footer>
+      <section class="section section--split" id="case" aria-labelledby="case-title">
+        <div class="section__head">
+          <p class="section__eyebrow">Demo Case</p>
+          <h2 id="case-title">真实 75 页任务的前 4 页样片</h2>
+          <p>
+            演示任务 <code>2555ebfb-ca07-4982-bf41-03d80b37dbad</code> 用于打通最小闭环：
+            前 4 页素材、导演脚本、音频、Remotion 入参和本地 MP4。
+          </p>
+        </div>
+        <div class="case-panel">
+          <div class="case-chain" role="list" aria-label="样片产物链路">
+            <span role="listitem">source.pptx</span>
+            <span role="listitem">course_material.json</span>
+            <span role="listitem">director_manifest.json</span>
+            <span role="listitem">render_plan.json</span>
+            <span role="listitem">video.mp4</span>
+          </div>
+          <p>
+            页面不会提交大体积运行数据；样片 MP4 保留在本地 <code>ppt_course_renderer/render_tasks/</code>
+            以便现场演示和复验。
+          </p>
+        </div>
+      </section>
+
+      <section class="section" id="run" aria-labelledby="run-title">
+        <div class="section__head">
+          <p class="section__eyebrow">Runbook</p>
+          <h2 id="run-title">本地运行方式</h2>
+        </div>
+        <div class="command-grid">
+          <pre><code>.venv/bin/ppt-course serve --port 8765</code></pre>
+          <pre><code>.venv/bin/ppt-course course-material 2555ebfb-ca07-4982-bf41-03d80b37dbad</code></pre>
+          <pre><code>.venv/bin/ppt-course rebuild-director 2555ebfb-ca07-4982-bf41-03d80b37dbad --no-llm</code></pre>
+          <pre><code>.venv/bin/ppt-course remotion-render-plan 2555ebfb-ca07-4982-bf41-03d80b37dbad --max-slides 4</code></pre>
+        </div>
+      </section>
     </main>
+
+    <footer class="site-footer">
+      <span>Built for AI Native course video production.</span>
+      <a href="https://github.com/brocademaple/make_lesson_video_zhijian_version">GitHub</a>
+    </footer>
   </body>
 </html>

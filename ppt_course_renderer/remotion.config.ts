@@ -20,7 +20,10 @@ const workspaceRoot =
   process.env.REMOTION_WORKSPACE_ROOT.length > 0
     ? path.resolve(process.env.REMOTION_WORKSPACE_ROOT)
     : path.resolve(process.cwd(), "..");
-const publicRoot = path.join(workspaceRoot, "ppt_course_renderer", "public");
+const publicRoot =
+  process.env.REMOTION_PUBLIC_ROOT && process.env.REMOTION_PUBLIC_ROOT.length > 0
+    ? path.resolve(process.env.REMOTION_PUBLIC_ROOT)
+    : path.join(workspaceRoot, "ppt_course_renderer", "public");
 
 Config.setPublicDir(publicRoot);
 
@@ -30,6 +33,7 @@ Config.overrideWebpackConfig(enableTailwind);
 Config.overrideWebpackConfig((currentConfiguration) => {
 	return {
 		...currentConfiguration,
+		cache: false,
 		resolve: {
 			...currentConfiguration.resolve,
 			alias: {

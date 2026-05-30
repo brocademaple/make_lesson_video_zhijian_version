@@ -27,6 +27,24 @@ def test_director_llm_settings_are_independent(monkeypatch, tmp_path: Path) -> N
     assert merged["api_key"] == "tp-abc123"
 
 
+def test_tts_settings_default_to_edge_fallback(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(external_settings, "get_data_root", lambda: tmp_path)
+
+    raw = external_settings.load_raw()
+
+    assert raw["tts"]["provider"] == "minimax"
+    assert raw["tts"]["fallback_enabled"] is True
+    assert raw["tts"]["fallback_provider"] == "edge_tts"
+    assert raw["tts"]["edge_tts"]["voice"] == "zh-CN-XiaoxiaoNeural"
+
+    merged = external_settings.merge_tts_update(
+        raw["tts"],
+        {"provider": "edge_tts", "edge_tts": {"rate": "+8%"}},
+    )
+    assert merged["provider"] == "edge_tts"
+    assert merged["edge_tts"]["rate"] == "+8%"
+
+
 def test_course_material_normalizes_slides_without_audio(tmp_path: Path) -> None:
     task_root = tmp_path / "ppt_course_data" / "tasks" / "task-1"
     preview = task_root / "previews" / "slide-0000"

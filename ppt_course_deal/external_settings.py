@@ -137,6 +137,18 @@ DEFAULT_DIRECTOR_LLM: dict[str, Any] = {
     "model": "mimo-v2.5-pro",
 }
 
+DEFAULT_TTS: dict[str, Any] = {
+    "provider": "minimax",
+    "fallback_enabled": True,
+    "fallback_provider": "edge_tts",
+    "edge_tts": {
+        "voice": "zh-CN-XiaoxiaoNeural",
+        "rate": "+0%",
+        "volume": "+0%",
+        "pitch": "+0Hz",
+    },
+}
+
 
 def config_path() -> Path:
     d = get_data_root() / CONFIG_DIRNAME
@@ -152,6 +164,7 @@ def load_raw() -> dict[str, Any]:
             "agent": {**DEFAULT_AGENT},
             "transcript_rewrite": {**DEFAULT_TRANSCRIPT_REWRITE},
             "director_llm": {**DEFAULT_DIRECTOR_LLM},
+            "tts": {**DEFAULT_TTS},
         }
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -162,11 +175,13 @@ def load_raw() -> dict[str, Any]:
             "agent": {**DEFAULT_AGENT},
             "transcript_rewrite": {**DEFAULT_TRANSCRIPT_REWRITE},
             "director_llm": {**DEFAULT_DIRECTOR_LLM},
+            "tts": {**DEFAULT_TTS},
         }
     mm = {**DEFAULT_MINIMAX, **(data.get("minimax") or {})}
     ag = {**DEFAULT_AGENT, **(data.get("agent") or {})}
     tr = {**DEFAULT_TRANSCRIPT_REWRITE, **(data.get("transcript_rewrite") or {})}
     dl = {**DEFAULT_DIRECTOR_LLM, **(data.get("director_llm") or {})}
+    tts = _merge_tts_defaults(data.get("tts") or {})
     extra = tr.get("extra_instructions")
     if isinstance(extra, str):
         if should_clear_legacy_builtin_long_extra(
@@ -179,12 +194,19 @@ def load_raw() -> dict[str, Any]:
                 "agent": ag,
                 "transcript_rewrite": tr,
                 "director_llm": dl,
+                "tts": tts,
             }
             try:
                 save_raw(to_save)
             except OSError:
                 logger.warning("迁移口播追加规则写盘失败", exc_info=True)
-    return {"minimax": mm, "agent": ag, "transcript_rewrite": tr, "director_llm": dl}
+    return {
+        "minimax": mm,
+        "agent": ag,
+        "transcript_rewrite": tr,
+        "director_llm": dl,
+        "tts": tts,
+    }
 
 
 def save_raw(data: dict[str, Any]) -> None:
@@ -261,6 +283,39 @@ def get_director_llm_for_server_call() -> dict[str, Any]:
     """含明文 api_key，仅服务端 Director LLM 调用。"""
     raw = load_raw()
     return raw.get("director_llm") or {**DEFAULT_DIRECTOR_LLM}
+
+
+def _merge_tts_defaults(raw: dict[str, Any]) -> dict[str, Any]:
+    edge = {
+        **(DEFAULT_TTS.get("edge_tts") or {}),
+        **((raw.get("edge_tts") if isinstance(raw, dict) else {}) or {}),
+    }
+    out = {**DEFAULT_TTS, **(raw or {})}
+    out["edge_tts"] = edge
+    return out
+
+
+def public_tts(cfg: dict[str, Any]) -> dict[str, Any]:
+    return _merge_tts_defaults(cfg)
+
+
+def merge_tts_update(existing: dict[str, Any], body: dict[str, Any]) -> dict[str, Any]:
+    merged = _merge_tts_defaults(existing)
+    for k, v in body.items():
+        if k == "edge_tts" and isinstance(v, dict):
+            merged["edge_tts"] = {**(merged.get("edge_tts") or {}), **v}
+            continue
+        if k in ("fallback_enabled",):
+            merged[k] = bool(v)
+            continue
+        if v is not None:
+            merged[k] = v
+    return _merge_tts_defaults(merged)
+
+
+def get_tts_for_server_call() -> dict[str, Any]:
+    raw = load_raw()
+    return _merge_tts_defaults(raw.get("tts") or {})
 
 
 def public_minimax(mm: dict[str, Any]) -> dict[str, Any]:
