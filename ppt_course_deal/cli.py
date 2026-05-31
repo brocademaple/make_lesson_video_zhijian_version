@@ -245,6 +245,11 @@ def cmd_course_material(
         "--output",
         help="输出路径；默认写入任务目录 course_material.json",
     ),
+    use_llm: bool = typer.Option(
+        False,
+        "--llm/--no-llm",
+        help="是否使用 director_llm 对素材角色做增强标记；默认关闭以便离线稳定运行",
+    ),
 ) -> None:
     """生成 Rebuilder 的 course_material.json 中间层。"""
     from ppt_course_deal.raw_material_manifest import build_raw_material_manifest
@@ -258,7 +263,7 @@ def cmd_course_material(
     task_root = Path(str(raw.get("task_root") or ""))
     raw_path = task_root / "raw_material_manifest.json"
     out_path = output or (task_root / "course_material.json")
-    material = build_course_material(raw_path, out_path)
+    material = build_course_material(raw_path, out_path, use_llm=use_llm)
     typer.secho(f"已写入 {out_path}", fg=typer.colors.GREEN)
     typer.echo(
         f"页数：{len(material.get('slides') or [])}；素材数：{len(material.get('assets') or [])}"

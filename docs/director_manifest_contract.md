@@ -78,8 +78,18 @@
 - **字幕**：`subtitle.segments`：`{ start_sec, end_sec, text }[]`（句级，均匀时长）
 - **时间与哈希**：`timing.estimated_duration_sec`、`content_hash`、`asset_hash`、`audio_hash`、`render_cache_key`
 - **画面**：`screen_design`（含 `visual_strategy`）、`visual_generation`（占位）
-- **渲染意图**：`render_intent`、`source_evidence`（保留关键原文证据）
+- **渲染意图**：`render_intent`、`source_evidence`（保留关键原文证据）、`render_overlays`（callout / evidence panel / risk badge / transition）
 - **审核**：`review_status`（`pending` \| `approved` \| `rejected`）、可选 `reject_reason`、`risk_flags`、`version`
+
+新增素材理解增强字段会从 `course_material.json` 进入导演脚本：
+
+| 字段 | 说明 |
+|------|------|
+| `risk_items` | 来自素材层的金额、处罚、边界条件等风险项，Renderer 会转成风险核对条 |
+| `render_overlays.callouts` | 用于成片画面的重点提示 |
+| `render_overlays.evidence_panel` | 原文证据框，保留 slide_id 与 quote |
+| `render_overlays.risk_badge` | 风险提示条，避免高风险规则在模板里被遮掉 |
+| `render_overlays.transition` | 章节或普通镜头转场意图 |
 
 ### AssetSpec（素材）
 
@@ -95,3 +105,5 @@
 - `ppt_course_renderer/render_tasks/task-<task_id>/input-props.json`
 
 Web 使用 **`POST /api/tasks/{task_id}/remotion-render-plan`**，CLI 使用 **`ppt-course remotion-render-plan <task_id>`**。若没有导演脚本，adapter 会回退到 Deal 元数据直出的旧 `input-props` 生成逻辑。
+
+`render_plan.json` 现在同时记录 `scene_count`、`layout_counts`、`risk_scene_count` 以及每个 scene 的 `callouts`、`evidence_panel`、`risk_badge` 和 `transition`，用于工作台“成片工厂”判断当前视频是否真正使用了导演信息。

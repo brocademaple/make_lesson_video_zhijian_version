@@ -1327,6 +1327,7 @@
     var slidesList = (material && material.slides) || [];
     var assets = (material && material.assets) || [];
     var audio = (material && material.audio) || {};
+    var llmEnhancement = (material && material.llm_enhancement) || {};
     if (!slidesList.length) {
       directorMaterials.innerHTML =
         '<p class="director-panel__empty">尚未生成素材标记。请先点击「生成素材标记」。</p>';
@@ -1351,7 +1352,15 @@
     var visibleSlides = slidesList.slice(0, 8);
     var cards = visibleSlides
       .map(function (slide) {
-        var tags = (slide.material_tags || []).slice(0, 6).join("、") || "content";
+      var tags = (slide.material_tags || []).slice(0, 6).join("、") || "content";
+      var assetRoles = (slide.asset_roles || []).slice(0, 5).join("、") || "—";
+      var evidenceTexts = (slide.evidence_texts || []).slice(0, 2).join("\n");
+      var riskItems = (slide.risk_items || [])
+        .slice(0, 3)
+        .map(function (item) {
+          return ((item && item.risk_type) || "risk") + "：" + ((item && item.quote) || "");
+        })
+        .join("\n");
         var assetTags = (slide.assets || [])
           .slice(0, 4)
           .map(function (asset) {
@@ -1370,7 +1379,7 @@
           escapeHtmlText(String((slide.slide_index || 0) + 1)) +
           "</span>" +
           '<span class="material-card__layout">' +
-          escapeHtmlText(slide.recommended_layout || "full_slide") +
+          escapeHtmlText(slide.recommended_scene_layout || slide.recommended_layout || "full_slide") +
           "</span>" +
           "</div>" +
           "<h3>" +
@@ -1385,6 +1394,9 @@
           '<p class="material-card__tags">' +
           escapeHtmlText(tags) +
           "</p>" +
+          '<p class="material-card__meta">素材角色：' +
+          escapeHtmlText(assetRoles) +
+          "</p>" +
           '<p class="material-card__meta">音频 ' +
           audioReady +
           "/" +
@@ -1394,6 +1406,14 @@
           "</p>" +
           (assetTags
             ? '<pre class="material-card__assets">' + escapeHtmlText(assetTags) + "</pre>"
+            : "") +
+          (riskItems
+            ? '<pre class="material-card__assets material-card__assets--risk">' +
+              escapeHtmlText(riskItems) +
+              "</pre>"
+            : "") +
+          (evidenceTexts
+            ? '<pre class="material-card__assets">' + escapeHtmlText(evidenceTexts) + "</pre>"
             : "") +
           "</article>"
         );
@@ -1411,6 +1431,12 @@
       "。</p>" +
       "<p><strong>高频标签</strong>：" +
       escapeHtmlText(topTags || "—") +
+      "</p>" +
+      "<p><strong>LLM 增强</strong>：" +
+      escapeHtmlText((llmEnhancement && llmEnhancement.status) || "rules_only") +
+      (llmEnhancement && llmEnhancement.reason
+        ? " · " + escapeHtmlText(llmEnhancement.reason)
+        : "") +
       "</p>" +
       "</div>" +
       '<div class="material-board__cards">' +
@@ -1548,6 +1574,19 @@
       var vs = sd.visual_strategy || "";
       var layout = sd.layout || (sc.render_intent && sc.render_intent.layout) || "";
       var rf = (sc.risk_flags || []).join("、");
+      var overlays = sc.render_overlays || {};
+      var callouts = (overlays.callouts || [])
+        .map(function (item) {
+          return ((item && item.kind) || "point") + "：" + ((item && item.label) || "");
+        })
+        .filter(Boolean)
+        .join("\n");
+      var riskItems = (sc.risk_items || [])
+        .map(function (item) {
+          return ((item && item.slide_id) || "") + " " + ((item && item.quote) || "");
+        })
+        .filter(Boolean)
+        .join("\n");
       var ev = (sc.source_evidence || [])
         .map(function (item) {
           return (item && item.slide_id ? item.slide_id + "：" : "") + ((item && item.quote) || "");
@@ -1596,6 +1635,18 @@
           "<p><strong>风险标记</strong>：" +
           escapeHtmlText(rf || "—") +
           "</p>" +
+          (callouts
+            ? "<p><strong>Renderer Callout</strong></p>" +
+              '<pre class="director-scene-card__block">' +
+              escapeHtmlText(callouts) +
+              "</pre>"
+            : "") +
+          (riskItems
+            ? "<p><strong>风险证据</strong></p>" +
+              '<pre class="director-scene-card__block">' +
+              escapeHtmlText(riskItems) +
+              "</pre>"
+            : "") +
           (ev
             ? "<p><strong>原文证据</strong></p>" +
               '<pre class="director-scene-card__block">' +
@@ -1857,6 +1908,12 @@
     var missingText = missing.length
       ? "缺音频页：" + missing.map(function (i) { return i + 1; }).join("、")
       : "所有导出页均有音频";
+    var layoutCounts = (data && data.layout_counts) || {};
+    var layoutText = Object.keys(layoutCounts)
+      .map(function (key) {
+        return key + " " + layoutCounts[key];
+      })
+      .join(" / ");
     remotionSummary.innerHTML =
       '<div class="remotion-panel__summary-inner">' +
       "<p><strong>入参</strong>：" +
@@ -1874,6 +1931,17 @@
       " 秒</p>" +
       "<p><strong>音频覆盖</strong>：" +
       escapeHtmlText(missingText) +
+      "</p>" +
+      "<p><strong>Scene-aware</strong>：" +
+      escapeHtmlText(
+        ((data && data.scene_count) || 0) +
+          " 个镜头，风险镜头 " +
+          ((data && data.risk_scene_count) || 0) +
+          " 个"
+      ) +
+      "</p>" +
+      "<p><strong>Layout 分布</strong>：" +
+      escapeHtmlText(layoutText || "—") +
       "</p>" +
       "<p><strong>Render Plan</strong>：" +
       escapeHtmlText(

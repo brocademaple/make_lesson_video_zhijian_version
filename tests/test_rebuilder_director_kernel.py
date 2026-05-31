@@ -86,7 +86,69 @@ def test_course_material_normalizes_slides_without_audio(tmp_path: Path) -> None
     assert slide["material_role"] == "risk_rule_material"
     assert "金额" in slide["teaching_purpose"]
     assert slide["recommended_layout"] == "rule_card"
+    assert slide["recommended_scene_layout"] == "rule_card"
+    assert "primary_slide_evidence" in slide["asset_roles"]
+    assert slide["risk_items"][0]["numbers"] == ["50"]
+    assert slide["evidence_texts"]
     assert slide["audio_segments"] == []
+
+
+def test_course_material_can_be_enriched_by_fake_director_llm(tmp_path: Path) -> None:
+    task_root = tmp_path / "ppt_course_data" / "tasks" / "task-1"
+    preview = task_root / "previews" / "slide-0000"
+    preview.mkdir(parents=True)
+    full = preview / "full.png"
+    full.write_bytes(b"png")
+    raw_path = task_root / "raw_material_manifest.json"
+    raw_path.write_text(
+        json.dumps(
+            {
+                "task_id": "task-1",
+                "source_pptx": "/tmp/合规培训.pptx",
+                "task_root": str(task_root),
+                "slides": [
+                    {
+                        "slide_id": "slide-0000",
+                        "slide_index": 0,
+                        "full_page_png": str(full),
+                        "raw_text": "服务期违规：员工提前离职需赔偿 100 元。",
+                        "shapes": [],
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    class FakeLLM:
+        available = True
+
+        def call_json(self, **_kwargs):
+            return {
+                "slides": [
+                    {
+                        "slide_id": "slide-0000",
+                        "material_role": "compliance_rule",
+                        "teaching_purpose": "解释赔偿边界并提醒人工核对。",
+                        "recommended_scene_layout": "rule_card",
+                        "asset_roles": ["primary_slide_evidence", "risk_information"],
+                        "evidence_texts": ["员工提前离职需赔偿 100 元"],
+                    }
+                ]
+            }
+
+    material = build_course_material(
+        raw_path,
+        task_root / "course_material.json",
+        use_llm=True,
+        llm_client=FakeLLM(),
+    )
+
+    assert material["llm_enhancement"]["status"] == "applied"
+    slide = material["slides"][0]
+    assert slide["material_role"] == "compliance_rule"
+    assert slide["asset_roles"] == ["primary_slide_evidence", "risk_information"]
 
 
 def test_director_validator_warns_when_risk_number_is_missing() -> None:
@@ -134,9 +196,50 @@ def test_render_adapter_uses_director_manifest_before_fallback(
                         "scene_id": "sc-1",
                         "source_slide_ids": ["slide-0000"],
                         "title": "处罚标准",
+                        "onscreen_text": "处罚标准：迟到罚款 50 元",
                         "subtitle_text": "迟到罚款 50 元",
+                        "subtitle": {
+                            "segments": [
+                                {"start_sec": 0, "end_sec": 3, "text": "迟到罚款 50 元"}
+                            ]
+                        },
                         "timing": {"estimated_duration_sec": 5},
                         "screen_design": {"layout": "rule_card"},
+                        "risk_flags": ["contains_penalty_or_amount"],
+                        "risk_items": [
+                            {
+                                "risk_type": "risk_or_penalty",
+                                "quote": "迟到罚款 50 元",
+                                "numbers": ["50"],
+                            }
+                        ],
+                        "source_evidence": [
+                            {"slide_id": "slide-0000", "quote": "处罚标准：迟到罚款 50 元"}
+                        ],
+                        "render_overlays": {
+                            "callouts": [{"label": "迟到罚款 50 元", "kind": "emphasis"}],
+                            "evidence_panel": {
+                                "title": "原文证据",
+                                "quotes": [
+                                    {
+                                        "slide_id": "slide-0000",
+                                        "quote": "处罚标准：迟到罚款 50 元",
+                                    }
+                                ],
+                            },
+                            "risk_badge": {
+                                "show": True,
+                                "label": "需核对原文",
+                                "items": [
+                                    {
+                                        "risk_type": "risk_or_penalty",
+                                        "quote": "迟到罚款 50 元",
+                                        "numbers": ["50"],
+                                    }
+                                ],
+                            },
+                            "transition": {"type": "chapter", "label": "处罚标准"},
+                        },
                     }
                 ]
             },
@@ -162,4 +265,11 @@ def test_render_adapter_uses_director_manifest_before_fallback(
     assert result["source"] == "director_manifest"
     assert props["slides"][0]["layout"] == "rule_card"
     assert props["slides"][0]["durationInFrames"] == 150
+    assert props["slides"][0]["callouts"][0]["label"] == "迟到罚款 50 元"
+    assert props["slides"][0]["evidencePanel"]["quotes"][0]["quote"].endswith("50 元")
+    assert props["slides"][0]["riskBadge"]["show"] is True
+    assert props["slides"][0]["subtitleSegments"][0]["text"] == "迟到罚款 50 元"
+    assert props["slides"][0]["transition"]["type"] == "chapter"
+    assert result["layout_counts"] == {"rule_card": 1}
+    assert result["risk_scene_count"] == 1
     assert plan_path.is_file()

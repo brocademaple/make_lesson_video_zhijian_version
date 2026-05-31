@@ -5,6 +5,9 @@ from __future__ import annotations
 import re
 from typing import Any
 
+RISK_PATTERN = r"(罚款|扣除|处罚|赔偿|金额|元|违约|红线|不得|禁止|必须|强制|不允许)"
+NUMBER_PATTERN = r"\d+(?:\.\d+)?"
+
 
 def _has(pattern: str, text: str) -> bool:
     return re.search(pattern, text, flags=re.IGNORECASE) is not None
@@ -79,6 +82,62 @@ def infer_layout(tags: list[str]) -> str:
     if "agenda" in tagset or "summary" in tagset:
         return "summary"
     return "full_slide"
+
+
+def evidence_texts(text: str, *, limit: int = 3) -> list[str]:
+    """Pick short source quotes that should stay visible in review/rendering."""
+
+    lines = [s.strip() for s in re.split(r"[\n。；;]", text or "") if s.strip()]
+    ranked = sorted(
+        lines,
+        key=lambda s: (
+            0 if re.search(RISK_PATTERN, s, flags=re.IGNORECASE) else 1,
+            0 if re.search(NUMBER_PATTERN, s) else 1,
+            len(s),
+        ),
+    )
+    out: list[str] = []
+    for line in ranked:
+        compact = " ".join(line.split())[:180]
+        if compact and compact not in out:
+            out.append(compact)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def risk_items(text: str) -> list[dict[str, Any]]:
+    """Extract risk/penalty facts for validator and render evidence panels."""
+
+    out: list[dict[str, Any]] = []
+    for quote in evidence_texts(text, limit=8):
+        if not re.search(RISK_PATTERN, quote, flags=re.IGNORECASE):
+            continue
+        out.append(
+            {
+                "quote": quote,
+                "numbers": sorted(set(re.findall(NUMBER_PATTERN, quote))),
+                "risk_type": "penalty_or_rule_boundary"
+                if re.search(r"(罚款|扣除|处罚|赔偿|金额|元|违约|红线)", quote)
+                else "rule_boundary",
+            }
+        )
+    return out
+
+
+def asset_role(asset: dict[str, Any]) -> str:
+    tags = set(asset.get("semantic_tags") or tag_asset(asset))
+    if "full_slide" in tags:
+        return "primary_slide_evidence"
+    if "character_or_ip" in tags:
+        return "character_ip"
+    if "logo" in tags:
+        return "brand_mark"
+    if "screenshot" in tags:
+        return "screenshot_evidence"
+    if "decorative" in tags:
+        return "decorative_support"
+    return "supporting_asset"
 
 
 def tag_asset(asset: dict[str, Any]) -> list[str]:

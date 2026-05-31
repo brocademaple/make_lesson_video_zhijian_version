@@ -295,6 +295,9 @@ def build_task_workspace_status(task_id: str, task: dict[str, Any]) -> dict[str,
             "render_plan_exists": render_plan_path.is_file(),
             "render_plan_path": str(render_plan_path),
             "render_plan_source": render_plan.get("source") or "",
+            "scene_count": render_plan.get("scene_count") or 0,
+            "layout_counts": render_plan.get("layout_counts") or {},
+            "risk_scene_count": render_plan.get("risk_scene_count") or 0,
         },
     }
 
@@ -507,7 +510,7 @@ def run_pipeline_step(task_id: str, task: dict[str, Any], payload: PipelineRunSt
     if step == "course_material":
         if not raw_path.is_file():
             build_raw_material_manifest(task_id)
-        material = build_course_material(raw_path, material_path)
+        material = build_course_material(raw_path, material_path, use_llm=True)
         return {
             "ok": True,
             "stage": step,
@@ -521,7 +524,7 @@ def run_pipeline_step(task_id: str, task: dict[str, Any], payload: PipelineRunSt
         if not raw_path.is_file():
             build_raw_material_manifest(task_id)
         if not material_path.is_file():
-            build_course_material(raw_path, material_path)
+            build_course_material(raw_path, material_path, use_llm=True)
         dm_path = task_root / "director_manifest.json"
         opts: dict[str, Any] = {"use_llm": payload.use_llm}
         if payload.llm_max_slides is not None:
@@ -946,7 +949,7 @@ def create_app() -> FastAPI:
         if not raw_path.is_file():
             build_raw_material_manifest(task_id)
         out_path = tasks_dir() / task_id / "course_material.json"
-        material = build_course_material(raw_path, out_path)
+        material = build_course_material(raw_path, out_path, use_llm=True)
         return {
             "ok": True,
             "task_id": task_id,
@@ -980,7 +983,7 @@ def create_app() -> FastAPI:
             build_raw_material_manifest(task_id)
         material_path = tasks_dir() / task_id / "course_material.json"
         if not material_path.is_file():
-            build_course_material(raw_path, material_path)
+            build_course_material(raw_path, material_path, use_llm=True)
         dm_path = tasks_dir() / task_id / "director_manifest.json"
         opts: dict[str, Any] = {
             "use_llm": True if payload is None else payload.use_llm,
@@ -1060,6 +1063,9 @@ def create_app() -> FastAPI:
             "render_plan_exists": render_plan_path.is_file(),
             "render_plan_path": str(render_plan_path),
             "render_plan_source": render_plan.get("source") or "",
+            "scene_count": render_plan.get("scene_count") or 0,
+            "layout_counts": render_plan.get("layout_counts") or {},
+            "risk_scene_count": render_plan.get("risk_scene_count") or 0,
         }
 
     @application.get("/api/tasks/{task_id}/output-video")

@@ -34,6 +34,10 @@ Config.overrideWebpackConfig((currentConfiguration) => {
 	return {
 		...currentConfiguration,
 		cache: false,
+		output: {
+			...currentConfiguration.output,
+			hashFunction: 'sha256',
+		},
 		resolve: {
 			...currentConfiguration.resolve,
 			alias: {

@@ -2,6 +2,8 @@
 
 本目录位于仓库根目录 **`text2classvideo/ppt_course_renderer/`**，与 **`ppt_course_deal/`** 并列，用于 **deal 输出的图片 / 音频 / 逐字稿 → 成片**。与课件侧的集成约定见 **[docs/ppt_course_renderer_architecture.md](../docs/ppt_course_renderer_architecture.md)**。
 
+当前模板已经从“PPT 轮播”升级为 **scene-aware 企业培训视频模板**：Render Adapter 会把 DirectorManifest 中的 `layout`、`subtitle.segments`、`render_overlays.callouts`、`source_evidence`、`risk_items` 转成 `input-props.json`，`CourseDeckComposition` 根据 `full_slide`、`rule_card`、`split_panel`、`case_dialogue`、`summary` 五类 layout 渲染标题条、字幕轨、风险核对条、证据框和进度条。原 PPT 仍是主视觉证据，动画只使用 Remotion frame/interpolate。
+
 ### 本地用已解析课程试跑
 
 - deal 默认把任务落在 **`ppt_course_data/tasks/<task_id>/`**（根 `.gitignore` 忽略，勿提交）；其中有 **`previews/`**（含 **`slide-NNNN/full.png`**）、`meta.json`。**语音 mp3** 在并列目录 **`ppt_course_data/audio_workspace/task/<task_id>/slide-NNNN/`**（与 **`previews/slide-NNNN`** 同序号），便于在 **`input-props.json`** 里按页拼路径。
