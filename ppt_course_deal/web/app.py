@@ -187,6 +187,19 @@ class RemotionRenderTaskBody(BaseModel):
     bundle_audio: bool = False
 
 
+class PipelineRunStepBody(BaseModel):
+    step: str = Field(
+        min_length=1,
+        max_length=32,
+        description="raw_material | course_material | director | audio | render_plan",
+    )
+    fps: int = Field(default=30, ge=1, le=120)
+    max_slides: Optional[int] = Field(default=None, ge=1)
+    no_audio_frames: int = Field(default=90, ge=1, le=60 * 60 * 120)
+    use_llm: bool = True
+    llm_max_slides: Optional[int] = Field(default=None, ge=1)
+
+
 class GenerateSlideVisualBody(BaseModel):
     """文生图请求体；使用与口播稿优化相同的 ``transcript_rewrite`` API Base / Key。"""
 
@@ -283,6 +296,288 @@ def build_task_workspace_status(task_id: str, task: dict[str, Any]) -> dict[str,
             "render_plan_path": str(render_plan_path),
             "render_plan_source": render_plan.get("source") or "",
         },
+    }
+
+
+PIPELINE_STEP_LABELS = {
+    "raw_material": "原始素材清单",
+    "course_material": "素材理解",
+    "director": "导演脚本",
+    "audio": "音频工坊",
+    "render_plan": "成片计划",
+}
+
+
+def _pipeline_stage(
+    key: str,
+    label: str,
+    *,
+    ready: bool,
+    detail: str,
+    action: str,
+    artifacts: Optional[List[Dict[str, Any]]] = None,
+    missing_artifacts: Optional[List[str]] = None,
+    warnings: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    missing = missing_artifacts or []
+    warn = warnings or []
+    if ready:
+        state = "ready"
+    elif missing or warn:
+        state = "warn"
+    else:
+        state = "todo"
+    return {
+        "key": key,
+        "label": label,
+        "state": state,
+        "ready": ready,
+        "detail": detail,
+        "next_action": action,
+        "artifacts": artifacts or [],
+        "missing_artifacts": missing,
+        "warnings": warn,
+    }
+
+
+def _artifact(label: str, path: str, exists: bool) -> Dict[str, Any]:
+    return {"label": label, "path": path, "exists": exists}
+
+
+def build_task_pipeline_state(task_id: str, task: dict[str, Any]) -> dict[str, Any]:
+    """中台级流水线状态：面向前端驾驶舱，而不是单个子系统。"""
+    status = build_task_workspace_status(task_id, task)
+    task_root = tasks_dir() / task_id
+    raw_path = task_root / "raw_material_manifest.json"
+    material_path = task_root / "course_material.json"
+    director_path = task_root / "director_manifest.json"
+    approved_path = task_root / "approved_director_manifest.json"
+    remotion = status.get("remotion") or {}
+    audio = status.get("audio") or {}
+    rebuilder = status.get("rebuilder") or {}
+    deal = status.get("deal") or {}
+
+    preview_count = int(deal.get("preview_count") or 0)
+    slide_count = int(status.get("slide_count") or 0)
+    raw_exists = bool(rebuilder.get("raw_manifest_exists"))
+    material_exists = bool(rebuilder.get("course_material_exists"))
+    director_exists = bool(rebuilder.get("director_manifest_exists"))
+    approved_exists = bool(rebuilder.get("approved_manifest_exists"))
+    input_props_exists = bool(remotion.get("input_props_exists"))
+    render_plan_exists = bool(remotion.get("render_plan_exists"))
+    mp4_exists = bool(remotion.get("output_video_exists"))
+    slides_with_audio = int(audio.get("slides_with_audio") or 0)
+
+    stages = [
+        _pipeline_stage(
+            "deal",
+            "PPT 输入 / DL 解析",
+            ready=slide_count > 0,
+            detail=f"{slide_count} 页 · 预览 {preview_count} 页",
+            action="查看素材输入",
+            artifacts=[],
+            missing_artifacts=[] if slide_count else ["parsed_task"],
+            warnings=[] if preview_count else ["未检测到整页预览图"],
+        ),
+        _pipeline_stage(
+            "raw_material",
+            "素材拆解清单",
+            ready=raw_exists,
+            detail=f"{rebuilder.get('raw_slide_count') or 0} 页 raw material",
+            action="生成原始素材 Manifest",
+            artifacts=[_artifact("raw_material_manifest.json", str(raw_path), raw_exists)],
+            missing_artifacts=[] if raw_exists else ["raw_material_manifest.json"],
+        ),
+        _pipeline_stage(
+            "course_material",
+            "素材理解 / 标记",
+            ready=material_exists,
+            detail=f"{rebuilder.get('course_material_slide_count') or 0} 页素材已标记",
+            action="生成素材标记",
+            artifacts=[_artifact("course_material.json", str(material_path), material_exists)],
+            missing_artifacts=[] if material_exists else ["course_material.json"],
+            warnings=[] if raw_exists else ["需要先生成 raw_material_manifest.json"],
+        ),
+        _pipeline_stage(
+            "director",
+            "导演中枢",
+            ready=director_exists,
+            detail=(
+                f"{rebuilder.get('scene_count') or 0} 个镜头"
+                + (f" · {rebuilder.get('planning_mode')}" if rebuilder.get("planning_mode") else "")
+            ),
+            action="生成课程化导演脚本",
+            artifacts=[
+                _artifact("director_manifest.json", str(director_path), director_exists),
+                _artifact("approved_director_manifest.json", str(approved_path), approved_exists),
+            ],
+            missing_artifacts=[] if director_exists else ["director_manifest.json"],
+            warnings=[rebuilder.get("llm_error")] if rebuilder.get("llm_error") else [],
+        ),
+        _pipeline_stage(
+            "audio",
+            "音频工坊",
+            ready=slides_with_audio > 0,
+            detail=f"{slides_with_audio} 页已有音频 · {audio.get('generated_segment_count') or 0} 段",
+            action="打开逐字稿与音频",
+            artifacts=[],
+            missing_artifacts=[] if slides_with_audio else ["audio_workspace/generated_files"],
+            warnings=[] if slides_with_audio else ["可先使用 Edge TTS 生成口播音频"],
+        ),
+        _pipeline_stage(
+            "render_plan",
+            "成片工厂",
+            ready=render_plan_exists or input_props_exists,
+            detail=remotion.get("render_plan_source") or ("input-props 已生成" if input_props_exists else "待生成"),
+            action="生成 RenderPlan / input-props",
+            artifacts=[
+                _artifact("render_plan.json", str(remotion.get("render_plan_path") or ""), render_plan_exists),
+                _artifact("input-props.json", str(remotion.get("input_props_path") or ""), input_props_exists),
+            ],
+            missing_artifacts=[] if (render_plan_exists or input_props_exists) else ["render_plan.json", "input-props.json"],
+        ),
+        _pipeline_stage(
+            "output",
+            "成片展示",
+            ready=mp4_exists,
+            detail="已检测到 MP4" if mp4_exists else "待执行 Remotion render",
+            action="查看成片产物",
+            artifacts=[
+                _artifact("video.mp4", str(remotion.get("output_video_path") or ""), mp4_exists),
+            ],
+            missing_artifacts=[] if mp4_exists else ["out/video.mp4"],
+        ),
+    ]
+    ready_count = sum(1 for stage in stages if stage["ready"])
+    return {
+        "ok": True,
+        **status,
+        "pipeline": {
+            "ready_count": ready_count,
+            "stage_count": len(stages),
+            "percent": round((ready_count / len(stages)) * 100) if stages else 0,
+            "stages": stages,
+        },
+    }
+
+
+def _pipeline_http_error(
+    status_code: int,
+    *,
+    stage: str,
+    message: str,
+    missing_artifacts: Optional[List[str]] = None,
+    next_action: str = "",
+) -> HTTPException:
+    return HTTPException(
+        status_code=status_code,
+        detail={
+            "stage": stage,
+            "message": message,
+            "missing_artifacts": missing_artifacts or [],
+            "next_action": next_action,
+        },
+    )
+
+
+def run_pipeline_step(task_id: str, task: dict[str, Any], payload: PipelineRunStepBody) -> Dict[str, Any]:
+    step = payload.step.strip()
+    if step not in PIPELINE_STEP_LABELS:
+        raise _pipeline_http_error(
+            400,
+            stage=step or "unknown",
+            message="未知流水线步骤",
+            missing_artifacts=[],
+            next_action="请选择 raw_material / course_material / director / audio / render_plan",
+        )
+    task_root = tasks_dir() / task_id
+    raw_path = task_root / "raw_material_manifest.json"
+    material_path = task_root / "course_material.json"
+
+    if step == "raw_material":
+        manifest = build_raw_material_manifest(task_id)
+        return {
+            "ok": True,
+            "stage": step,
+            "message": "已生成 raw_material_manifest.json",
+            "path": str(raw_path),
+            "slide_count": len(manifest.get("slides") or []),
+        }
+
+    if step == "course_material":
+        if not raw_path.is_file():
+            build_raw_material_manifest(task_id)
+        material = build_course_material(raw_path, material_path)
+        return {
+            "ok": True,
+            "stage": step,
+            "message": "已生成 course_material.json",
+            "path": str(material_path),
+            "slide_count": len(material.get("slides") or []),
+            "asset_count": len(material.get("assets") or []),
+        }
+
+    if step == "director":
+        if not raw_path.is_file():
+            build_raw_material_manifest(task_id)
+        if not material_path.is_file():
+            build_course_material(raw_path, material_path)
+        dm_path = task_root / "director_manifest.json"
+        opts: dict[str, Any] = {"use_llm": payload.use_llm}
+        if payload.llm_max_slides is not None:
+            opts["llm_max_slides"] = payload.llm_max_slides
+        dm = rebuild_course_from_raw_manifest(str(raw_path), str(dm_path), opts)
+        generation = dm.get("generation") or {}
+        return {
+            "ok": True,
+            "stage": step,
+            "message": "已生成 director_manifest.json",
+            "path": str(dm_path),
+            "scene_count": len(dm.get("scenes") or []),
+            "planning_mode": generation.get("planning_mode") or "",
+            "llm_error": generation.get("llm_error") or "",
+            "quality_checks": dm.get("quality_checks") or {},
+        }
+
+    if step == "audio":
+        status = build_task_workspace_status(task_id, task)
+        audio = status.get("audio") or {}
+        if int(audio.get("slides_with_audio") or 0) > 0:
+            return {
+                "ok": True,
+                "stage": step,
+                "message": "已检测到可用于渲染的音频",
+                "slides_with_audio": audio.get("slides_with_audio") or 0,
+                "generated_segment_count": audio.get("generated_segment_count") or 0,
+            }
+        raise _pipeline_http_error(
+            400,
+            stage=step,
+            message="尚未生成口播音频；请在音频工坊中按页生成。Edge TTS 已作为默认兜底 provider。",
+            missing_artifacts=["audio_workspace/generated_files"],
+            next_action="打开音频工坊，使用 Edge TTS 生成至少一页口播音频",
+        )
+
+    try:
+        data = write_render_plan_from_task(
+            task_id,
+            fps=payload.fps,
+            no_audio_frames=payload.no_audio_frames,
+            max_scenes=payload.max_slides,
+        )
+    except ValueError as err:
+        raise _pipeline_http_error(
+            400,
+            stage=step,
+            message=str(err),
+            missing_artifacts=["director_manifest.json"],
+            next_action="先在导演中枢生成或审核导演脚本",
+        ) from err
+    return {
+        "ok": True,
+        "stage": step,
+        "message": "已生成 RenderPlan / input-props",
+        **data,
     }
 
 
@@ -582,6 +877,25 @@ def create_app() -> FastAPI:
         if data is None:
             raise HTTPException(status_code=404, detail="任务不存在")
         return {"ok": True, **build_task_workspace_status(task_id, data)}
+
+    @application.get("/api/tasks/{task_id}/pipeline-state")
+    def get_task_pipeline_state(task_id: str) -> Dict[str, Any]:
+        """中台流水线状态：聚合每个阶段的就绪情况、缺失产物和下一步动作。"""
+        data = load_task(task_id)
+        if data is None:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        return build_task_pipeline_state(task_id, data)
+
+    @application.post("/api/tasks/{task_id}/pipeline/run-step")
+    def post_task_pipeline_run_step(
+        task_id: str,
+        payload: PipelineRunStepBody,
+    ) -> Dict[str, Any]:
+        """按中台步骤触发已有底层能力，避免前端散落调用各子系统接口。"""
+        data = load_task(task_id)
+        if data is None:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        return run_pipeline_step(task_id, data, payload)
 
     @application.delete("/api/tasks/{task_id}")
     def delete_task_api(task_id: str) -> Dict[str, bool]:

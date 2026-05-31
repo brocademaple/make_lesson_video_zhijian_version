@@ -189,6 +189,36 @@
         <div class="main-column">
           <section class="upload-panel" id="upload-panel">
             <p class="preview-setup-banner hidden" id="preview-setup-banner" role="status"></p>
+            <section class="platform-home" aria-label="AI Native 视频生产中台总览">
+              <div class="platform-home__copy">
+                <h1>AI Native 培训视频生产中台</h1>
+                <p>
+                  将 PPT 解析、素材理解、导演重构、口播音频与 Remotion 成片收束进同一个任务工作台。
+                </p>
+              </div>
+              <div class="platform-home__modules" aria-label="平台模块">
+                <article class="platform-module">
+                  <span class="platform-module__index">01</span>
+                  <h2>素材输入</h2>
+                  <p>上传 PPT，保留整页预览、文本、备注与图片素材。</p>
+                </article>
+                <article class="platform-module">
+                  <span class="platform-module__index">02</span>
+                  <h2>导演中枢</h2>
+                  <p>把素材标记为课程角色，生成可审核的章节和镜头卡。</p>
+                </article>
+                <article class="platform-module">
+                  <span class="platform-module__index">03</span>
+                  <h2>音频工坊</h2>
+                  <p>逐页逐段维护口播稿，默认使用 Edge TTS 兜底出声。</p>
+                </article>
+                <article class="platform-module">
+                  <span class="platform-module__index">04</span>
+                  <h2>成片工厂</h2>
+                  <p>生成 RenderPlan / input-props，交给 Remotion 稳定渲染。</p>
+                </article>
+              </div>
+            </section>
             <div
               class="dropzone"
               id="dropzone"
@@ -250,13 +280,23 @@
           <section class="task-workflow" id="task-workflow" aria-label="任务工作流">
             <div class="task-workflow__head">
               <div>
-                <p class="task-workflow__eyebrow">统一工作台</p>
+                <p class="task-workflow__eyebrow">AI Native 视频生产中台</p>
                 <h1 class="task-workflow__title" id="task-workflow-title">任务流</h1>
               </div>
               <button type="button" class="btn btn-text" id="btn-workflow-refresh">刷新状态</button>
             </div>
+            <nav class="platform-nav" id="platform-nav" aria-label="工作台模块导航">
+              <button type="button" class="platform-nav__item" data-workbench-route="deal">素材输入</button>
+              <button type="button" class="platform-nav__item" data-workbench-route="materials">素材理解</button>
+              <button type="button" class="platform-nav__item" data-workbench-route="director">导演中枢</button>
+              <button type="button" class="platform-nav__item" data-workbench-route="audio">音频工坊</button>
+              <button type="button" class="platform-nav__item" data-workbench-route="render">成片工厂</button>
+              <button type="button" class="platform-nav__item" data-workbench-route="output">成片展示</button>
+            </nav>
+            <div class="task-workflow__meter" id="task-workflow-meter"></div>
             <div class="task-workflow__steps" id="task-workflow-steps" role="list"></div>
             <div class="task-workflow__pipeline" id="task-workflow-pipeline" aria-label="DL 到成片流水线"></div>
+            <div class="task-workflow__actions" id="task-workflow-actions" aria-label="流水线动作"></div>
             <div class="task-workflow__artifacts" id="task-workflow-artifacts" aria-label="核心产物路径"></div>
           </section>
           <div class="preview-toolbar">
@@ -471,6 +511,16 @@
                     </div>
                     <div class="remotion-panel__summary" id="remotion-summary"></div>
                     <pre class="remotion-panel__command hidden" id="remotion-command"></pre>
+                  </section>
+
+                  <section class="output-panel" id="output-panel" aria-label="成片展示">
+                    <div class="output-panel__head">
+                      <span class="output-panel__title">成片展示</span>
+                    </div>
+                    <p class="output-panel__hint">
+                      这里汇总当前任务最终 MP4、渲染命令与可演示产物。若还没有视频，先在「成片工厂」生成入参并执行 Remotion render。
+                    </p>
+                    <div class="output-panel__summary" id="output-summary"></div>
                   </section>
 
                   <section class="audio-workbench" id="audio-workbench" aria-label="音频工作台">

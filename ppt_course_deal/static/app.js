@@ -143,7 +143,11 @@
   const taskWorkflowSteps = document.getElementById("task-workflow-steps");
   const taskWorkflowPipeline = document.getElementById("task-workflow-pipeline");
   const taskWorkflowArtifacts = document.getElementById("task-workflow-artifacts");
+  const taskWorkflowActions = document.getElementById("task-workflow-actions");
+  const taskWorkflowMeter = document.getElementById("task-workflow-meter");
   const btnWorkflowRefresh = document.getElementById("btn-workflow-refresh");
+  const platformNav = document.getElementById("platform-nav");
+  const outputSummary = document.getElementById("output-summary");
 
   var AUDIO_GEN_LS_KEY = "ppt_course_audio_gen_overrides";
 
@@ -193,6 +197,8 @@
   let currentTaskId = null;
   /** @type {any | null} */
   let directorManifestCache = null;
+  /** @type {any | null} */
+  let pipelineStateCache = null;
   /** 上传解析会话为 session；从已存任务打开为 stored */
   let previewMode = "session";
 
@@ -1105,6 +1111,7 @@
       void refreshDirectorManifest(true);
       void refreshRemotionStatus(true);
       void refreshWorkspaceStatus(true);
+      syncWorkbenchRouteFromHash();
     } catch (_) {}
   }
 
@@ -1713,6 +1720,152 @@
     );
   }
 
+  var WORKBENCH_ROUTES = {
+    deal: "preview-surface",
+    materials: "director-materials",
+    director: "director-panel",
+    audio: "audio-workbench",
+    render: "remotion-panel",
+    output: "output-panel",
+  };
+
+  var PIPELINE_RUN_STEPS = {
+    raw_material: "生成原始素材 Manifest",
+    course_material: "生成素材标记",
+    director: "生成导演脚本",
+    audio: "检查音频状态",
+    render_plan: "生成 RenderPlan / input-props",
+  };
+
+  function routeForTargetId(targetId) {
+    var keys = Object.keys(WORKBENCH_ROUTES);
+    for (var i = 0; i < keys.length; i += 1) {
+      if (WORKBENCH_ROUTES[keys[i]] === targetId) return keys[i];
+    }
+    if (targetId === "director-materials") return "materials";
+    if (targetId === "remotion-panel") return "render";
+    return "deal";
+  }
+
+  function setWorkbenchRoute(route, options) {
+    var name = WORKBENCH_ROUTES[route] ? route : "deal";
+    if (platformNav) {
+      platformNav.querySelectorAll("[data-workbench-route]").forEach(function (item) {
+        item.classList.toggle("is-active", item.getAttribute("data-workbench-route") === name);
+      });
+    }
+    if (!options || options.updateHash !== false) {
+      if (currentTaskId) {
+        var nextHash = "#/tasks/" + encodeURIComponent(currentTaskId) + "/" + name;
+        if (window.location.hash !== nextHash) window.location.hash = nextHash;
+      }
+    }
+    if (!options || options.scroll !== false) {
+      var target = document.getElementById(WORKBENCH_ROUTES[name]);
+      if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
+
+  function syncWorkbenchRouteFromHash() {
+    var m = window.location.hash.match(/^#\/tasks\/([^/]+)\/([^/]+)/);
+    if (!m) return;
+    var routeTaskId = decodeURIComponent(m[1]);
+    var route = decodeURIComponent(m[2]);
+    if (routeTaskId && (!currentTaskId || routeTaskId !== currentTaskId)) {
+      void openStoredTask(routeTaskId);
+      return;
+    }
+    setWorkbenchRoute(route, { updateHash: false, scroll: true });
+  }
+
+  function renderPipelineMeter(data) {
+    if (!taskWorkflowMeter) return;
+    var pipeline = data && data.pipeline;
+    if (!pipeline) {
+      taskWorkflowMeter.innerHTML = "";
+      return;
+    }
+    var percent = typeof pipeline.percent === "number" ? pipeline.percent : 0;
+    taskWorkflowMeter.innerHTML =
+      '<div class="task-meter__copy">' +
+      '<span class="task-meter__label">当前链路完成度</span>' +
+      '<strong>' +
+      escapeHtmlText(String(percent)) +
+      "%</strong>" +
+      '<span class="task-meter__detail">' +
+      escapeHtmlText((pipeline.ready_count || 0) + "/" + (pipeline.stage_count || 0) + " 个阶段就绪") +
+      "</span>" +
+      "</div>" +
+      '<div class="task-meter__bar" aria-hidden="true"><span style="width:' +
+      Math.max(0, Math.min(100, percent)) +
+      '%"></span></div>';
+  }
+
+  function pipelineActionButton(step, label) {
+    return (
+      '<button type="button" class="btn btn-secondary task-workflow-action" data-pipeline-step="' +
+      escapeHtmlText(step) +
+      '">' +
+      escapeHtmlText(label) +
+      "</button>"
+    );
+  }
+
+  function renderPipelineActions(data) {
+    if (!taskWorkflowActions) return;
+    if (!currentTaskId || !data) {
+      taskWorkflowActions.innerHTML = "";
+      return;
+    }
+    var stages = (data.pipeline && data.pipeline.stages) || [];
+    var byKey = {};
+    stages.forEach(function (stage) {
+      byKey[stage.key] = stage;
+    });
+    taskWorkflowActions.innerHTML =
+      pipelineActionButton("raw_material", byKey.raw_material && byKey.raw_material.ready ? "重新生成原始素材 Manifest" : "生成原始素材 Manifest") +
+      pipelineActionButton("course_material", byKey.course_material && byKey.course_material.ready ? "刷新素材标记" : "生成素材标记") +
+      pipelineActionButton("director", byKey.director && byKey.director.ready ? "重新生成导演脚本" : "生成导演脚本") +
+      pipelineActionButton("audio", "检查音频状态") +
+      pipelineActionButton("render_plan", byKey.render_plan && byKey.render_plan.ready ? "重新生成成片计划" : "生成成片计划");
+  }
+
+  function renderOutputSummary(data) {
+    if (!outputSummary) return;
+    var remotion = data && data.remotion;
+    if (!currentTaskId || !remotion) {
+      outputSummary.innerHTML =
+        '<p class="output-panel__empty">打开已存任务后，这里会显示最终 MP4 和 Demo 产物。</p>';
+      return;
+    }
+    var hasVideo = Boolean(remotion.output_video_exists);
+    outputSummary.innerHTML =
+      '<div class="output-panel__summary-inner output-panel__summary-inner--' +
+      (hasVideo ? "ready" : "todo") +
+      '">' +
+      "<p><strong>MP4 状态</strong>：" +
+      (hasVideo ? "已生成" : "未检测到本地视频") +
+      "</p>" +
+      "<p><strong>视频路径</strong>：" +
+      escapeHtmlText(remotion.output_video_path || "—") +
+      "</p>" +
+      "<p><strong>成片计划</strong>：" +
+      escapeHtmlText(remotion.render_plan_exists ? remotion.render_plan_path || "已生成" : "待生成") +
+      "</p>" +
+      "<p><strong>渲染命令</strong>：</p>" +
+      '<pre class="output-panel__command">' +
+      escapeHtmlText(remotion.render_command || "先生成 RenderPlan / input-props") +
+      "</pre>" +
+      "</div>";
+  }
+
+  function renderPipelineState(data) {
+    pipelineStateCache = data || null;
+    renderPipelineMeter(data);
+    renderPipelineActions(data);
+    renderOutputSummary(data);
+  }
+
   function renderWorkflowDetails(data, states) {
     if (taskWorkflowPipeline) {
       if (!currentTaskId || !data) {
@@ -1784,6 +1937,7 @@
   }
 
   function renderWorkspaceStatus(data) {
+    renderPipelineState(data);
     if (taskWorkflowTitle) {
       taskWorkflowTitle.textContent =
         data && data.filename ? data.filename : currentTaskId ? "已存任务" : "任务流";
@@ -1861,7 +2015,7 @@
     }
     try {
       var res = await fetch(
-        "/api/tasks/" + encodeURIComponent(currentTaskId) + "/workspace-status"
+        "/api/tasks/" + encodeURIComponent(currentTaskId) + "/pipeline-state"
       );
       var j = await res.json().catch(function () {
         return {};
@@ -1939,6 +2093,62 @@
       }
     } finally {
       if (btnRemotionGenerate) btnRemotionGenerate.disabled = false;
+    }
+  }
+
+  async function runPipelineStep(step) {
+    if (!currentTaskId || !step) return;
+    var buttons = document.querySelectorAll('[data-pipeline-step="' + step + '"]');
+    buttons.forEach(function (btn) {
+      btn.disabled = true;
+    });
+    try {
+      var res = await fetch(
+        "/api/tasks/" + encodeURIComponent(currentTaskId) + "/pipeline/run-step",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            step: step,
+            fps: 30,
+            no_audio_frames: 90,
+            use_llm: true,
+          }),
+        }
+      );
+      var j = await res.json().catch(function () {
+        return {};
+      });
+      if (!res.ok) {
+        var detail = j.detail || {};
+        var msg =
+          typeof detail === "string"
+            ? detail
+            : detail.message || detail.next_action || "流水线步骤执行失败";
+        throw new Error(msg);
+      }
+      if (statusLine) {
+        statusLine.textContent =
+          (PIPELINE_RUN_STEPS[step] || "流水线步骤") +
+          "完成：" +
+          (j.message || "已更新任务产物");
+      }
+      if (step === "course_material") await refreshCourseMaterial(true);
+      if (step === "director") await refreshDirectorManifest(true);
+      if (step === "render_plan") await refreshRemotionStatus(true);
+      await refreshWorkspaceStatus(true);
+    } catch (e) {
+      if (statusLine) {
+        statusLine.textContent =
+          (PIPELINE_RUN_STEPS[step] || "流水线步骤") +
+          "未完成：" +
+          (e instanceof Error ? e.message : String(e));
+      }
+      await refreshWorkspaceStatus(true);
+    } finally {
+      buttons.forEach(function (btn) {
+        btn.disabled = false;
+      });
     }
   }
 
@@ -4733,10 +4943,32 @@
       var id = btn.getAttribute("data-workflow-target") || "";
       var el = id ? document.getElementById(id) : null;
       if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "start" });
+        setWorkbenchRoute(routeForTargetId(id), { scroll: true, updateHash: true });
       }
     });
   }
+  if (platformNav) {
+    platformNav.addEventListener("click", function (e) {
+      var t = e.target;
+      if (!(t instanceof HTMLElement)) return;
+      var btn = t.closest("[data-workbench-route]");
+      if (!btn || !(btn instanceof HTMLElement)) return;
+      setWorkbenchRoute(btn.getAttribute("data-workbench-route") || "deal", {
+        scroll: true,
+        updateHash: true,
+      });
+    });
+  }
+  if (taskWorkflowActions) {
+    taskWorkflowActions.addEventListener("click", function (e) {
+      var t = e.target;
+      if (!(t instanceof HTMLElement)) return;
+      var btn = t.closest("[data-pipeline-step]");
+      if (!btn || !(btn instanceof HTMLElement)) return;
+      void runPipelineStep(btn.getAttribute("data-pipeline-step") || "");
+    });
+  }
+  window.addEventListener("hashchange", syncWorkbenchRouteFromHash);
 
   function bindOpenSegments(el) {
     if (el) {
@@ -5208,5 +5440,6 @@
   initVoiceIdComboboxes();
 
   refreshTaskList();
+  syncWorkbenchRouteFromHash();
   fillExternalSettingsForm().catch(function () {});
 })();
