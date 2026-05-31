@@ -279,3 +279,23 @@ def test_pipeline_audio_step_reports_missing_artifacts(monkeypatch, tmp_path: Pa
     detail = res.json()["detail"]
     assert detail["stage"] == "audio"
     assert "audio_workspace/generated_files" in detail["missing_artifacts"]
+
+
+def test_output_video_endpoint_serves_rendered_mp4(monkeypatch, tmp_path: Path) -> None:
+    task_id = "task-1"
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"fake-mp4")
+
+    monkeypatch.setattr(web_app, "load_task", lambda tid: {"task_id": tid})
+    monkeypatch.setattr(
+        web_app,
+        "render_task_status",
+        lambda tid: {"output_video_path": str(video), "output_video_exists": True},
+    )
+
+    client = TestClient(web_app.create_app())
+    res = client.get(f"/api/tasks/{task_id}/output-video")
+
+    assert res.status_code == 200
+    assert res.content == b"fake-mp4"
+    assert res.headers["content-type"].startswith("video/mp4")

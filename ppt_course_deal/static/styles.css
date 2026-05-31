@@ -3364,6 +3364,68 @@ body {
   color: var(--body-secondary);
 }
 
+.director-outline {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.director-outline-card {
+  min-width: 0;
+  padding: 0.58rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.director-outline-card__index {
+  display: block;
+  margin-bottom: 0.28rem;
+  font-family: ui-monospace, monospace;
+  font-size: 0.66rem;
+  color: var(--accent);
+}
+
+.director-outline-card h3 {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.32;
+  color: var(--heading-strong);
+}
+
+.director-outline-card p {
+  margin: 0.28rem 0 0;
+  font-size: 0.7rem;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.director-quality-list {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.director-quality-list li {
+  padding: 0.46rem 0.55rem;
+  border: 1px solid var(--warn-border);
+  border-radius: 8px;
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+.director-quality-list span {
+  display: inline-block;
+  margin-right: 0.45rem;
+  font-family: ui-monospace, monospace;
+  font-weight: 700;
+}
+
 .director-panel__materials {
   margin-bottom: 0.8rem;
 }
@@ -3479,6 +3541,10 @@ body {
 
 @media (max-width: 680px) {
   .material-board__cards {
+    grid-template-columns: 1fr;
+  }
+
+  .director-outline {
     grid-template-columns: 1fr;
   }
 }
@@ -3649,6 +3715,16 @@ body {
   margin: 0.2rem 0;
   font-size: 0.82rem;
   color: var(--body-secondary);
+}
+
+.output-panel__video {
+  display: block;
+  width: 100%;
+  max-height: min(42vh, 24rem);
+  margin-bottom: 0.75rem;
+  border: 1px solid var(--pv-image-border);
+  border-radius: 8px;
+  background: #000;
 }
 
 .output-panel__command {

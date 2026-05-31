@@ -1271,6 +1271,42 @@
       var llmError = generation.llm_error || "";
       var outline = (dm && dm.course_outline) || [];
       var checks = (dm && dm.quality_checks) || {};
+      var warningItems = (checks.warnings || [])
+        .slice(0, 5)
+        .map(function (item) {
+          return (
+            '<li><span>' +
+            escapeHtmlText(item.code || "warning") +
+            "</span>" +
+            escapeHtmlText(item.message || item.detail || JSON.stringify(item)) +
+            "</li>"
+          );
+        })
+        .join("");
+      var outlineCards = outline
+        .slice(0, 6)
+        .map(function (item, idx) {
+          var title =
+            typeof item === "string"
+              ? item
+              : item.title || item.chapter_title || item.name || JSON.stringify(item);
+          var detail =
+            typeof item === "string"
+              ? ""
+              : item.goal || item.summary || item.description || item.learning_goal || "";
+          return (
+            '<article class="director-outline-card">' +
+            '<span class="director-outline-card__index">' +
+            escapeHtmlText(String(idx + 1).padStart(2, "0")) +
+            "</span>" +
+            "<h3>" +
+            escapeHtmlText(title || "未命名章节") +
+            "</h3>" +
+            (detail ? "<p>" + escapeHtmlText(detail) + "</p>" : "") +
+            "</article>"
+          );
+        })
+        .join("");
       directorSummary.innerHTML =
         '<div class="director-panel__summary-inner">' +
         "<p><strong>课程标题</strong>：" +
@@ -1300,6 +1336,14 @@
         "</p>" +
         (llmError
           ? "<p><strong>LLM 回退原因</strong>：" + escapeHtmlText(llmError) + "</p>"
+          : "") +
+        (outlineCards
+          ? '<div class="director-outline" aria-label="课程大纲">' + outlineCards + "</div>"
+          : "") +
+        (warningItems
+          ? '<ul class="director-quality-list" aria-label="质量检查提醒">' +
+            warningItems +
+            "</ul>"
           : "") +
         "</div>";
     }
@@ -1839,10 +1883,19 @@
       return;
     }
     var hasVideo = Boolean(remotion.output_video_exists);
+    var videoUrl =
+      hasVideo && currentTaskId
+        ? "/api/tasks/" + encodeURIComponent(currentTaskId) + "/output-video"
+        : "";
     outputSummary.innerHTML =
       '<div class="output-panel__summary-inner output-panel__summary-inner--' +
       (hasVideo ? "ready" : "todo") +
       '">' +
+      (videoUrl
+        ? '<video class="output-panel__video" controls preload="metadata" src="' +
+          escapeHtmlText(videoUrl) +
+          '"></video>'
+        : "") +
       "<p><strong>MP4 状态</strong>：" +
       (hasVideo ? "已生成" : "未检测到本地视频") +
       "</p>" +

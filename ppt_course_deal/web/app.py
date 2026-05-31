@@ -1062,6 +1062,21 @@ def create_app() -> FastAPI:
             "render_plan_source": render_plan.get("source") or "",
         }
 
+    @application.get("/api/tasks/{task_id}/output-video")
+    def get_output_video(task_id: str) -> FileResponse:
+        """播放已渲染 MP4，供统一工作台的成片展示模块使用。"""
+        if load_task(task_id) is None:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        status = render_task_status(task_id)
+        path = Path(status.get("output_video_path") or "")
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="尚未检测到 Remotion 成片 MP4")
+        return FileResponse(
+            path,
+            media_type="video/mp4",
+            filename=f"{task_id}.mp4",
+        )
+
     @application.post("/api/tasks/{task_id}/remotion-render-task")
     def post_remotion_render_task(
         task_id: str,
