@@ -52,6 +52,31 @@ def _slide_lookup(slides: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     return out
 
 
+def _load_course_material(raw_manifest_path: str) -> dict[str, Any]:
+    path = Path(raw_manifest_path).with_name("course_material.json")
+    if not path.is_file():
+        return {}
+    try:
+        data = read_json(path)
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _material_slide_lookup(material: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    slides = material.get("slides")
+    if not isinstance(slides, list):
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    for slide in slides:
+        if not isinstance(slide, dict):
+            continue
+        sid = str(slide.get("slide_id") or "")
+        if sid:
+            out[sid] = slide
+    return out
+
+
 def _source_text_for_ids(
     source_slide_ids: list[str],
     slide_by_id: dict[str, dict[str, Any]],
@@ -78,6 +103,93 @@ def _source_evidence(source_slide_ids: list[str], slide_by_id: dict[str, dict[st
     return evidence
 
 
+def _material_evidence(source_slide_ids: list[str], material_by_id: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    evidence: list[dict[str, Any]] = []
+    for sid in source_slide_ids:
+        material = material_by_id.get(sid)
+        if not material:
+            continue
+        for quote in material.get("evidence_texts") or []:
+            text = str(quote or "").strip()
+            if text:
+                evidence.append({"slide_id": sid, "quote": text[:240], "source": "course_material"})
+    return evidence
+
+
+def _risk_items_for_ids(source_slide_ids: list[str], material_by_id: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for sid in source_slide_ids:
+        material = material_by_id.get(sid)
+        if not material:
+            continue
+        for item in material.get("risk_items") or []:
+            if isinstance(item, dict):
+                out.append({"slide_id": sid, **item})
+    return out[:8]
+
+
+def _layout_from_material(
+    source_slide_ids: list[str],
+    material_by_id: dict[str, dict[str, Any]],
+    fallback: str,
+) -> str:
+    for sid in source_slide_ids:
+        material = material_by_id.get(sid)
+        if not material:
+            continue
+        layout = str(material.get("recommended_scene_layout") or material.get("recommended_layout") or "").strip()
+        if layout:
+            return layout
+    return fallback
+
+
+def _overlay_payload(
+    *,
+    title: str,
+    onscreen_text: str,
+    screen_design: dict[str, Any],
+    source_evidence: list[dict[str, Any]],
+    risk_items: list[dict[str, Any]],
+    scene_type: str,
+) -> dict[str, Any]:
+    emphasis = _coerce_string_list(screen_design.get("emphasis"), limit=5)
+    callouts = []
+    for text in emphasis:
+        callouts.append({"label": text, "kind": "emphasis"})
+    if not callouts and onscreen_text:
+        for part in re.split(r"[。；;\n]", onscreen_text):
+            s = " ".join(part.split())
+            if s:
+                callouts.append({"label": s[:36], "kind": "key_point"})
+            if len(callouts) >= 3:
+                break
+    evidence_quotes = [
+        {
+            "slide_id": str(item.get("slide_id") or ""),
+            "quote": str(item.get("quote") or "")[:180],
+        }
+        for item in source_evidence[:3]
+        if isinstance(item, dict) and str(item.get("quote") or "").strip()
+    ]
+    return {
+        "callouts": callouts[:4],
+        "highlights": emphasis[:5],
+        "evidence_panel": {
+            "title": "原文证据" if evidence_quotes else "",
+            "quotes": evidence_quotes,
+        },
+        "risk_badge": {
+            "show": bool(risk_items),
+            "label": "需核对原文" if risk_items else "",
+            "items": risk_items[:4],
+        },
+        "transition": {
+            "type": "chapter" if scene_type in ("title", "agenda", "summary") else "cut",
+            "label": title,
+        },
+    }
+
+
 def _coerce_string_list(value: Any, *, limit: int = 8) -> list[str]:
     if not isinstance(value, list):
         return []
@@ -97,6 +209,7 @@ def _llm_scene_to_manifest_scene(
     idx: int,
     task_id: str,
     slide_by_id: dict[str, dict[str, Any]],
+    material_by_id: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
     source_slide_ids = _coerce_string_list(item.get("source_slide_ids"), limit=12)
     if not source_slide_ids:
@@ -120,7 +233,11 @@ def _llm_scene_to_manifest_scene(
     if not isinstance(screen_design, dict):
         screen_design = {}
     screen_design = {
-        "layout": str(screen_design.get("layout") or "full_slide"),
+        "layout": _layout_from_material(
+            source_slide_ids,
+            material_by_id,
+            str(screen_design.get("layout") or "full_slide"),
+        ),
         "visual_strategy": str(
             screen_design.get("visual_strategy")
             or "use_full_slide_with_caption_and_subtitle"
@@ -137,6 +254,16 @@ def _llm_scene_to_manifest_scene(
     risk_flags = _risk_flags(scene_type, raw_text)
     risk_flags.extend(_coerce_string_list(item.get("risk_flags"), limit=8))
     risk_flags = list(dict.fromkeys(risk_flags))
+    source_evidence = _material_evidence(source_slide_ids, material_by_id) or _source_evidence(source_slide_ids, slide_by_id)
+    scene_risk_items = _risk_items_for_ids(source_slide_ids, material_by_id)
+    render_overlays = _overlay_payload(
+        title=title,
+        onscreen_text=onscreen_text,
+        screen_design=screen_design,
+        source_evidence=source_evidence,
+        risk_items=scene_risk_items,
+        scene_type=scene_type,
+    )
 
     return {
         "scene_id": scene_id,
@@ -161,7 +288,9 @@ def _llm_scene_to_manifest_scene(
             "layout": screen_design["layout"],
             "use_source_slide_as_evidence": True,
         },
-        "source_evidence": _source_evidence(source_slide_ids, slide_by_id),
+        "source_evidence": source_evidence,
+        "risk_items": scene_risk_items,
+        "render_overlays": render_overlays,
         "visual_generation": {
             "mode": "llm_director_v0",
             "notes": "LLM 生成课程导演脚本；真实生图与高级模板后续接入。",
@@ -181,9 +310,11 @@ def _build_heuristic_scenes(
     *,
     slides: list[dict[str, Any]],
     task_id: str,
+    material: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     scenes_out: list[dict[str, Any]] = []
     slide_by_id = _slide_lookup(slides)
+    material_by_id = _material_slide_lookup(material or {})
     for slide in slides:
         slide_id = str(slide.get("slide_id") or "")
         idx = int(slide.get("slide_index") or 0)
@@ -210,7 +341,11 @@ def _build_heuristic_scenes(
         render_cache_key = _sha16(task_id, scene_id, content_hash, asset_hash)
 
         screen_design = {
-            "layout": "full_slide" if scene_type != "case_dialogue" else "split_panel",
+            "layout": _layout_from_material(
+                [slide_id] if slide_id else [f"slide-{idx:04d}"],
+                material_by_id,
+                "full_slide" if scene_type != "case_dialogue" else "split_panel",
+            ),
             "visual_strategy": (
                 "overlay_highlights"
                 if scene_type in ("rule_explanation", "rule_card")
@@ -218,11 +353,22 @@ def _build_heuristic_scenes(
             ),
             "emphasis": [scene_type],
         }
+        source_ids = [slide_id] if slide_id else [f"slide-{idx:04d}"]
+        source_evidence = _material_evidence(source_ids, material_by_id) or _source_evidence(source_ids, slide_by_id)
+        scene_risk_items = _risk_items_for_ids(source_ids, material_by_id)
+        render_overlays = _overlay_payload(
+            title=card_title,
+            onscreen_text=raw_text[:2000] if raw_text else "",
+            screen_design=screen_design,
+            source_evidence=source_evidence,
+            risk_items=scene_risk_items,
+            scene_type=scene_type,
+        )
 
         scene = {
             "scene_id": scene_id,
             "scene_type": scene_type,
-            "source_slide_ids": [slide_id] if slide_id else [f"slide-{idx:04d}"],
+            "source_slide_ids": source_ids,
             "learning_goal": learning_goal,
             "title": card_title,
             "onscreen_text": raw_text[:2000] if raw_text else "",
@@ -242,10 +388,9 @@ def _build_heuristic_scenes(
                 "layout": screen_design["layout"],
                 "use_source_slide_as_evidence": True,
             },
-            "source_evidence": _source_evidence(
-                [slide_id] if slide_id else [f"slide-{idx:04d}"],
-                slide_by_id,
-            ),
+            "source_evidence": source_evidence,
+            "risk_items": scene_risk_items,
+            "render_overlays": render_overlays,
             "visual_generation": {
                 "mode": "heuristic_v1",
                 "notes": "未接真实生图 API；后续可替换为 structured prompts。",
@@ -281,6 +426,8 @@ def rebuild_course_from_raw_manifest(
     slides = raw.get("slides") or []
     task_id = str(raw.get("task_id") or "")
     filename_hint = Path(str(raw.get("source_pptx") or "课程")).stem
+    material = _load_course_material(raw_manifest_path)
+    material_by_id = _material_slide_lookup(material)
 
     planning_mode = "heuristic_v1"
     llm_error = ""
@@ -306,6 +453,7 @@ def rebuild_course_from_raw_manifest(
                     idx=i,
                     task_id=task_id,
                     slide_by_id=slide_by_id,
+                    material_by_id=material_by_id,
                 )
                 for i, item in enumerate(llm_data.get("scenes") or [])
                 if isinstance(item, dict)
@@ -316,9 +464,9 @@ def rebuild_course_from_raw_manifest(
         except Exception as e:
             llm_error = str(e)
             logger.warning("LLM 导演规划失败，回退启发式：%s", e)
-            scenes_out = _build_heuristic_scenes(slides=slides, task_id=task_id)
+            scenes_out = _build_heuristic_scenes(slides=slides, task_id=task_id, material=material)
     else:
-        scenes_out = _build_heuristic_scenes(slides=slides, task_id=task_id)
+        scenes_out = _build_heuristic_scenes(slides=slides, task_id=task_id, material=material)
 
     pending = sum(
         1 for s in scenes_out if s.get("review_status") == "pending"
@@ -381,6 +529,7 @@ def rebuild_course_from_raw_manifest(
             "planning_mode": planning_mode,
             "llm_model": configured_model() if planning_mode.startswith("llm") else "",
             "llm_error": llm_error,
+            "material_source": "course_material.json" if material else "",
         },
         "generated_at": utc_now_iso(),
     }

@@ -1,11 +1,21 @@
 # PPT 课程化重构工具（MVP）
 
 > **与主仓库的关系（命名）**  
-> 本目录在仓库中称为 **「AI 课程重构管线（Rebuilder）」**：独立 CLI、依赖 **LLM**（OpenAI 兼容 API），产物在 `output/`。根目录安装的 **「课件处理与工作台」**（包名 `ppt_course_deal`，命令 `ppt-course`）提供 Web + 启发式 `transform`，**二者未合并**；集成方式见根目录 **[README.md](../README.md)** 中「模块怎么区分」。
+> 本目录在仓库中称为 **「AI 课程重构管线（Rebuilder）」**。历史 CLI 仍可独立运行；当前主线已经作为库接入 `ppt_course_deal` 统一中台：Deal 生成 `raw_material_manifest.json`，Rebuilder 生成 `course_material.json` / `director_manifest.json`，Renderer 通过 Render Adapter 消费导演脚本。
 
 面向新兵营 / 质检培训等**规则密集型**业务课件：把文字很多的原始 `.pptx`，自动重构为更适合**录播视频**的课程型幻灯片（更少屏幕字、更清晰节奏、配套口播稿）。**业务准确性优先**：不编造规则、不改动处罚含义；所有课程页保留 `source_slide_indexes` 便于人工复核。
 
 ## 功能概览
+
+当前中台链路：
+
+1. **素材归一化**：`raw_material_manifest.json` → `course_material.json`
+2. **素材理解**：规则标记 + 可选 `director_llm` 增强，补充素材角色、教学用途、风险证据、推荐 layout
+3. **导演规划**：生成 `director_manifest.json`，包含课程大纲、章节、scene 镜头、口播、字幕、source evidence、风险项
+4. **审核导出**：审核通过后写出 `approved_director_manifest.json`
+5. **渲染衔接**：Render Adapter 写出 `render_plan.json` / `input-props.json`，交给 Remotion 成片
+
+历史独立 CLI 链路仍保留：
 
 1. **读取**原始 PPTX（文本、表格/图片计数、备注等）
 2. **AI 单页分析** → `output/slide_analysis.json`
