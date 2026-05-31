@@ -88,6 +88,11 @@ body {
   color: var(--text);
 }
 
+body.is-resizing-sidebar {
+  cursor: col-resize;
+  user-select: none;
+}
+
 .app {
   position: relative;
   z-index: 1;
@@ -117,6 +122,7 @@ body {
   align-items: start;
   flex: 1 1 auto;
   min-height: 0;
+  position: relative;
 }
 
 /* 上传页：约 35 : 65，左侧为已存任务列表，右侧为上传区 */
@@ -136,7 +142,8 @@ body {
 /* 解析完成后：左侧缩略图列表（约 35%）| 右侧预览（约 65%）。
    固定主区高度为视口减顶栏，避免左侧列表条目过多时撑高整页；列表在 .slide-rail__scroll 内滚动。 */
 .app-main.app-main--workspace {
-  grid-template-columns: minmax(0, 35fr) minmax(0, 65fr);
+  --workspace-sidebar-width: clamp(14rem, 34vw, 32rem);
+  grid-template-columns: minmax(14rem, var(--workspace-sidebar-width)) minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   align-items: stretch;
   min-height: 0;
@@ -146,6 +153,10 @@ body {
   max-height: calc(100dvh - var(--workspace-viewport-offset));
 }
 
+.app-main.app-main--workspace.is-sidebar-collapsed {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .sidebar-column {
   display: flex;
   flex-direction: column;
@@ -153,12 +164,17 @@ body {
   min-width: 0;
   min-height: 0;
   align-self: stretch;
+  position: relative;
 }
 
 .app-main.app-main--workspace .sidebar-column {
   height: 100%;
   min-height: 0;
   overflow: hidden;
+}
+
+.app-main.app-main--workspace.is-sidebar-collapsed .sidebar-column {
+  display: none;
 }
 
 /* 主页左侧：已存任务（列表过长时在区域内滚动） */
@@ -312,6 +328,10 @@ body {
     min-height: 0;
   }
 
+  .app-main.app-main--workspace.is-sidebar-collapsed {
+    grid-template-rows: minmax(0, 1fr);
+  }
+
   .sidebar-task-panel {
     max-height: min(42vh, 380px);
   }
@@ -364,6 +384,89 @@ body {
   font-size: 1rem;
   line-height: 1;
   font-weight: 600;
+}
+
+.workspace-sidebar-resizer {
+  position: absolute;
+  top: 0.6rem;
+  right: -0.62rem;
+  bottom: 0.6rem;
+  z-index: 8;
+  width: 1.1rem;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.workspace-sidebar-resizer::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border) 76%, transparent);
+  transform: translateX(-50%);
+  transition:
+    background 0.15s ease,
+    box-shadow 0.15s ease,
+    width 0.15s ease;
+}
+
+.workspace-sidebar-resizer:hover::before,
+.workspace-sidebar-resizer:focus-visible::before,
+.workspace-sidebar-resizer.is-dragging::before {
+  width: 4px;
+  background: var(--accent);
+  box-shadow: 0 0 22px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.workspace-sidebar-resizer:focus-visible {
+  outline: none;
+}
+
+.workspace-sidebar-peek {
+  position: absolute;
+  left: 0;
+  top: 5.2rem;
+  z-index: 9;
+  width: 2rem;
+  height: 3.15rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-left: none;
+  border-radius: 0 12px 12px 0;
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  color: var(--accent);
+  cursor: pointer;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(14px);
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background 0.15s ease,
+    transform 0.15s ease;
+}
+
+.workspace-sidebar-peek:hover,
+.workspace-sidebar-peek:focus-visible {
+  color: var(--heading-strong);
+  border-color: var(--accent);
+  background: var(--accent-dim);
+  outline: none;
+  transform: translateX(2px);
+}
+
+.workspace-sidebar-peek span {
+  font-size: 1.35rem;
+  line-height: 1;
+  font-weight: 700;
+}
+
+.app-main.app-main--workspace.is-sidebar-collapsed .workspace-sidebar-peek {
+  display: inline-flex;
 }
 
 .workspace-task-drawer-tab[aria-expanded="true"] .workspace-task-drawer-tab__chev--open {
@@ -779,7 +882,8 @@ body {
 }
 
 /* 缩略图栏：导入整稿逐字稿（需已持久化 task_id） */
-.rail-head__import {
+.rail-head__import,
+.rail-head__collapse {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -798,13 +902,16 @@ body {
 }
 
 .rail-head__import:hover,
-.rail-head__import:focus-visible {
+.rail-head__import:focus-visible,
+.rail-head__collapse:hover,
+.rail-head__collapse:focus-visible {
   background: var(--accent-dim);
   color: var(--accent);
   outline: none;
 }
 
-.rail-head__import-icon {
+.rail-head__import-icon,
+.rail-head__collapse-icon {
   display: block;
 }
 

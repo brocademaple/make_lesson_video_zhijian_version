@@ -49,6 +49,9 @@
   const workspaceTaskDrawerPanel = document.getElementById("workspace-task-drawer-panel");
   const workspaceTaskDrawerList = document.getElementById("workspace-task-drawer-list");
   const btnWorkspaceTaskDrawerClose = document.getElementById("btn-workspace-task-drawer-close");
+  const btnWorkspaceSidebarCollapse = document.getElementById("btn-workspace-sidebar-collapse");
+  const btnWorkspaceSidebarPeek = document.getElementById("btn-workspace-sidebar-peek");
+  const workspaceSidebarResizer = document.getElementById("workspace-sidebar-resizer");
   const btnRefreshTasks = document.getElementById("btn-refresh-tasks");
   const btnHelpTaskList = document.getElementById("btn-help-task-list");
   const btnHelpAudioSegments = document.getElementById("btn-help-audio-segments");
@@ -418,6 +421,12 @@
     ) {
       positionTaskPopover(taskIdPopoverAnchor, taskIdPopover);
     }
+    if (appMain && appMain.classList.contains("app-main--workspace")) {
+      var current = parseFloat(
+        getComputedStyle(appMain).getPropertyValue("--workspace-sidebar-width")
+      );
+      if (Number.isFinite(current)) setWorkspaceSidebarWidth(current, false);
+    }
   });
 
   function openHelp(title, bodyText) {
@@ -753,6 +762,99 @@
   function setWorkspaceTaskDrawerTabVisible(show) {
     if (!btnWorkspaceTaskDrawer) return;
     btnWorkspaceTaskDrawer.classList.toggle("hidden", !show);
+  }
+
+  function readWorkspaceSidebarCollapsed() {
+    try {
+      return localStorage.getItem("ppt-workspace-sidebar-collapsed") === "1";
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function writeWorkspaceSidebarCollapsed(collapsed) {
+    try {
+      localStorage.setItem("ppt-workspace-sidebar-collapsed", collapsed ? "1" : "0");
+    } catch (_) {}
+  }
+
+  function workspaceSidebarWidthBounds() {
+    var viewport = window.innerWidth || 1200;
+    var min = viewport < 900 ? 180 : 220;
+    var max = Math.max(min, Math.min(620, Math.round(viewport * 0.46)));
+    return { min: min, max: max };
+  }
+
+  function clampWorkspaceSidebarWidth(width) {
+    var b = workspaceSidebarWidthBounds();
+    return Math.max(b.min, Math.min(b.max, Math.round(width)));
+  }
+
+  function setWorkspaceSidebarWidth(width, persist) {
+    if (!appMain) return;
+    var next = clampWorkspaceSidebarWidth(width);
+    appMain.style.setProperty("--workspace-sidebar-width", next + "px");
+    if (workspaceSidebarResizer) {
+      workspaceSidebarResizer.setAttribute("aria-valuenow", String(next));
+      workspaceSidebarResizer.setAttribute("aria-valuemin", String(workspaceSidebarWidthBounds().min));
+      workspaceSidebarResizer.setAttribute("aria-valuemax", String(workspaceSidebarWidthBounds().max));
+    }
+    if (persist) {
+      try {
+        localStorage.setItem("ppt-workspace-sidebar-width", String(next));
+      } catch (_) {}
+    }
+  }
+
+  function restoreWorkspaceSidebarWidth() {
+    var saved = null;
+    try {
+      saved = Number(localStorage.getItem("ppt-workspace-sidebar-width"));
+    } catch (_) {}
+    setWorkspaceSidebarWidth(Number.isFinite(saved) && saved > 0 ? saved : Math.round((window.innerWidth || 1200) * 0.34), false);
+  }
+
+  function setWorkspaceSidebarCollapsed(collapsed, persist) {
+    if (!appMain) return;
+    appMain.classList.toggle("is-sidebar-collapsed", collapsed);
+    if (btnWorkspaceSidebarCollapse) {
+      btnWorkspaceSidebarCollapse.setAttribute("aria-expanded", String(!collapsed));
+      btnWorkspaceSidebarCollapse.setAttribute(
+        "aria-label",
+        collapsed ? "展开幻灯片列表" : "收起幻灯片列表"
+      );
+      btnWorkspaceSidebarCollapse.setAttribute(
+        "title",
+        collapsed ? "展开幻灯片列表" : "收起幻灯片列表"
+      );
+    }
+    if (btnWorkspaceSidebarPeek) {
+      var showPeek = appMain.classList.contains("app-main--workspace") && collapsed;
+      btnWorkspaceSidebarPeek.classList.toggle("hidden", !showPeek);
+      btnWorkspaceSidebarPeek.setAttribute("aria-expanded", String(!collapsed));
+    }
+    if (workspaceSidebarResizer) {
+      var showResizer = appMain.classList.contains("app-main--workspace") && !collapsed;
+      workspaceSidebarResizer.classList.toggle("hidden", !showResizer);
+    }
+    if (persist) writeWorkspaceSidebarCollapsed(collapsed);
+  }
+
+  function showWorkspaceSidebarControls(show) {
+    if (!appMain) return;
+    if (show) {
+      restoreWorkspaceSidebarWidth();
+      setWorkspaceSidebarCollapsed(readWorkspaceSidebarCollapsed(), false);
+    } else {
+      appMain.classList.remove("is-sidebar-collapsed");
+      if (btnWorkspaceSidebarPeek) btnWorkspaceSidebarPeek.classList.add("hidden");
+      if (workspaceSidebarResizer) workspaceSidebarResizer.classList.add("hidden");
+    }
+  }
+
+  function toggleWorkspaceSidebarCollapsed() {
+    if (!appMain) return;
+    setWorkspaceSidebarCollapsed(!appMain.classList.contains("is-sidebar-collapsed"), true);
   }
 
   function closeWorkspaceTaskDrawer() {
@@ -1177,6 +1279,7 @@
       if (appMain) appMain.classList.add("app-main--workspace");
       if (slideRail) slideRail.classList.remove("hidden");
       setWorkspaceTaskDrawerTabVisible(true);
+      showWorkspaceSidebarControls(true);
       await refreshGenVisualCoverage();
       renderSlideList();
       renderPreview();
@@ -4304,6 +4407,7 @@
       if (appMain) appMain.classList.add("app-main--workspace");
       if (slideRail) slideRail.classList.remove("hidden");
       setWorkspaceTaskDrawerTabVisible(true);
+      showWorkspaceSidebarControls(true);
       renderSlideList();
       renderPreview();
       await loadAudioWorkspaceMeta();
@@ -4340,6 +4444,7 @@
     previewMode = "session";
     workspace.classList.add("hidden");
     if (appMain) appMain.classList.remove("app-main--workspace");
+    showWorkspaceSidebarControls(false);
     if (slideRail) slideRail.classList.add("hidden");
     uploadPanel.classList.remove("hidden");
     clearErr(errorUpload);
@@ -4437,6 +4542,141 @@
   if (workspaceTaskDrawerBackdrop) {
     workspaceTaskDrawerBackdrop.addEventListener("click", function () {
       closeWorkspaceTaskDrawer();
+    });
+  }
+  if (btnWorkspaceSidebarCollapse) {
+    btnWorkspaceSidebarCollapse.addEventListener("click", function () {
+      toggleWorkspaceSidebarCollapsed();
+    });
+  }
+  if (btnWorkspaceSidebarPeek) {
+    btnWorkspaceSidebarPeek.addEventListener("click", function () {
+      setWorkspaceSidebarCollapsed(false, true);
+    });
+  }
+  if (workspaceSidebarResizer) {
+    var sidebarDragStartX = 0;
+    var sidebarDragStartWidth = 0;
+    var sidebarDragging = false;
+    var handleDocumentPointerMove = null;
+    var handleDocumentPointerEnd = null;
+
+    function startSidebarResize(clientX, pointerId) {
+      if (!appMain || appMain.classList.contains("is-sidebar-collapsed")) return;
+      sidebarDragging = true;
+      sidebarDragStartX = clientX;
+      sidebarDragStartWidth =
+        parseFloat(getComputedStyle(appMain).getPropertyValue("--workspace-sidebar-width")) ||
+        workspaceSidebarResizer.parentElement.getBoundingClientRect().width;
+      workspaceSidebarResizer.classList.add("is-dragging");
+      if (typeof pointerId === "number" && workspaceSidebarResizer.setPointerCapture) {
+        try {
+          workspaceSidebarResizer.setPointerCapture(pointerId);
+        } catch (_) {}
+      }
+      document.body.classList.add("is-resizing-sidebar");
+    }
+
+    function moveSidebarResize(clientX) {
+      if (!sidebarDragging) return;
+      setWorkspaceSidebarWidth(sidebarDragStartWidth + clientX - sidebarDragStartX, true);
+    }
+
+    function endSidebarResize(pointerId) {
+      if (!sidebarDragging) return;
+      sidebarDragging = false;
+      workspaceSidebarResizer.classList.remove("is-dragging");
+      document.body.classList.remove("is-resizing-sidebar");
+      if (typeof pointerId === "number" && workspaceSidebarResizer.releasePointerCapture) {
+        try {
+          workspaceSidebarResizer.releasePointerCapture(pointerId);
+        } catch (_) {}
+      }
+      if (handleDocumentPointerMove) {
+        document.removeEventListener("pointermove", handleDocumentPointerMove);
+      }
+      if (handleDocumentPointerEnd) {
+        document.removeEventListener("pointerup", handleDocumentPointerEnd);
+        document.removeEventListener("pointercancel", handleDocumentPointerEnd);
+      }
+      handleDocumentPointerMove = null;
+      handleDocumentPointerEnd = null;
+    }
+
+    workspaceSidebarResizer.addEventListener("pointerdown", function (e) {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      startSidebarResize(e.clientX, e.pointerId);
+      handleDocumentPointerMove = function (moveEvent) {
+        moveSidebarResize(moveEvent.clientX);
+      };
+      handleDocumentPointerEnd = function (endEvent) {
+        endSidebarResize(endEvent.pointerId);
+      };
+      document.addEventListener("pointermove", handleDocumentPointerMove);
+      document.addEventListener("pointerup", handleDocumentPointerEnd);
+      document.addEventListener("pointercancel", handleDocumentPointerEnd);
+    });
+    workspaceSidebarResizer.addEventListener("pointermove", function (e) {
+      moveSidebarResize(e.clientX);
+    });
+    workspaceSidebarResizer.addEventListener("pointerup", function (e) {
+      endSidebarResize(e.pointerId);
+    });
+    workspaceSidebarResizer.addEventListener("pointercancel", function (e) {
+      endSidebarResize(e.pointerId);
+    });
+    workspaceSidebarResizer.addEventListener("mousedown", function (e) {
+      if (e.button !== 0 || sidebarDragging) return;
+      e.preventDefault();
+      startSidebarResize(e.clientX);
+      var handleMouseMove = function (moveEvent) {
+        moveSidebarResize(moveEvent.clientX);
+      };
+      var handleMouseUp = function (upEvent) {
+        endSidebarResize();
+        document.removeEventListener("mousemove", handleMouseMove);
+        document.removeEventListener("mouseup", handleMouseUp);
+        if (upEvent) upEvent.preventDefault();
+      };
+      document.addEventListener("mousemove", handleMouseMove);
+      document.addEventListener("mouseup", handleMouseUp);
+    });
+    workspaceSidebarResizer.addEventListener(
+      "touchstart",
+      function (e) {
+        if (!e.touches || !e.touches.length || sidebarDragging) return;
+        e.preventDefault();
+        startSidebarResize(e.touches[0].clientX);
+        var handleTouchMove = function (moveEvent) {
+          if (moveEvent.touches && moveEvent.touches.length) {
+            moveSidebarResize(moveEvent.touches[0].clientX);
+          }
+        };
+        var handleTouchEnd = function () {
+          endSidebarResize();
+          document.removeEventListener("touchmove", handleTouchMove);
+          document.removeEventListener("touchend", handleTouchEnd);
+          document.removeEventListener("touchcancel", handleTouchEnd);
+        };
+        document.addEventListener("touchmove", handleTouchMove, { passive: false });
+        document.addEventListener("touchend", handleTouchEnd);
+        document.addEventListener("touchcancel", handleTouchEnd);
+      },
+      { passive: false }
+    );
+    workspaceSidebarResizer.addEventListener("keydown", function (e) {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight" && e.key !== "Home" && e.key !== "End") return;
+      if (!appMain || appMain.classList.contains("is-sidebar-collapsed")) return;
+      e.preventDefault();
+      var b = workspaceSidebarWidthBounds();
+      var current =
+        parseFloat(getComputedStyle(appMain).getPropertyValue("--workspace-sidebar-width")) ||
+        b.min;
+      if (e.key === "Home") current = b.min;
+      else if (e.key === "End") current = b.max;
+      else current += e.key === "ArrowRight" ? 24 : -24;
+      setWorkspaceSidebarWidth(current, true);
     });
   }
   document.addEventListener("keydown", function (e) {
