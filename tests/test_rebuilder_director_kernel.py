@@ -32,7 +32,7 @@ def test_tts_settings_default_to_edge_fallback(monkeypatch, tmp_path: Path) -> N
 
     raw = external_settings.load_raw()
 
-    assert raw["tts"]["provider"] == "minimax"
+    assert raw["tts"]["provider"] == "edge_tts"
     assert raw["tts"]["fallback_enabled"] is True
     assert raw["tts"]["fallback_provider"] == "edge_tts"
     assert raw["tts"]["edge_tts"]["voice"] == "zh-CN-XiaoxiaoNeural"
@@ -83,6 +83,8 @@ def test_course_material_normalizes_slides_without_audio(tmp_path: Path) -> None
     assert out_path.is_file()
     slide = material["slides"][0]
     assert "risk_or_penalty" in slide["material_tags"]
+    assert slide["material_role"] == "risk_rule_material"
+    assert "金额" in slide["teaching_purpose"]
     assert slide["recommended_layout"] == "rule_card"
     assert slide["audio_segments"] == []
 

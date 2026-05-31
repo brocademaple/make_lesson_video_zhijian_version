@@ -170,3 +170,132 @@ def test_workspace_status_summarizes_subsystems(monkeypatch, tmp_path: Path) -> 
     assert status["rebuilder"]["director_manifest_exists"] is True
     assert status["rebuilder"]["planning_mode"] == "llm_director_v0"
     assert status["remotion"]["input_props_exists"] is True
+
+
+def test_pipeline_state_exposes_middle_office_stages(monkeypatch, tmp_path: Path) -> None:
+    task_id = "task-1"
+    task_root = tmp_path / task_id
+    task_root.mkdir()
+    (task_root / "raw_material_manifest.json").write_text(
+        '{"slides":[{"slide_id":"slide-0000"}]}',
+        encoding="utf-8",
+    )
+    (task_root / "course_material.json").write_text(
+        '{"slides":[{"slide_id":"slide-0000"}],"assets":[]}',
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(web_app, "tasks_dir", lambda: tmp_path)
+    monkeypatch.setattr(web_app, "load_task", lambda tid: {
+        "filename": "demo.pptx",
+        "slide_count": 1,
+        "slides": [{}],
+        "images_available": True,
+        "preview_count": 1,
+        "preview_source": "libreoffice",
+    })
+    monkeypatch.setattr(web_app, "load_meta", lambda _kind, _key: {})
+    monkeypatch.setattr(
+        web_app,
+        "render_task_status",
+        lambda tid: {
+            "task_dir": str(tmp_path / "render_tasks" / tid),
+            "input_props_exists": False,
+            "output_video_exists": False,
+            "render_command": "npx remotion render ...",
+        },
+    )
+
+    client = TestClient(web_app.create_app())
+    res = client.get(f"/api/tasks/{task_id}/pipeline-state")
+
+    assert res.status_code == 200
+    data = res.json()
+    labels = [stage["label"] for stage in data["pipeline"]["stages"]]
+    assert "素材理解 / 标记" in labels
+    assert "导演中枢" in labels
+    assert data["pipeline"]["stage_count"] == 7
+    assert data["pipeline"]["ready_count"] >= 3
+
+
+def test_pipeline_run_step_delegates_render_plan(monkeypatch) -> None:
+    task_id = "task-1"
+    received = {}
+
+    monkeypatch.setattr(web_app, "load_task", lambda tid: {"task_id": tid, "slides": [{}]})
+
+    def fake_write_render_plan(tid, **kwargs):
+        received["tid"] = tid
+        received["kwargs"] = kwargs
+        return {
+            "source": "director_manifest",
+            "render_plan_path": "/tmp/render_plan.json",
+            "input_props_path": "/tmp/input-props.json",
+            "output_video_path": "/tmp/video.mp4",
+            "render_command": "npx remotion render ...",
+        }
+
+    monkeypatch.setattr(web_app, "write_render_plan_from_task", fake_write_render_plan)
+
+    client = TestClient(web_app.create_app())
+    res = client.post(
+        f"/api/tasks/{task_id}/pipeline/run-step",
+        json={"step": "render_plan", "fps": 24, "max_slides": 4},
+    )
+
+    assert res.status_code == 200
+    data = res.json()
+    assert data["stage"] == "render_plan"
+    assert data["source"] == "director_manifest"
+    assert received["tid"] == task_id
+    assert received["kwargs"]["fps"] == 24
+    assert received["kwargs"]["max_scenes"] == 4
+
+
+def test_pipeline_audio_step_reports_missing_artifacts(monkeypatch, tmp_path: Path) -> None:
+    task_id = "task-1"
+    monkeypatch.setattr(web_app, "tasks_dir", lambda: tmp_path)
+    monkeypatch.setattr(web_app, "load_task", lambda tid: {
+        "filename": "demo.pptx",
+        "slide_count": 1,
+        "slides": [{}],
+        "images_available": True,
+        "preview_count": 1,
+    })
+    monkeypatch.setattr(web_app, "load_meta", lambda _kind, _key: {})
+    monkeypatch.setattr(
+        web_app,
+        "render_task_status",
+        lambda tid: {"task_dir": str(tmp_path / "render_tasks" / tid)},
+    )
+
+    client = TestClient(web_app.create_app())
+    res = client.post(
+        f"/api/tasks/{task_id}/pipeline/run-step",
+        json={"step": "audio"},
+    )
+
+    assert res.status_code == 400
+    detail = res.json()["detail"]
+    assert detail["stage"] == "audio"
+    assert "audio_workspace/generated_files" in detail["missing_artifacts"]
+
+
+def test_output_video_endpoint_serves_rendered_mp4(monkeypatch, tmp_path: Path) -> None:
+    task_id = "task-1"
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"fake-mp4")
+
+    monkeypatch.setattr(web_app, "load_task", lambda tid: {"task_id": tid})
+    monkeypatch.setattr(
+        web_app,
+        "render_task_status",
+        lambda tid: {"output_video_path": str(video), "output_video_exists": True},
+    )
+
+    client = TestClient(web_app.create_app())
+    res = client.get(f"/api/tasks/{task_id}/output-video")
+
+    assert res.status_code == 200
+    assert res.content == b"fake-mp4"
+    assert res.headers["content-type"].startswith("video/mp4")

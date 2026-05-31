@@ -41,12 +41,17 @@
   const resultStats = document.getElementById("result-stats");
   const downloadLink = document.getElementById("download-link");
   const imagesBanner = document.getElementById("images-banner");
+  const previewAreaEl = document.querySelector(".preview-area");
+  const previewBodyEl = document.querySelector(".preview-body");
   const taskList = document.getElementById("task-list");
   const btnWorkspaceTaskDrawer = document.getElementById("btn-workspace-task-drawer");
   const workspaceTaskDrawerBackdrop = document.getElementById("workspace-task-drawer-backdrop");
   const workspaceTaskDrawerPanel = document.getElementById("workspace-task-drawer-panel");
   const workspaceTaskDrawerList = document.getElementById("workspace-task-drawer-list");
   const btnWorkspaceTaskDrawerClose = document.getElementById("btn-workspace-task-drawer-close");
+  const btnWorkspaceSidebarCollapse = document.getElementById("btn-workspace-sidebar-collapse");
+  const btnWorkspaceSidebarPeek = document.getElementById("btn-workspace-sidebar-peek");
+  const workspaceSidebarResizer = document.getElementById("workspace-sidebar-resizer");
   const btnRefreshTasks = document.getElementById("btn-refresh-tasks");
   const btnHelpTaskList = document.getElementById("btn-help-task-list");
   const btnHelpAudioSegments = document.getElementById("btn-help-audio-segments");
@@ -130,18 +135,25 @@
   const directorSummary = document.getElementById("director-summary");
   const directorScenes = document.getElementById("director-scenes");
   const btnDirectorRawManifest = document.getElementById("btn-director-raw-manifest");
+  const btnDirectorCourseMaterial = document.getElementById("btn-director-course-material");
   const btnDirectorRebuild = document.getElementById("btn-director-rebuild");
   const btnDirectorRefresh = document.getElementById("btn-director-refresh");
   const btnDirectorExport = document.getElementById("btn-director-export");
+  const directorMaterials = document.getElementById("director-materials");
   const remotionSummary = document.getElementById("remotion-summary");
   const remotionCommand = document.getElementById("remotion-command");
   const btnRemotionGenerate = document.getElementById("btn-remotion-generate");
   const btnRemotionRefresh = document.getElementById("btn-remotion-refresh");
   const taskWorkflowTitle = document.getElementById("task-workflow-title");
+  const taskWorkflow = document.getElementById("task-workflow");
   const taskWorkflowSteps = document.getElementById("task-workflow-steps");
   const taskWorkflowPipeline = document.getElementById("task-workflow-pipeline");
   const taskWorkflowArtifacts = document.getElementById("task-workflow-artifacts");
+  const taskWorkflowActions = document.getElementById("task-workflow-actions");
+  const taskWorkflowMeter = document.getElementById("task-workflow-meter");
   const btnWorkflowRefresh = document.getElementById("btn-workflow-refresh");
+  const platformNav = document.getElementById("platform-nav");
+  const outputSummary = document.getElementById("output-summary");
 
   var AUDIO_GEN_LS_KEY = "ppt_course_audio_gen_overrides";
 
@@ -191,6 +203,8 @@
   let currentTaskId = null;
   /** @type {any | null} */
   let directorManifestCache = null;
+  /** @type {any | null} */
+  let pipelineStateCache = null;
   /** 上传解析会话为 session；从已存任务打开为 stored */
   let previewMode = "session";
 
@@ -407,6 +421,12 @@
     ) {
       positionTaskPopover(taskIdPopoverAnchor, taskIdPopover);
     }
+    if (appMain && appMain.classList.contains("app-main--workspace")) {
+      var current = parseFloat(
+        getComputedStyle(appMain).getPropertyValue("--workspace-sidebar-width")
+      );
+      if (Number.isFinite(current)) setWorkspaceSidebarWidth(current, false);
+    }
   });
 
   function openHelp(title, bodyText) {
@@ -515,6 +535,87 @@
       applyTheme(cur === "light" ? "dark" : "light");
     });
   }
+
+  function initCreativeBackground() {
+    var canvas = document.getElementById("creative-bg");
+    if (!(canvas instanceof HTMLCanvasElement)) return;
+    var ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    var reduced = false;
+    try {
+      reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    } catch (_) {}
+    var width = 0;
+    var height = 0;
+    var dpr = 1;
+    var points = [];
+
+    function resize() {
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      width = window.innerWidth || 1;
+      height = window.innerHeight || 1;
+      canvas.width = Math.floor(width * dpr);
+      canvas.height = Math.floor(height * dpr);
+      canvas.style.width = width + "px";
+      canvas.style.height = height + "px";
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      var count = Math.max(18, Math.min(44, Math.round(width / 46)));
+      points = Array.from({ length: count }, function (_, i) {
+        return {
+          x: (i / Math.max(1, count - 1)) * width,
+          y: height * (0.22 + ((i * 37) % 53) / 110),
+          phase: i * 0.62,
+          amp: 24 + ((i * 17) % 36),
+        };
+      });
+    }
+
+    function draw(ts) {
+      var t = ts / 1000;
+      var theme = document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+      ctx.clearRect(0, 0, width, height);
+      ctx.globalCompositeOperation = "source-over";
+
+      var accent = theme === "light" ? "37, 99, 235" : "96, 165, 250";
+      var mint = theme === "light" ? "20, 184, 166" : "45, 212, 191";
+      var alpha = theme === "light" ? 0.16 : 0.24;
+
+      for (var layer = 0; layer < 3; layer += 1) {
+        ctx.beginPath();
+        points.forEach(function (p, idx) {
+          var x = p.x;
+          var y =
+            p.y +
+            Math.sin(t * (0.22 + layer * 0.06) + p.phase + layer) * p.amp +
+            layer * 86;
+          if (idx === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.lineWidth = 1 + layer * 0.35;
+        ctx.strokeStyle =
+          "rgba(" + (layer === 1 ? mint : accent) + "," + (alpha - layer * 0.045) + ")";
+        ctx.stroke();
+      }
+
+      points.forEach(function (p, idx) {
+        var pulse = (Math.sin(t * 0.55 + p.phase) + 1) / 2;
+        var x = p.x + Math.sin(t * 0.12 + idx) * 14;
+        var y = p.y + Math.cos(t * 0.18 + idx) * p.amp + 40;
+        ctx.beginPath();
+        ctx.arc(x, y, 1.4 + pulse * 1.8, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(" + (idx % 3 === 0 ? mint : accent) + "," + (0.16 + pulse * 0.18) + ")";
+        ctx.fill();
+      });
+
+      if (!reduced) window.requestAnimationFrame(draw);
+    }
+
+    resize();
+    window.addEventListener("resize", resize);
+    window.requestAnimationFrame(draw);
+  }
+
+  initCreativeBackground();
 
   function showErr(el, msg) {
     el.textContent = msg;
@@ -661,6 +762,99 @@
   function setWorkspaceTaskDrawerTabVisible(show) {
     if (!btnWorkspaceTaskDrawer) return;
     btnWorkspaceTaskDrawer.classList.toggle("hidden", !show);
+  }
+
+  function readWorkspaceSidebarCollapsed() {
+    try {
+      return localStorage.getItem("ppt-workspace-sidebar-collapsed") === "1";
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function writeWorkspaceSidebarCollapsed(collapsed) {
+    try {
+      localStorage.setItem("ppt-workspace-sidebar-collapsed", collapsed ? "1" : "0");
+    } catch (_) {}
+  }
+
+  function workspaceSidebarWidthBounds() {
+    var viewport = window.innerWidth || 1200;
+    var min = viewport < 900 ? 180 : 220;
+    var max = Math.max(min, Math.min(620, Math.round(viewport * 0.46)));
+    return { min: min, max: max };
+  }
+
+  function clampWorkspaceSidebarWidth(width) {
+    var b = workspaceSidebarWidthBounds();
+    return Math.max(b.min, Math.min(b.max, Math.round(width)));
+  }
+
+  function setWorkspaceSidebarWidth(width, persist) {
+    if (!appMain) return;
+    var next = clampWorkspaceSidebarWidth(width);
+    appMain.style.setProperty("--workspace-sidebar-width", next + "px");
+    if (workspaceSidebarResizer) {
+      workspaceSidebarResizer.setAttribute("aria-valuenow", String(next));
+      workspaceSidebarResizer.setAttribute("aria-valuemin", String(workspaceSidebarWidthBounds().min));
+      workspaceSidebarResizer.setAttribute("aria-valuemax", String(workspaceSidebarWidthBounds().max));
+    }
+    if (persist) {
+      try {
+        localStorage.setItem("ppt-workspace-sidebar-width", String(next));
+      } catch (_) {}
+    }
+  }
+
+  function restoreWorkspaceSidebarWidth() {
+    var saved = null;
+    try {
+      saved = Number(localStorage.getItem("ppt-workspace-sidebar-width"));
+    } catch (_) {}
+    setWorkspaceSidebarWidth(Number.isFinite(saved) && saved > 0 ? saved : Math.round((window.innerWidth || 1200) * 0.34), false);
+  }
+
+  function setWorkspaceSidebarCollapsed(collapsed, persist) {
+    if (!appMain) return;
+    appMain.classList.toggle("is-sidebar-collapsed", collapsed);
+    if (btnWorkspaceSidebarCollapse) {
+      btnWorkspaceSidebarCollapse.setAttribute("aria-expanded", String(!collapsed));
+      btnWorkspaceSidebarCollapse.setAttribute(
+        "aria-label",
+        collapsed ? "展开幻灯片列表" : "收起幻灯片列表"
+      );
+      btnWorkspaceSidebarCollapse.setAttribute(
+        "title",
+        collapsed ? "展开幻灯片列表" : "收起幻灯片列表"
+      );
+    }
+    if (btnWorkspaceSidebarPeek) {
+      var showPeek = appMain.classList.contains("app-main--workspace") && collapsed;
+      btnWorkspaceSidebarPeek.classList.toggle("hidden", !showPeek);
+      btnWorkspaceSidebarPeek.setAttribute("aria-expanded", String(!collapsed));
+    }
+    if (workspaceSidebarResizer) {
+      var showResizer = appMain.classList.contains("app-main--workspace") && !collapsed;
+      workspaceSidebarResizer.classList.toggle("hidden", !showResizer);
+    }
+    if (persist) writeWorkspaceSidebarCollapsed(collapsed);
+  }
+
+  function showWorkspaceSidebarControls(show) {
+    if (!appMain) return;
+    if (show) {
+      restoreWorkspaceSidebarWidth();
+      setWorkspaceSidebarCollapsed(readWorkspaceSidebarCollapsed(), false);
+    } else {
+      appMain.classList.remove("is-sidebar-collapsed");
+      if (btnWorkspaceSidebarPeek) btnWorkspaceSidebarPeek.classList.add("hidden");
+      if (workspaceSidebarResizer) workspaceSidebarResizer.classList.add("hidden");
+    }
+  }
+
+  function toggleWorkspaceSidebarCollapsed() {
+    if (!appMain) return;
+    setWorkspaceSidebarCollapsed(!appMain.classList.contains("is-sidebar-collapsed"), true);
   }
 
   function closeWorkspaceTaskDrawer() {
@@ -1085,6 +1279,7 @@
       if (appMain) appMain.classList.add("app-main--workspace");
       if (slideRail) slideRail.classList.remove("hidden");
       setWorkspaceTaskDrawerTabVisible(true);
+      showWorkspaceSidebarControls(true);
       await refreshGenVisualCoverage();
       renderSlideList();
       renderPreview();
@@ -1099,9 +1294,11 @@
       statusLine.textContent = msg;
       setImportTranscriptButtonVisible();
       refreshGenerateSlideVisualEnabled();
+      void refreshCourseMaterial(true);
       void refreshDirectorManifest(true);
       void refreshRemotionStatus(true);
       void refreshWorkspaceStatus(true);
+      syncWorkbenchRouteFromHash();
     } catch (_) {}
   }
 
@@ -1121,6 +1318,136 @@
     return d.innerHTML;
   }
 
+  function renderCourseMaterial(material) {
+    if (!directorMaterials) return;
+    if (!currentTaskId) {
+      directorMaterials.innerHTML = "";
+      return;
+    }
+    var slidesList = (material && material.slides) || [];
+    var assets = (material && material.assets) || [];
+    var audio = (material && material.audio) || {};
+    if (!slidesList.length) {
+      directorMaterials.innerHTML =
+        '<p class="director-panel__empty">尚未生成素材标记。请先点击「生成素材标记」。</p>';
+      return;
+    }
+    var roleCounts = {};
+    slidesList.forEach(function (slide) {
+      var tags = slide.material_tags || [];
+      tags.forEach(function (tag) {
+        roleCounts[tag] = (roleCounts[tag] || 0) + 1;
+      });
+    });
+    var topTags = Object.keys(roleCounts)
+      .sort(function (a, b) {
+        return roleCounts[b] - roleCounts[a];
+      })
+      .slice(0, 8)
+      .map(function (tag) {
+        return tag + " " + roleCounts[tag];
+      })
+      .join(" / ");
+    var visibleSlides = slidesList.slice(0, 8);
+    var cards = visibleSlides
+      .map(function (slide) {
+        var tags = (slide.material_tags || []).slice(0, 6).join("、") || "content";
+        var assetTags = (slide.assets || [])
+          .slice(0, 4)
+          .map(function (asset) {
+            var semantic = (asset.semantic_tags || []).slice(0, 3).join("/");
+            return (asset.asset_type || "asset") + (semantic ? " · " + semantic : "");
+          })
+          .join("\n");
+        var audioSegments = slide.audio_segments || [];
+        var audioReady = audioSegments.filter(function (seg) {
+          return !!seg.audio_relative;
+        }).length;
+        return (
+          '<article class="material-card">' +
+          '<div class="material-card__head">' +
+          '<span class="material-card__index">P' +
+          escapeHtmlText(String((slide.slide_index || 0) + 1)) +
+          "</span>" +
+          '<span class="material-card__layout">' +
+          escapeHtmlText(slide.recommended_layout || "full_slide") +
+          "</span>" +
+          "</div>" +
+          "<h3>" +
+          escapeHtmlText(slide.title || "未命名页面") +
+          "</h3>" +
+          '<p class="material-card__role">' +
+          escapeHtmlText(slide.material_role || "knowledge_material") +
+          "</p>" +
+          '<p class="material-card__purpose">' +
+          escapeHtmlText(slide.teaching_purpose || "") +
+          "</p>" +
+          '<p class="material-card__tags">' +
+          escapeHtmlText(tags) +
+          "</p>" +
+          '<p class="material-card__meta">音频 ' +
+          audioReady +
+          "/" +
+          audioSegments.length +
+          " · 素材 " +
+          ((slide.assets || []).length || 0) +
+          "</p>" +
+          (assetTags
+            ? '<pre class="material-card__assets">' + escapeHtmlText(assetTags) + "</pre>"
+            : "") +
+          "</article>"
+        );
+      })
+      .join("");
+    directorMaterials.innerHTML =
+      '<div class="material-board">' +
+      '<div class="material-board__summary">' +
+      "<p><strong>素材层</strong>：" +
+      slidesList.length +
+      " 页，" +
+      assets.length +
+      " 个资产，已生成音频段 " +
+      (audio.generated_segment_count || 0) +
+      "。</p>" +
+      "<p><strong>高频标签</strong>：" +
+      escapeHtmlText(topTags || "—") +
+      "</p>" +
+      "</div>" +
+      '<div class="material-board__cards">' +
+      cards +
+      "</div>" +
+      (slidesList.length > visibleSlides.length
+        ? '<p class="material-board__more">仅预览前 ' +
+          visibleSlides.length +
+          " 页；完整素材层已保存到本地 course_material.json。</p>"
+        : "") +
+      "</div>";
+  }
+
+  async function refreshCourseMaterial(silent) {
+    if (!currentTaskId) {
+      renderCourseMaterial(null);
+      return;
+    }
+    try {
+      var res = await fetch(
+        "/api/tasks/" + encodeURIComponent(currentTaskId) + "/course-material"
+      );
+      if (res.status === 404) {
+        renderCourseMaterial(null);
+        return;
+      }
+      var material = await res.json();
+      if (!res.ok) throw new Error(material.detail || "请求失败");
+      renderCourseMaterial(material);
+    } catch (e) {
+      if (!silent && statusLine) {
+        statusLine.textContent =
+          "刷新素材标记失败：" + (e instanceof Error ? e.message : String(e));
+      }
+    }
+  }
+
   function renderDirectorManifest(dm) {
     directorManifestCache = dm;
     if (directorSummary) {
@@ -1131,6 +1458,42 @@
       var llmError = generation.llm_error || "";
       var outline = (dm && dm.course_outline) || [];
       var checks = (dm && dm.quality_checks) || {};
+      var warningItems = (checks.warnings || [])
+        .slice(0, 5)
+        .map(function (item) {
+          return (
+            '<li><span>' +
+            escapeHtmlText(item.code || "warning") +
+            "</span>" +
+            escapeHtmlText(item.message || item.detail || JSON.stringify(item)) +
+            "</li>"
+          );
+        })
+        .join("");
+      var outlineCards = outline
+        .slice(0, 6)
+        .map(function (item, idx) {
+          var title =
+            typeof item === "string"
+              ? item
+              : item.title || item.chapter_title || item.name || JSON.stringify(item);
+          var detail =
+            typeof item === "string"
+              ? ""
+              : item.goal || item.summary || item.description || item.learning_goal || "";
+          return (
+            '<article class="director-outline-card">' +
+            '<span class="director-outline-card__index">' +
+            escapeHtmlText(String(idx + 1).padStart(2, "0")) +
+            "</span>" +
+            "<h3>" +
+            escapeHtmlText(title || "未命名章节") +
+            "</h3>" +
+            (detail ? "<p>" + escapeHtmlText(detail) + "</p>" : "") +
+            "</article>"
+          );
+        })
+        .join("");
       directorSummary.innerHTML =
         '<div class="director-panel__summary-inner">' +
         "<p><strong>课程标题</strong>：" +
@@ -1160,6 +1523,14 @@
         "</p>" +
         (llmError
           ? "<p><strong>LLM 回退原因</strong>：" + escapeHtmlText(llmError) + "</p>"
+          : "") +
+        (outlineCards
+          ? '<div class="director-outline" aria-label="课程大纲">' + outlineCards + "</div>"
+          : "") +
+        (warningItems
+          ? '<ul class="director-quality-list" aria-label="质量检查提醒">' +
+            warningItems +
+            "</ul>"
           : "") +
         "</div>";
     }
@@ -1305,6 +1676,40 @@
       }
     } finally {
       if (btnDirectorRawManifest) btnDirectorRawManifest.disabled = false;
+    }
+  }
+
+  async function postCourseMaterial() {
+    if (!currentTaskId) return;
+    try {
+      if (btnDirectorCourseMaterial) btnDirectorCourseMaterial.disabled = true;
+      var res = await fetch(
+        "/api/tasks/" + encodeURIComponent(currentTaskId) + "/course-material",
+        { method: "POST" }
+      );
+      var j = await res.json().catch(function () {
+        return {};
+      });
+      if (!res.ok) throw new Error(j.detail || "请求失败");
+      await refreshCourseMaterial(true);
+      void refreshWorkspaceStatus(true);
+      if (statusLine) {
+        statusLine.textContent =
+          "已生成 course_material.json：素材页 " +
+          (j.slide_count || 0) +
+          "，资产 " +
+          (j.asset_count || 0) +
+          "，音频段 " +
+          (j.generated_segment_count || 0) +
+          "。";
+      }
+    } catch (e) {
+      if (statusLine) {
+        statusLine.textContent =
+          "生成素材标记失败：" + (e instanceof Error ? e.message : String(e));
+      }
+    } finally {
+      if (btnDirectorCourseMaterial) btnDirectorCourseMaterial.disabled = false;
     }
   }
 
@@ -1546,6 +1951,165 @@
     );
   }
 
+  var WORKBENCH_ROUTES = {
+    deal: "preview-surface",
+    materials: "director-materials",
+    director: "director-panel",
+    audio: "audio-workbench",
+    render: "remotion-panel",
+    output: "output-panel",
+  };
+
+  var PIPELINE_RUN_STEPS = {
+    raw_material: "生成原始素材 Manifest",
+    course_material: "生成素材标记",
+    director: "生成导演脚本",
+    audio: "检查音频状态",
+    render_plan: "生成 RenderPlan / input-props",
+  };
+
+  function routeForTargetId(targetId) {
+    var keys = Object.keys(WORKBENCH_ROUTES);
+    for (var i = 0; i < keys.length; i += 1) {
+      if (WORKBENCH_ROUTES[keys[i]] === targetId) return keys[i];
+    }
+    if (targetId === "director-materials") return "materials";
+    if (targetId === "remotion-panel") return "render";
+    return "deal";
+  }
+
+  function setWorkbenchRoute(route, options) {
+    var name = WORKBENCH_ROUTES[route] ? route : "deal";
+    if (previewAreaEl) previewAreaEl.setAttribute("data-workbench-route", name);
+    if (taskWorkflow) taskWorkflow.setAttribute("data-workbench-route", name);
+    document.body.setAttribute("data-workbench-route", name);
+    if (platformNav) {
+      platformNav.querySelectorAll("[data-workbench-route]").forEach(function (item) {
+        item.classList.toggle("is-active", item.getAttribute("data-workbench-route") === name);
+      });
+    }
+    if (!options || options.updateHash !== false) {
+      if (currentTaskId) {
+        var nextHash = "#/tasks/" + encodeURIComponent(currentTaskId) + "/" + name;
+        if (window.location.hash !== nextHash) window.location.hash = nextHash;
+      }
+    }
+    if (!options || options.scroll !== false) {
+      if (previewBodyEl) previewBodyEl.scrollTop = 0;
+      var target = document.getElementById("task-workflow");
+      if (target) target.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }
+
+  function syncWorkbenchRouteFromHash() {
+    var m = window.location.hash.match(/^#\/tasks\/([^/]+)\/([^/]+)/);
+    if (!m) return;
+    var routeTaskId = decodeURIComponent(m[1]);
+    var route = decodeURIComponent(m[2]);
+    if (routeTaskId && (!currentTaskId || routeTaskId !== currentTaskId)) {
+      void openStoredTask(routeTaskId);
+      return;
+    }
+    setWorkbenchRoute(route, { updateHash: false, scroll: true });
+  }
+
+  function renderPipelineMeter(data) {
+    if (!taskWorkflowMeter) return;
+    var pipeline = data && data.pipeline;
+    if (!pipeline) {
+      taskWorkflowMeter.innerHTML = "";
+      return;
+    }
+    var percent = typeof pipeline.percent === "number" ? pipeline.percent : 0;
+    taskWorkflowMeter.innerHTML =
+      '<div class="task-meter__copy">' +
+      '<span class="task-meter__label">当前链路完成度</span>' +
+      '<strong>' +
+      escapeHtmlText(String(percent)) +
+      "%</strong>" +
+      '<span class="task-meter__detail">' +
+      escapeHtmlText((pipeline.ready_count || 0) + "/" + (pipeline.stage_count || 0) + " 个阶段就绪") +
+      "</span>" +
+      "</div>" +
+      '<div class="task-meter__bar" aria-hidden="true"><span style="width:' +
+      Math.max(0, Math.min(100, percent)) +
+      '%"></span></div>';
+  }
+
+  function pipelineActionButton(step, label) {
+    return (
+      '<button type="button" class="btn btn-secondary task-workflow-action" data-pipeline-step="' +
+      escapeHtmlText(step) +
+      '">' +
+      escapeHtmlText(label) +
+      "</button>"
+    );
+  }
+
+  function renderPipelineActions(data) {
+    if (!taskWorkflowActions) return;
+    if (!currentTaskId || !data) {
+      taskWorkflowActions.innerHTML = "";
+      return;
+    }
+    var stages = (data.pipeline && data.pipeline.stages) || [];
+    var byKey = {};
+    stages.forEach(function (stage) {
+      byKey[stage.key] = stage;
+    });
+    taskWorkflowActions.innerHTML =
+      pipelineActionButton("raw_material", byKey.raw_material && byKey.raw_material.ready ? "重新生成原始素材 Manifest" : "生成原始素材 Manifest") +
+      pipelineActionButton("course_material", byKey.course_material && byKey.course_material.ready ? "刷新素材标记" : "生成素材标记") +
+      pipelineActionButton("director", byKey.director && byKey.director.ready ? "重新生成导演脚本" : "生成导演脚本") +
+      pipelineActionButton("audio", "检查音频状态") +
+      pipelineActionButton("render_plan", byKey.render_plan && byKey.render_plan.ready ? "重新生成成片计划" : "生成成片计划");
+  }
+
+  function renderOutputSummary(data) {
+    if (!outputSummary) return;
+    var remotion = data && data.remotion;
+    if (!currentTaskId || !remotion) {
+      outputSummary.innerHTML =
+        '<p class="output-panel__empty">打开已存任务后，这里会显示最终 MP4 和 Demo 产物。</p>';
+      return;
+    }
+    var hasVideo = Boolean(remotion.output_video_exists);
+    var videoUrl =
+      hasVideo && currentTaskId
+        ? "/api/tasks/" + encodeURIComponent(currentTaskId) + "/output-video"
+        : "";
+    outputSummary.innerHTML =
+      '<div class="output-panel__summary-inner output-panel__summary-inner--' +
+      (hasVideo ? "ready" : "todo") +
+      '">' +
+      (videoUrl
+        ? '<video class="output-panel__video" controls preload="metadata" src="' +
+          escapeHtmlText(videoUrl) +
+          '"></video>'
+        : "") +
+      "<p><strong>MP4 状态</strong>：" +
+      (hasVideo ? "已生成" : "未检测到本地视频") +
+      "</p>" +
+      "<p><strong>视频路径</strong>：" +
+      escapeHtmlText(remotion.output_video_path || "—") +
+      "</p>" +
+      "<p><strong>成片计划</strong>：" +
+      escapeHtmlText(remotion.render_plan_exists ? remotion.render_plan_path || "已生成" : "待生成") +
+      "</p>" +
+      "<p><strong>渲染命令</strong>：</p>" +
+      '<pre class="output-panel__command">' +
+      escapeHtmlText(remotion.render_command || "先生成 RenderPlan / input-props") +
+      "</pre>" +
+      "</div>";
+  }
+
+  function renderPipelineState(data) {
+    pipelineStateCache = data || null;
+    renderPipelineMeter(data);
+    renderPipelineActions(data);
+    renderOutputSummary(data);
+  }
+
   function renderWorkflowDetails(data, states) {
     if (taskWorkflowPipeline) {
       if (!currentTaskId || !data) {
@@ -1617,6 +2181,7 @@
   }
 
   function renderWorkspaceStatus(data) {
+    renderPipelineState(data);
     if (taskWorkflowTitle) {
       taskWorkflowTitle.textContent =
         data && data.filename ? data.filename : currentTaskId ? "已存任务" : "任务流";
@@ -1694,7 +2259,7 @@
     }
     try {
       var res = await fetch(
-        "/api/tasks/" + encodeURIComponent(currentTaskId) + "/workspace-status"
+        "/api/tasks/" + encodeURIComponent(currentTaskId) + "/pipeline-state"
       );
       var j = await res.json().catch(function () {
         return {};
@@ -1772,6 +2337,62 @@
       }
     } finally {
       if (btnRemotionGenerate) btnRemotionGenerate.disabled = false;
+    }
+  }
+
+  async function runPipelineStep(step) {
+    if (!currentTaskId || !step) return;
+    var buttons = document.querySelectorAll('[data-pipeline-step="' + step + '"]');
+    buttons.forEach(function (btn) {
+      btn.disabled = true;
+    });
+    try {
+      var res = await fetch(
+        "/api/tasks/" + encodeURIComponent(currentTaskId) + "/pipeline/run-step",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            step: step,
+            fps: 30,
+            no_audio_frames: 90,
+            use_llm: true,
+          }),
+        }
+      );
+      var j = await res.json().catch(function () {
+        return {};
+      });
+      if (!res.ok) {
+        var detail = j.detail || {};
+        var msg =
+          typeof detail === "string"
+            ? detail
+            : detail.message || detail.next_action || "流水线步骤执行失败";
+        throw new Error(msg);
+      }
+      if (statusLine) {
+        statusLine.textContent =
+          (PIPELINE_RUN_STEPS[step] || "流水线步骤") +
+          "完成：" +
+          (j.message || "已更新任务产物");
+      }
+      if (step === "course_material") await refreshCourseMaterial(true);
+      if (step === "director") await refreshDirectorManifest(true);
+      if (step === "render_plan") await refreshRemotionStatus(true);
+      await refreshWorkspaceStatus(true);
+    } catch (e) {
+      if (statusLine) {
+        statusLine.textContent =
+          (PIPELINE_RUN_STEPS[step] || "流水线步骤") +
+          "未完成：" +
+          (e instanceof Error ? e.message : String(e));
+      }
+      await refreshWorkspaceStatus(true);
+    } finally {
+      buttons.forEach(function (btn) {
+        btn.disabled = false;
+      });
     }
   }
 
@@ -3786,6 +4407,7 @@
       if (appMain) appMain.classList.add("app-main--workspace");
       if (slideRail) slideRail.classList.remove("hidden");
       setWorkspaceTaskDrawerTabVisible(true);
+      showWorkspaceSidebarControls(true);
       renderSlideList();
       renderPreview();
       await loadAudioWorkspaceMeta();
@@ -3822,6 +4444,7 @@
     previewMode = "session";
     workspace.classList.add("hidden");
     if (appMain) appMain.classList.remove("app-main--workspace");
+    showWorkspaceSidebarControls(false);
     if (slideRail) slideRail.classList.add("hidden");
     uploadPanel.classList.remove("hidden");
     clearErr(errorUpload);
@@ -3919,6 +4542,141 @@
   if (workspaceTaskDrawerBackdrop) {
     workspaceTaskDrawerBackdrop.addEventListener("click", function () {
       closeWorkspaceTaskDrawer();
+    });
+  }
+  if (btnWorkspaceSidebarCollapse) {
+    btnWorkspaceSidebarCollapse.addEventListener("click", function () {
+      toggleWorkspaceSidebarCollapsed();
+    });
+  }
+  if (btnWorkspaceSidebarPeek) {
+    btnWorkspaceSidebarPeek.addEventListener("click", function () {
+      setWorkspaceSidebarCollapsed(false, true);
+    });
+  }
+  if (workspaceSidebarResizer) {
+    var sidebarDragStartX = 0;
+    var sidebarDragStartWidth = 0;
+    var sidebarDragging = false;
+    var handleDocumentPointerMove = null;
+    var handleDocumentPointerEnd = null;
+
+    function startSidebarResize(clientX, pointerId) {
+      if (!appMain || appMain.classList.contains("is-sidebar-collapsed")) return;
+      sidebarDragging = true;
+      sidebarDragStartX = clientX;
+      sidebarDragStartWidth =
+        parseFloat(getComputedStyle(appMain).getPropertyValue("--workspace-sidebar-width")) ||
+        workspaceSidebarResizer.parentElement.getBoundingClientRect().width;
+      workspaceSidebarResizer.classList.add("is-dragging");
+      if (typeof pointerId === "number" && workspaceSidebarResizer.setPointerCapture) {
+        try {
+          workspaceSidebarResizer.setPointerCapture(pointerId);
+        } catch (_) {}
+      }
+      document.body.classList.add("is-resizing-sidebar");
+    }
+
+    function moveSidebarResize(clientX) {
+      if (!sidebarDragging) return;
+      setWorkspaceSidebarWidth(sidebarDragStartWidth + clientX - sidebarDragStartX, true);
+    }
+
+    function endSidebarResize(pointerId) {
+      if (!sidebarDragging) return;
+      sidebarDragging = false;
+      workspaceSidebarResizer.classList.remove("is-dragging");
+      document.body.classList.remove("is-resizing-sidebar");
+      if (typeof pointerId === "number" && workspaceSidebarResizer.releasePointerCapture) {
+        try {
+          workspaceSidebarResizer.releasePointerCapture(pointerId);
+        } catch (_) {}
+      }
+      if (handleDocumentPointerMove) {
+        document.removeEventListener("pointermove", handleDocumentPointerMove);
+      }
+      if (handleDocumentPointerEnd) {
+        document.removeEventListener("pointerup", handleDocumentPointerEnd);
+        document.removeEventListener("pointercancel", handleDocumentPointerEnd);
+      }
+      handleDocumentPointerMove = null;
+      handleDocumentPointerEnd = null;
+    }
+
+    workspaceSidebarResizer.addEventListener("pointerdown", function (e) {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      startSidebarResize(e.clientX, e.pointerId);
+      handleDocumentPointerMove = function (moveEvent) {
+        moveSidebarResize(moveEvent.clientX);
+      };
+      handleDocumentPointerEnd = function (endEvent) {
+        endSidebarResize(endEvent.pointerId);
+      };
+      document.addEventListener("pointermove", handleDocumentPointerMove);
+      document.addEventListener("pointerup", handleDocumentPointerEnd);
+      document.addEventListener("pointercancel", handleDocumentPointerEnd);
+    });
+    workspaceSidebarResizer.addEventListener("pointermove", function (e) {
+      moveSidebarResize(e.clientX);
+    });
+    workspaceSidebarResizer.addEventListener("pointerup", function (e) {
+      endSidebarResize(e.pointerId);
+    });
+    workspaceSidebarResizer.addEventListener("pointercancel", function (e) {
+      endSidebarResize(e.pointerId);
+    });
+    workspaceSidebarResizer.addEventListener("mousedown", function (e) {
+      if (e.button !== 0 || sidebarDragging) return;
+      e.preventDefault();
+      startSidebarResize(e.clientX);
+      var handleMouseMove = function (moveEvent) {
+        moveSidebarResize(moveEvent.clientX);
+      };
+      var handleMouseUp = function (upEvent) {
+        endSidebarResize();
+        document.removeEventListener("mousemove", handleMouseMove);
+        document.removeEventListener("mouseup", handleMouseUp);
+        if (upEvent) upEvent.preventDefault();
+      };
+      document.addEventListener("mousemove", handleMouseMove);
+      document.addEventListener("mouseup", handleMouseUp);
+    });
+    workspaceSidebarResizer.addEventListener(
+      "touchstart",
+      function (e) {
+        if (!e.touches || !e.touches.length || sidebarDragging) return;
+        e.preventDefault();
+        startSidebarResize(e.touches[0].clientX);
+        var handleTouchMove = function (moveEvent) {
+          if (moveEvent.touches && moveEvent.touches.length) {
+            moveSidebarResize(moveEvent.touches[0].clientX);
+          }
+        };
+        var handleTouchEnd = function () {
+          endSidebarResize();
+          document.removeEventListener("touchmove", handleTouchMove);
+          document.removeEventListener("touchend", handleTouchEnd);
+          document.removeEventListener("touchcancel", handleTouchEnd);
+        };
+        document.addEventListener("touchmove", handleTouchMove, { passive: false });
+        document.addEventListener("touchend", handleTouchEnd);
+        document.addEventListener("touchcancel", handleTouchEnd);
+      },
+      { passive: false }
+    );
+    workspaceSidebarResizer.addEventListener("keydown", function (e) {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight" && e.key !== "Home" && e.key !== "End") return;
+      if (!appMain || appMain.classList.contains("is-sidebar-collapsed")) return;
+      e.preventDefault();
+      var b = workspaceSidebarWidthBounds();
+      var current =
+        parseFloat(getComputedStyle(appMain).getPropertyValue("--workspace-sidebar-width")) ||
+        b.min;
+      if (e.key === "Home") current = b.min;
+      else if (e.key === "End") current = b.max;
+      else current += e.key === "ArrowRight" ? 24 : -24;
+      setWorkspaceSidebarWidth(current, true);
     });
   }
   document.addEventListener("keydown", function (e) {
@@ -4518,6 +5276,11 @@
       void postDirectorRawManifest();
     });
   }
+  if (btnDirectorCourseMaterial) {
+    btnDirectorCourseMaterial.addEventListener("click", function () {
+      void postCourseMaterial();
+    });
+  }
   if (btnDirectorRebuild) {
     btnDirectorRebuild.addEventListener("click", function () {
       void postDirectorRebuild();
@@ -4525,6 +5288,7 @@
   }
   if (btnDirectorRefresh) {
     btnDirectorRefresh.addEventListener("click", function () {
+      void refreshCourseMaterial(true);
       void refreshDirectorManifest(true);
     });
   }
@@ -4560,10 +5324,32 @@
       var id = btn.getAttribute("data-workflow-target") || "";
       var el = id ? document.getElementById(id) : null;
       if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "start" });
+        setWorkbenchRoute(routeForTargetId(id), { scroll: true, updateHash: true });
       }
     });
   }
+  if (platformNav) {
+    platformNav.addEventListener("click", function (e) {
+      var t = e.target;
+      if (!(t instanceof HTMLElement)) return;
+      var btn = t.closest("[data-workbench-route]");
+      if (!btn || !(btn instanceof HTMLElement)) return;
+      setWorkbenchRoute(btn.getAttribute("data-workbench-route") || "deal", {
+        scroll: true,
+        updateHash: true,
+      });
+    });
+  }
+  if (taskWorkflowActions) {
+    taskWorkflowActions.addEventListener("click", function (e) {
+      var t = e.target;
+      if (!(t instanceof HTMLElement)) return;
+      var btn = t.closest("[data-pipeline-step]");
+      if (!btn || !(btn instanceof HTMLElement)) return;
+      void runPipelineStep(btn.getAttribute("data-pipeline-step") || "");
+    });
+  }
+  window.addEventListener("hashchange", syncWorkbenchRouteFromHash);
 
   function bindOpenSegments(el) {
     if (el) {
@@ -5035,5 +5821,6 @@
   initVoiceIdComboboxes();
 
   refreshTaskList();
+  syncWorkbenchRouteFromHash();
   fillExternalSettingsForm().catch(function () {});
 })();
