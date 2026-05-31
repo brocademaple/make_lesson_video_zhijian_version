@@ -41,6 +41,8 @@
   const resultStats = document.getElementById("result-stats");
   const downloadLink = document.getElementById("download-link");
   const imagesBanner = document.getElementById("images-banner");
+  const previewAreaEl = document.querySelector(".preview-area");
+  const previewBodyEl = document.querySelector(".preview-body");
   const taskList = document.getElementById("task-list");
   const btnWorkspaceTaskDrawer = document.getElementById("btn-workspace-task-drawer");
   const workspaceTaskDrawerBackdrop = document.getElementById("workspace-task-drawer-backdrop");
@@ -140,6 +142,7 @@
   const btnRemotionGenerate = document.getElementById("btn-remotion-generate");
   const btnRemotionRefresh = document.getElementById("btn-remotion-refresh");
   const taskWorkflowTitle = document.getElementById("task-workflow-title");
+  const taskWorkflow = document.getElementById("task-workflow");
   const taskWorkflowSteps = document.getElementById("task-workflow-steps");
   const taskWorkflowPipeline = document.getElementById("task-workflow-pipeline");
   const taskWorkflowArtifacts = document.getElementById("task-workflow-artifacts");
@@ -523,6 +526,87 @@
       applyTheme(cur === "light" ? "dark" : "light");
     });
   }
+
+  function initCreativeBackground() {
+    var canvas = document.getElementById("creative-bg");
+    if (!(canvas instanceof HTMLCanvasElement)) return;
+    var ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    var reduced = false;
+    try {
+      reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    } catch (_) {}
+    var width = 0;
+    var height = 0;
+    var dpr = 1;
+    var points = [];
+
+    function resize() {
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      width = window.innerWidth || 1;
+      height = window.innerHeight || 1;
+      canvas.width = Math.floor(width * dpr);
+      canvas.height = Math.floor(height * dpr);
+      canvas.style.width = width + "px";
+      canvas.style.height = height + "px";
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      var count = Math.max(18, Math.min(44, Math.round(width / 46)));
+      points = Array.from({ length: count }, function (_, i) {
+        return {
+          x: (i / Math.max(1, count - 1)) * width,
+          y: height * (0.22 + ((i * 37) % 53) / 110),
+          phase: i * 0.62,
+          amp: 24 + ((i * 17) % 36),
+        };
+      });
+    }
+
+    function draw(ts) {
+      var t = ts / 1000;
+      var theme = document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+      ctx.clearRect(0, 0, width, height);
+      ctx.globalCompositeOperation = "source-over";
+
+      var accent = theme === "light" ? "37, 99, 235" : "96, 165, 250";
+      var mint = theme === "light" ? "20, 184, 166" : "45, 212, 191";
+      var alpha = theme === "light" ? 0.16 : 0.24;
+
+      for (var layer = 0; layer < 3; layer += 1) {
+        ctx.beginPath();
+        points.forEach(function (p, idx) {
+          var x = p.x;
+          var y =
+            p.y +
+            Math.sin(t * (0.22 + layer * 0.06) + p.phase + layer) * p.amp +
+            layer * 86;
+          if (idx === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.lineWidth = 1 + layer * 0.35;
+        ctx.strokeStyle =
+          "rgba(" + (layer === 1 ? mint : accent) + "," + (alpha - layer * 0.045) + ")";
+        ctx.stroke();
+      }
+
+      points.forEach(function (p, idx) {
+        var pulse = (Math.sin(t * 0.55 + p.phase) + 1) / 2;
+        var x = p.x + Math.sin(t * 0.12 + idx) * 14;
+        var y = p.y + Math.cos(t * 0.18 + idx) * p.amp + 40;
+        ctx.beginPath();
+        ctx.arc(x, y, 1.4 + pulse * 1.8, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(" + (idx % 3 === 0 ? mint : accent) + "," + (0.16 + pulse * 0.18) + ")";
+        ctx.fill();
+      });
+
+      if (!reduced) window.requestAnimationFrame(draw);
+    }
+
+    resize();
+    window.addEventListener("resize", resize);
+    window.requestAnimationFrame(draw);
+  }
+
+  initCreativeBackground();
 
   function showErr(el, msg) {
     el.textContent = msg;
@@ -1793,6 +1877,9 @@
 
   function setWorkbenchRoute(route, options) {
     var name = WORKBENCH_ROUTES[route] ? route : "deal";
+    if (previewAreaEl) previewAreaEl.setAttribute("data-workbench-route", name);
+    if (taskWorkflow) taskWorkflow.setAttribute("data-workbench-route", name);
+    document.body.setAttribute("data-workbench-route", name);
     if (platformNav) {
       platformNav.querySelectorAll("[data-workbench-route]").forEach(function (item) {
         item.classList.toggle("is-active", item.getAttribute("data-workbench-route") === name);
@@ -1805,8 +1892,9 @@
       }
     }
     if (!options || options.scroll !== false) {
-      var target = document.getElementById(WORKBENCH_ROUTES[name]);
-      if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (previewBodyEl) previewBodyEl.scrollTop = 0;
+      var target = document.getElementById("task-workflow");
+      if (target) target.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
   }
 

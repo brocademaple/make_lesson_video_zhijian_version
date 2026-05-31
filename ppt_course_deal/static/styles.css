@@ -1,6 +1,6 @@
 :root {
   color-scheme: dark;
-  --bg: #0a0f1a;
+  --bg: #060b14;
   --panel: #121a2a;
   --card: #1a2336;
   --border: #2a3548;
@@ -81,11 +81,16 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: var(--bg);
+  background:
+    radial-gradient(circle at 15% 5%, rgba(59, 130, 246, 0.16), transparent 28rem),
+    radial-gradient(circle at 85% 18%, rgba(20, 184, 166, 0.11), transparent 26rem),
+    linear-gradient(180deg, color-mix(in srgb, var(--bg) 92%, #172033), var(--bg));
   color: var(--text);
 }
 
 .app {
+  position: relative;
+  z-index: 1;
   max-width: 1600px;
   margin: 0 auto;
   padding: 1rem 1.25rem 2rem;
@@ -94,6 +99,16 @@ body {
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
+}
+
+.creative-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  opacity: 0.74;
 }
 
 .app-main {
@@ -1012,7 +1027,9 @@ body {
 }
 
 .preview-area {
-  background: var(--panel);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--panel) 88%, transparent), color-mix(in srgb, var(--panel) 96%, transparent)),
+    var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 0;
@@ -1020,6 +1037,71 @@ body {
   flex-direction: column;
   flex: 1;
   min-height: min(520px, 75vh);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(16px);
+}
+
+.preview-area[data-workbench-route="deal"] .director-panel,
+.preview-area[data-workbench-route="deal"] .remotion-panel,
+.preview-area[data-workbench-route="deal"] .output-panel,
+.preview-area[data-workbench-route="deal"] .audio-workbench,
+.preview-area[data-workbench-route="materials"] .preview-toolbar,
+.preview-area[data-workbench-route="materials"] .pv-label-row,
+.preview-area[data-workbench-route="materials"] .pv-image-wrap,
+.preview-area[data-workbench-route="materials"] .pv-text-drawer,
+.preview-area[data-workbench-route="materials"] .director-panel__summary,
+.preview-area[data-workbench-route="materials"] .director-panel__scenes,
+.preview-area[data-workbench-route="materials"] .remotion-panel,
+.preview-area[data-workbench-route="materials"] .output-panel,
+.preview-area[data-workbench-route="materials"] .audio-workbench,
+.preview-area[data-workbench-route="director"] .preview-toolbar,
+.preview-area[data-workbench-route="director"] .pv-label-row,
+.preview-area[data-workbench-route="director"] .pv-image-wrap,
+.preview-area[data-workbench-route="director"] .pv-text-drawer,
+.preview-area[data-workbench-route="director"] .director-panel__materials,
+.preview-area[data-workbench-route="director"] .remotion-panel,
+.preview-area[data-workbench-route="director"] .output-panel,
+.preview-area[data-workbench-route="director"] .audio-workbench,
+.preview-area[data-workbench-route="audio"] .preview-toolbar,
+.preview-area[data-workbench-route="audio"] .pv-label-row,
+.preview-area[data-workbench-route="audio"] .pv-image-wrap,
+.preview-area[data-workbench-route="audio"] .pv-text-drawer,
+.preview-area[data-workbench-route="audio"] .director-panel,
+.preview-area[data-workbench-route="audio"] .remotion-panel,
+.preview-area[data-workbench-route="audio"] .output-panel,
+.preview-area[data-workbench-route="render"] .preview-toolbar,
+.preview-area[data-workbench-route="render"] .pv-label-row,
+.preview-area[data-workbench-route="render"] .pv-image-wrap,
+.preview-area[data-workbench-route="render"] .pv-text-drawer,
+.preview-area[data-workbench-route="render"] .director-panel,
+.preview-area[data-workbench-route="render"] .output-panel,
+.preview-area[data-workbench-route="render"] .audio-workbench,
+.preview-area[data-workbench-route="output"] .preview-toolbar,
+.preview-area[data-workbench-route="output"] .pv-label-row,
+.preview-area[data-workbench-route="output"] .pv-image-wrap,
+.preview-area[data-workbench-route="output"] .pv-text-drawer,
+.preview-area[data-workbench-route="output"] .director-panel,
+.preview-area[data-workbench-route="output"] .remotion-panel,
+.preview-area[data-workbench-route="output"] .audio-workbench {
+  display: none;
+}
+
+.preview-area:not([data-workbench-route="deal"]) .preview-aspect {
+  min-height: 0;
+  border: none;
+  background: transparent;
+}
+
+.preview-area:not([data-workbench-route="deal"]) .preview-inner {
+  padding: 0;
+}
+
+.preview-area[data-workbench-route="materials"] .director-panel,
+.preview-area[data-workbench-route="director"] .director-panel,
+.preview-area[data-workbench-route="audio"] .audio-workbench,
+.preview-area[data-workbench-route="render"] .remotion-panel,
+.preview-area[data-workbench-route="output"] .output-panel {
+  margin-top: 0;
 }
 
 .preview-toolbar {
@@ -2179,6 +2261,16 @@ body {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.55rem;
+}
+
+.task-workflow[data-workbench-route] .task-workflow__pipeline,
+.task-workflow[data-workbench-route] .task-workflow__actions,
+.task-workflow[data-workbench-route] .task-workflow__artifacts {
+  display: none;
+}
+
+.task-workflow[data-workbench-route] .task-workflow-step {
+  min-height: 4.1rem;
 }
 
 .task-workflow__pipeline {
