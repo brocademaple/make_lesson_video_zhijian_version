@@ -17,7 +17,7 @@ cd github-pages && python3 -m http.server 8080
 | 区域 | 用途 |
 |------|------|
 | `ppt_course_deal/`、`ppt_course_renderer/` 等 | 产品源码 |
-| `github-pages/` | 扁平风产品介绍页 + 运行截图（放 `assets/images/`） |
+| `github-pages/` | 玻璃质感产品介绍页 + 运行截图（放 `assets/images/`） |
 
 ## 发布到 GitHub Pages
 
@@ -31,4 +31,4 @@ GitHub 仓库设置 **Pages** 时，默认只能从 **`/`（仓库根）** 或 *
 2. **使用 GitHub Actions**  
    由 Workflow 将 `github-pages/` 构建产物部署到 `gh-pages` 分支或 Pages artifact（需在仓库 **Settings → Pages** 选择 **GitHub Actions** 来源）。
 
-具体以当前仓库的 Pages 策略为准；更新截图时只需替换 `assets/images/` 下文件并提交。
+当前推荐使用仓库根目录的 `.github/workflows/pages.yml`：合并到 `main` 后，Actions 会把 `github-pages/` 作为 Pages artifact 部署。更新截图时只需替换 `assets/images/product-home.png` 并提交。
