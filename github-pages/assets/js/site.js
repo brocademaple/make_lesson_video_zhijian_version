@@ -2,23 +2,23 @@
   var copy = {
     materials: {
       kicker: "素材入仓",
-      title: "把 PPT 拆成可复用素材",
-      body: "每页预览、文本和图片素材都会落盘，后续导演脚本能引用真实证据。",
+      title: "生成 raw_material_manifest.json",
+      body: "每页预览图、正文、备注和图片素材都会落盘，后续脚本能引用真实课件证据。",
     },
     director: {
       kicker: "导演中枢",
-      title: "让素材变成镜头脚本",
-      body: "系统按“讲规则、带新人、教流程、讲销售话术”等方向组织叙事和画面节奏。",
+      title: "生成 director_manifest.json",
+      body: "把素材重组为章节、镜头、旁白意图和画面调度，便于人工审核和重跑。",
     },
     audio: {
       kicker: "声音工坊",
-      title: "口播稿和音频逐段维护",
-      body: "每页可以有多段口播，多次合成可保留记录，便于试听、回滚和替换。",
+      title: "维护逐页口播与音频版本",
+      body: "每页可以有多段口播，多次合成会保留记录，方便试听、回滚和替换模型。",
     },
     render: {
       kicker: "成片引擎",
-      title: "React 时间线渲染 MP4",
-      body: "Remotion 接收确定的 input-props，用组件、Sequence 和 interpolate 控制画面。",
+      title: "生成 Remotion 渲染入参",
+      body: "render_plan.json 和 input-props.json 会进入 React Composition，最后渲染 MP4。",
     },
   };
 
