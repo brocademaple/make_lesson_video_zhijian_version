@@ -13,3 +13,5 @@ ppt_course_data/
 .env
 *.pptx
 !tests/fixtures/**/*.pptx
+.DS_Store
+ppt_course_renderer/render_tasks/

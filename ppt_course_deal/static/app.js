@@ -5,6 +5,16 @@
   const slideRail = document.getElementById("slide-rail");
   const dropzone = document.getElementById("dropzone");
   const fileInput = document.getElementById("file-input");
+  const homePresetButtons = document.querySelectorAll("[data-home-preset]");
+  const homeUploadTriggers = document.querySelectorAll("[data-upload-trigger]");
+  const homeStudioTabs = document.querySelectorAll(".home-studio__tab");
+  const homeStudioViews = document.querySelectorAll("[data-home-view]");
+  const homeAssetsList = document.getElementById("home-assets-list");
+  const btnHomeAssetsRefresh = document.getElementById("home-assets-refresh");
+  const homeProfilePrompt = document.getElementById("home-profile-prompt");
+  const homeProfileDuration = document.getElementById("home-profile-duration");
+  const homeProfileMotion = document.getElementById("home-profile-motion");
+  const homeProfileCard = document.getElementById("home-profile-card");
   const errorUpload = document.getElementById("error-upload");
   const previewSetupBanner = document.getElementById("preview-setup-banner");
   const errorWork = document.getElementById("error-work");
@@ -156,6 +166,38 @@
   const outputSummary = document.getElementById("output-summary");
 
   var AUDIO_GEN_LS_KEY = "ppt_course_audio_gen_overrides";
+  var HOME_PROFILE_LS_KEY = "zhike-home-video-profile";
+  var HOME_PROFILES = {
+    quality: {
+      title: "讲规则",
+      prompt: "讲规则：风险点、案例和处罚口径优先保真",
+      duration: "3-5 分钟",
+      motion: "证据画面 + 风险标注",
+      detail: "上传后会优先保留处罚、金额、边界条件和原页证据，方便做成合规/质检培训视频。",
+    },
+    onboarding: {
+      title: "带新人",
+      prompt: "带新人：术语解释、流程顺序和易错点优先讲清楚",
+      duration: "5-8 分钟",
+      motion: "步骤引导 + 重点词入场",
+      detail: "上传后会把专业词、操作步骤和常见错误拆开讲，方便新人跟着课件快速入门。",
+    },
+    sop: {
+      title: "教流程",
+      prompt: "教流程：动作顺序、检查点和交付物优先拆开",
+      duration: "4-6 分钟",
+      motion: "横向流程 + 局部跟随",
+      detail: "上传后会按先后顺序拆动作、检查点和交付物，适合系统操作、流程说明和标准动作培训。",
+    },
+    sales: {
+      title: "讲销售话术",
+      prompt: "讲销售话术：卖点、异议处理和案例亮点优先提炼",
+      duration: "3-6 分钟",
+      motion: "价值聚焦 + 案例对照",
+      detail: "上传后会提炼卖点、客户异议和案例亮点，方便做成销售培训或产品讲解视频。",
+    },
+  };
+  var currentHomeProfile = readHomeProfile();
 
   /** @type {{ warnings: string[], conflicts: any[], filled_slides?: number, slide_count?: number } | null} */
   let pendingImportPreview = null;
@@ -750,9 +792,65 @@
     return li;
   }
 
+  function readHomeProfile() {
+    try {
+      var saved = localStorage.getItem(HOME_PROFILE_LS_KEY);
+      if (saved && HOME_PROFILES[saved]) return saved;
+    } catch (_) {}
+    return "quality";
+  }
+
+  function setHomeProfile(profileId, persist) {
+    var next = HOME_PROFILES[profileId] ? profileId : "quality";
+    currentHomeProfile = next;
+    if (persist) {
+      try {
+        localStorage.setItem(HOME_PROFILE_LS_KEY, next);
+      } catch (_) {}
+    }
+    homePresetButtons.forEach(function (item) {
+      item.classList.toggle("is-active", item.getAttribute("data-home-preset") === next);
+    });
+    var profile = HOME_PROFILES[next] || HOME_PROFILES.quality;
+    if (homeProfilePrompt) homeProfilePrompt.textContent = profile.prompt;
+    if (homeProfileDuration) homeProfileDuration.textContent = profile.duration;
+    if (homeProfileMotion) homeProfileMotion.textContent = profile.motion;
+    if (homeProfileCard) {
+      homeProfileCard.innerHTML =
+        "<strong>" +
+        escapeHtml(profile.title) +
+        "</strong><p>" +
+        escapeHtml(profile.detail) +
+        "</p>";
+    }
+  }
+
+  function setHomeView(name) {
+    var target = name || "generate";
+    homeStudioTabs.forEach(function (btn) {
+      var on = btn.getAttribute("data-home-view-tab") === target;
+      btn.classList.toggle("is-active", on);
+      btn.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    homeStudioViews.forEach(function (view) {
+      view.classList.toggle("is-active", view.getAttribute("data-home-view") === target);
+    });
+    if (target === "assets") void refreshTaskList();
+  }
+
   function renderTaskListFromData(tasks, listEl, options) {
     if (!listEl) return;
     listEl.innerHTML = "";
+    if (!tasks.length) {
+      if (listEl === homeAssetsList) {
+        var empty = document.createElement("li");
+        empty.className = "home-assets__empty";
+        empty.textContent = "还没有任务。先回到“生成”上传一份 PPT。";
+        listEl.appendChild(empty);
+      }
+      listEl.setAttribute("aria-label", "暂无任务");
+      return;
+    }
     tasks.forEach(function (t) {
       listEl.appendChild(buildTaskListItem(t, options));
     });
@@ -907,6 +1005,9 @@
       var data = await res.json();
       var tasks = data.tasks || [];
       renderTaskListFromData(tasks, taskList, { navOnly: false });
+      if (homeAssetsList) {
+        renderTaskListFromData(tasks, homeAssetsList, { navOnly: true });
+      }
       if (workspaceTaskDrawerList) {
         renderTaskListFromData(tasks, workspaceTaskDrawerList, { navOnly: true });
       }
@@ -1964,61 +2065,6 @@
     }
   }
 
-  function workflowStep(label, state, detail, targetId) {
-    var stateClass = state === "ready" ? "ready" : state === "warn" ? "warn" : "todo";
-    var stateLabel = state === "ready" ? "已就绪" : state === "warn" ? "需注意" : "待处理";
-    return (
-      '<button type="button" class="task-workflow-step task-workflow-step--' +
-      stateClass +
-      '" data-workflow-target="' +
-      escapeHtmlText(targetId || "") +
-      '" role="listitem">' +
-      '<span class="task-workflow-step__state">' +
-      stateLabel +
-      "</span>" +
-      '<span class="task-workflow-step__label">' +
-      escapeHtmlText(label) +
-      "</span>" +
-      '<span class="task-workflow-step__detail">' +
-      escapeHtmlText(detail || "") +
-      "</span>" +
-      "</button>"
-    );
-  }
-
-  function workflowPipelineNode(label, state, detail) {
-    var stateClass = state === "ready" ? "ready" : state === "warn" ? "warn" : "todo";
-    return (
-      '<span class="task-pipeline-node task-pipeline-node--' +
-      stateClass +
-      '">' +
-      '<span class="task-pipeline-node__dot"></span>' +
-      '<span class="task-pipeline-node__text">' +
-      escapeHtmlText(label) +
-      "</span>" +
-      '<span class="task-pipeline-node__detail">' +
-      escapeHtmlText(detail || "") +
-      "</span>" +
-      "</span>"
-    );
-  }
-
-  function workflowArtifact(label, value, state) {
-    var stateClass = state === "ready" ? "ready" : state === "warn" ? "warn" : "todo";
-    return (
-      '<div class="task-artifact task-artifact--' +
-      stateClass +
-      '">' +
-      '<span class="task-artifact__label">' +
-      escapeHtmlText(label) +
-      "</span>" +
-      '<code class="task-artifact__value">' +
-      escapeHtmlText(value || "待生成") +
-      "</code>" +
-      "</div>"
-    );
-  }
-
   var WORKBENCH_ROUTES = {
     deal: "preview-surface",
     materials: "director-materials",
@@ -2029,12 +2075,25 @@
   };
 
   var PIPELINE_RUN_STEPS = {
-    raw_material: "生成原始素材 Manifest",
-    course_material: "生成素材标记",
-    director: "生成导演脚本",
-    audio: "检查音频状态",
-    render_plan: "生成 RenderPlan / input-props",
+    raw_material: "素材底稿",
+    course_material: "素材地图",
+    director: "分镜脚本",
+    audio: "声音轨",
+    render_plan: "成片蓝图",
   };
+
+  var workflowUI = window.ZhikeWorkflowUI
+    ? window.ZhikeWorkflowUI.create({
+        taskWorkflowMeter: taskWorkflowMeter,
+        taskWorkflowActions: taskWorkflowActions,
+        outputSummary: outputSummary,
+        taskWorkflowPipeline: taskWorkflowPipeline,
+        taskWorkflowArtifacts: taskWorkflowArtifacts,
+        taskWorkflowTitle: taskWorkflowTitle,
+        taskWorkflowSteps: taskWorkflowSteps,
+        escapeHtmlText: escapeHtmlText,
+      })
+    : null;
 
   function routeForTargetId(targetId) {
     var keys = Object.keys(WORKBENCH_ROUTES);
@@ -2081,243 +2140,14 @@
     setWorkbenchRoute(route, { updateHash: false, scroll: true });
   }
 
-  function renderPipelineMeter(data) {
-    if (!taskWorkflowMeter) return;
-    var pipeline = data && data.pipeline;
-    if (!pipeline) {
-      taskWorkflowMeter.innerHTML = "";
-      return;
-    }
-    var percent = typeof pipeline.percent === "number" ? pipeline.percent : 0;
-    taskWorkflowMeter.innerHTML =
-      '<div class="task-meter__copy">' +
-      '<span class="task-meter__label">当前链路完成度</span>' +
-      '<strong>' +
-      escapeHtmlText(String(percent)) +
-      "%</strong>" +
-      '<span class="task-meter__detail">' +
-      escapeHtmlText((pipeline.ready_count || 0) + "/" + (pipeline.stage_count || 0) + " 个阶段就绪") +
-      "</span>" +
-      "</div>" +
-      '<div class="task-meter__bar" aria-hidden="true"><span style="width:' +
-      Math.max(0, Math.min(100, percent)) +
-      '%"></span></div>';
-  }
-
-  function pipelineActionButton(step, label) {
-    return (
-      '<button type="button" class="btn btn-secondary task-workflow-action" data-pipeline-step="' +
-      escapeHtmlText(step) +
-      '">' +
-      escapeHtmlText(label) +
-      "</button>"
-    );
-  }
-
-  function renderPipelineActions(data) {
-    if (!taskWorkflowActions) return;
-    if (!currentTaskId || !data) {
-      taskWorkflowActions.innerHTML = "";
-      return;
-    }
-    var stages = (data.pipeline && data.pipeline.stages) || [];
-    var byKey = {};
-    stages.forEach(function (stage) {
-      byKey[stage.key] = stage;
-    });
-    taskWorkflowActions.innerHTML =
-      pipelineActionButton("raw_material", byKey.raw_material && byKey.raw_material.ready ? "重新生成原始素材 Manifest" : "生成原始素材 Manifest") +
-      pipelineActionButton("course_material", byKey.course_material && byKey.course_material.ready ? "刷新素材标记" : "生成素材标记") +
-      pipelineActionButton("director", byKey.director && byKey.director.ready ? "重新生成导演脚本" : "生成导演脚本") +
-      pipelineActionButton("audio", "检查音频状态") +
-      pipelineActionButton("render_plan", byKey.render_plan && byKey.render_plan.ready ? "重新生成成片计划" : "生成成片计划");
-  }
-
-  function renderOutputSummary(data) {
-    if (!outputSummary) return;
-    var remotion = data && data.remotion;
-    if (!currentTaskId || !remotion) {
-      outputSummary.innerHTML =
-        '<p class="output-panel__empty">打开已存任务后，这里会显示最终 MP4 和 Demo 产物。</p>';
-      return;
-    }
-    var hasVideo = Boolean(remotion.output_video_exists);
-    var videoUrl =
-      hasVideo && currentTaskId
-        ? "/api/tasks/" + encodeURIComponent(currentTaskId) + "/output-video"
-        : "";
-    outputSummary.innerHTML =
-      '<div class="output-panel__summary-inner output-panel__summary-inner--' +
-      (hasVideo ? "ready" : "todo") +
-      '">' +
-      (videoUrl
-        ? '<video class="output-panel__video" controls preload="metadata" src="' +
-          escapeHtmlText(videoUrl) +
-          '"></video>'
-        : "") +
-      "<p><strong>MP4 状态</strong>：" +
-      (hasVideo ? "已生成" : "未检测到本地视频") +
-      "</p>" +
-      "<p><strong>视频路径</strong>：" +
-      escapeHtmlText(remotion.output_video_path || "—") +
-      "</p>" +
-      "<p><strong>成片计划</strong>：" +
-      escapeHtmlText(remotion.render_plan_exists ? remotion.render_plan_path || "已生成" : "待生成") +
-      "</p>" +
-      "<p><strong>渲染命令</strong>：</p>" +
-      '<pre class="output-panel__command">' +
-      escapeHtmlText(remotion.render_command || "先生成 RenderPlan / input-props") +
-      "</pre>" +
-      "</div>";
-  }
-
   function renderPipelineState(data) {
     pipelineStateCache = data || null;
-    renderPipelineMeter(data);
-    renderPipelineActions(data);
-    renderOutputSummary(data);
-  }
-
-  function renderWorkflowDetails(data, states) {
-    if (taskWorkflowPipeline) {
-      if (!currentTaskId || !data) {
-        taskWorkflowPipeline.innerHTML = "";
-      } else {
-        var deal = data.deal || {};
-        var audio = data.audio || {};
-        var rebuilder = data.rebuilder || {};
-        var remotion = data.remotion || {};
-        taskWorkflowPipeline.innerHTML =
-          workflowPipelineNode(
-            "PPT",
-            "ready",
-            data.slide_count ? data.slide_count + " 页" : "已载入"
-          ) +
-          workflowPipelineNode(
-            "DL 解析 / 切图",
-            states.dealState,
-            (deal.preview_count || 0) + "/" + (data.slide_count || 0) + " 预览"
-          ) +
-          workflowPipelineNode(
-            "CourseMaterial",
-            rebuilder.course_material_exists ? "ready" : rebuilder.raw_manifest_exists ? "warn" : "todo",
-            rebuilder.course_material_exists
-              ? (rebuilder.course_material_slide_count || 0) + " 页素材"
-              : "待规范化"
-          ) +
-          workflowPipelineNode(
-            "DirectorManifest",
-            states.directorState,
-            rebuilder.director_manifest_exists
-              ? (rebuilder.scene_count || 0) + " 镜头"
-              : "待导演规划"
-          ) +
-          workflowPipelineNode(
-            "RenderPlan / Props",
-            remotion.render_plan_exists || remotion.input_props_exists ? "ready" : "todo",
-            remotion.render_plan_source || "待生成"
-          ) +
-          workflowPipelineNode(
-            "MP4",
-            states.remotionState,
-            remotion.output_video_exists ? "已生成" : "待渲染"
-          );
-        if (!audio.slides_with_audio) {
-          taskWorkflowPipeline.innerHTML += workflowPipelineNode(
-            "Audio",
-            "warn",
-            "暂无口播音频，可用 edge-tts 兜底"
-          );
-        }
-      }
-    }
-    if (taskWorkflowArtifacts) {
-      if (!currentTaskId || !data) {
-        taskWorkflowArtifacts.innerHTML = "";
-      } else {
-        var taskRoot = "ppt_course_data/tasks/" + currentTaskId;
-        var r = data.remotion || {};
-        taskWorkflowArtifacts.innerHTML =
-          workflowArtifact("Raw Material", taskRoot + "/raw_material_manifest.json", data.rebuilder && data.rebuilder.raw_manifest_exists ? "ready" : "todo") +
-          workflowArtifact("Course Material", taskRoot + "/course_material.json", data.rebuilder && data.rebuilder.course_material_exists ? "ready" : "todo") +
-          workflowArtifact("Director Manifest", taskRoot + "/director_manifest.json", data.rebuilder && data.rebuilder.director_manifest_exists ? "ready" : "todo") +
-          workflowArtifact("Render Plan", r.render_plan_path || "", r.render_plan_exists ? "ready" : "todo") +
-          workflowArtifact("Input Props", r.input_props_path || "", r.input_props_exists ? "ready" : "todo") +
-          workflowArtifact("Output MP4", r.output_video_path || "", r.output_video_exists ? "ready" : "todo");
-      }
-    }
+    if (workflowUI) workflowUI.renderPipelineState(data, currentTaskId);
   }
 
   function renderWorkspaceStatus(data) {
-    renderPipelineState(data);
-    if (taskWorkflowTitle) {
-      taskWorkflowTitle.textContent =
-        data && data.filename ? data.filename : currentTaskId ? "已存任务" : "任务流";
-    }
-    if (!taskWorkflowSteps) return;
-    if (!currentTaskId || !data) {
-      taskWorkflowSteps.innerHTML =
-        '<p class="task-workflow__empty">打开已存任务后显示 DL / Rebuilder / Audio / Remotion 的平台状态。</p>';
-      renderWorkflowDetails(data, {});
-      return;
-    }
-    var deal = data.deal || {};
-    var audio = data.audio || {};
-    var rebuilder = data.rebuilder || {};
-    var remotion = data.remotion || {};
-    var dealState = deal.images_available ? "ready" : "warn";
-    var directorState = rebuilder.director_manifest_exists
-      ? "ready"
-      : rebuilder.course_material_exists || rebuilder.raw_manifest_exists
-        ? "warn"
-        : "todo";
-    var audioState = audio.slides_with_audio > 0 ? "ready" : "todo";
-    var remotionState = remotion.output_video_exists
-      ? "ready"
-      : remotion.input_props_exists
-        ? "warn"
-        : "todo";
-    taskWorkflowSteps.innerHTML =
-      workflowStep(
-        "Deal 素材",
-        dealState,
-        (data.slide_count || 0) + " 页，预览 " + (deal.preview_count || 0) + " 页",
-        "preview-surface",
-      ) +
-      workflowStep(
-        "Rebuilder 导演",
-        directorState,
-        rebuilder.director_manifest_exists
-          ? (rebuilder.scene_count || 0) + " 镜头 · " + (rebuilder.planning_mode || "unknown")
-          : rebuilder.course_material_exists
-            ? "已有 course_material，待生成导演脚本"
-            : rebuilder.raw_manifest_exists
-              ? "已有 raw manifest，待规范化素材"
-            : "待生成素材清单",
-        "director-panel",
-      ) +
-      workflowStep(
-        "Audio 口播",
-        audioState,
-        (audio.slides_with_audio || 0) + " 页已有音频，" + (audio.generated_segment_count || 0) + " 段",
-        "audio-workbench",
-      ) +
-      workflowStep(
-        "Remotion 成片",
-        remotionState,
-        remotion.output_video_exists
-          ? "已检测到 MP4"
-          : remotion.input_props_exists
-            ? (remotion.render_plan_source || "入参已生成") + "，待渲染"
-            : "待生成 input-props",
-        "remotion-panel",
-      );
-    renderWorkflowDetails(data, {
-      dealState: dealState,
-      directorState: directorState,
-      audioState: audioState,
-      remotionState: remotionState,
-    });
+    pipelineStateCache = data || null;
+    if (workflowUI) workflowUI.renderWorkspaceStatus(data, currentTaskId);
   }
 
   async function refreshWorkspaceStatus(silent) {
@@ -2408,6 +2238,44 @@
     }
   }
 
+  function pipelineJobErrorMessage(job) {
+    var error = job && job.error;
+    var detail = error && error.detail;
+    if (typeof detail === "string") return detail;
+    if (detail && typeof detail === "object") {
+      return detail.message || detail.next_action || JSON.stringify(detail);
+    }
+    if (error && error.status_code) return "流水线任务失败：" + error.status_code;
+    return "流水线任务失败";
+  }
+
+  async function pollPipelineJob(jobId, step) {
+    var doneStatuses = {
+      succeeded: true,
+      failed: true,
+      cancelled: true,
+    };
+    for (var i = 0; i < 240; i += 1) {
+      await new Promise(function (resolve) {
+        window.setTimeout(resolve, i === 0 ? 300 : 1000);
+      });
+      var res = await fetch("/api/pipeline/jobs/" + encodeURIComponent(jobId));
+      var job = await res.json().catch(function () {
+        return {};
+      });
+      if (!res.ok) throw new Error(job.detail || "读取流水线任务失败");
+      if (statusLine && !doneStatuses[job.status]) {
+        statusLine.textContent =
+          (PIPELINE_RUN_STEPS[step] || "流水线步骤") +
+          "执行中：" +
+          (job.message || job.status || "处理中");
+      }
+      if (job.status === "cancel_requested" && job.finished_at) return job;
+      if (doneStatuses[job.status]) return job;
+    }
+    throw new Error("流水线任务超时，请稍后刷新状态");
+  }
+
   async function runPipelineStep(step) {
     if (!currentTaskId || !step) return;
     var buttons = document.querySelectorAll('[data-pipeline-step="' + step + '"]');
@@ -2416,7 +2284,7 @@
     });
     try {
       var res = await fetch(
-        "/api/tasks/" + encodeURIComponent(currentTaskId) + "/pipeline/run-step",
+        "/api/tasks/" + encodeURIComponent(currentTaskId) + "/pipeline/jobs",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -2428,22 +2296,30 @@
           }),
         }
       );
-      var j = await res.json().catch(function () {
+      var created = await res.json().catch(function () {
         return {};
       });
       if (!res.ok) {
-        var detail = j.detail || {};
+        var detail = created.detail || {};
         var msg =
           typeof detail === "string"
             ? detail
-            : detail.message || detail.next_action || "流水线步骤执行失败";
+            : detail.message || detail.next_action || "流水线任务创建失败";
         throw new Error(msg);
       }
       if (statusLine) {
         statusLine.textContent =
+          (PIPELINE_RUN_STEPS[step] || "流水线步骤") + "已排队：" + (created.job_id || "");
+      }
+      var job = await pollPipelineJob(created.job_id, step);
+      if (job.status === "failed") throw new Error(pipelineJobErrorMessage(job));
+      if (job.status === "cancelled") throw new Error(job.message || "流水线任务已取消");
+      if (statusLine) {
+        var result = job.result || {};
+        statusLine.textContent =
           (PIPELINE_RUN_STEPS[step] || "流水线步骤") +
           "完成：" +
-          (j.message || "已更新任务产物");
+          (result.message || job.message || "已更新任务产物");
       }
       if (step === "course_material") await refreshCourseMaterial(true);
       if (step === "director") await refreshDirectorManifest(true);
@@ -4426,6 +4302,7 @@
 
     var fd = new FormData();
     fd.append("file", file);
+    fd.append("video_profile", currentHomeProfile);
 
     try {
       var res = await fetch("/api/parse", { method: "POST", body: fd });
@@ -4569,6 +4446,30 @@
   fileInput.addEventListener("change", function () {
     var f = fileInput.files && fileInput.files[0];
     if (f) parseFile(f);
+  });
+
+  homePresetButtons.forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      setHomeProfile(btn.getAttribute("data-home-preset") || "quality", true);
+    });
+  });
+
+  homeStudioTabs.forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      setHomeView(btn.getAttribute("data-home-view-tab") || "generate");
+    });
+  });
+
+  if (btnHomeAssetsRefresh) {
+    btnHomeAssetsRefresh.addEventListener("click", function () {
+      void refreshTaskList();
+    });
+  }
+
+  homeUploadTriggers.forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      fileInput.click();
+    });
   });
 
   ["dragenter", "dragover"].forEach(function (ev) {
@@ -5888,6 +5789,7 @@
 
   initVoiceIdComboboxes();
 
+  setHomeProfile(currentHomeProfile, false);
   refreshTaskList();
   syncWorkbenchRouteFromHash();
   fillExternalSettingsForm().catch(function () {});

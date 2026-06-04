@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Remotion 视频编排手册</title>
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("ppt-theme");
+          document.documentElement.setAttribute(
+            "data-theme",
+            t === "light" || t === "dark" ? t : "dark"
+          );
+        } catch (e) {
+          document.documentElement.setAttribute("data-theme", "dark");
+        }
+      })();
+    </script>
+    <link rel="stylesheet" href="/assets/styles.css?v=2.89" />
+  </head>
+  <body class="remotion-guide-page">
+    <main class="remotion-guide" aria-labelledby="remotion-guide-title">
+      <header class="remotion-guide__hero">
+        <div class="remotion-guide__hero-copy">
+          <div class="remotion-guide__eyebrow">React + Timeline + Agent Skill</div>
+          <h1 id="remotion-guide-title">Remotion 视频编排手册</h1>
+          <p>PPT 课件进来，导演脚本定镜头，音频定时长，Agent 按 Remotion Skill 约束写 React 成片。</p>
+          <div class="remotion-guide__hero-actions">
+            <a class="remotion-guide__button remotion-guide__button--primary" href="/">返回工作台首页</a>
+            <a class="remotion-guide__button" href="https://github.com/remotion-dev/remotion" target="_blank" rel="noopener noreferrer">
+              GitHub 仓库
+            </a>
+            <a class="remotion-guide__button" href="https://github.com/remotion-dev/skills/tree/main/skills/remotion" target="_blank" rel="noopener noreferrer">
+              Remotion Skill
+            </a>
+            <a class="remotion-guide__button" href="https://www.remotion.dev/docs" target="_blank" rel="noopener noreferrer">
+              官方文档
+            </a>
+          </div>
+        </div>
+        <div class="remotion-guide__signal" aria-hidden="true">
+          <span>input-props.json</span>
+          <strong>Composition</strong>
+          <span>render_plan.json</span>
+          <strong>MP4</strong>
+        </div>
+      </header>
+
+      <section class="remotion-guide__section" aria-labelledby="repo-map-title">
+        <div class="remotion-guide__section-head">
+          <span>01</span>
+          <h2 id="repo-map-title">仓库怎么拆</h2>
+        </div>
+        <div class="remotion-guide__map">
+          <article>
+            <b>remotion</b>
+            <p>核心时间线：Composition、Sequence、useCurrentFrame、interpolate。</p>
+          </article>
+          <article>
+            <b>@remotion/studio</b>
+            <p>本地预览、拖动时间轴、调镜头节奏。</p>
+          </article>
+          <article>
+            <b>@remotion/renderer</b>
+            <p>服务端或脚本里把 Composition 渲成 MP4 / 音频。</p>
+          </article>
+          <article>
+            <b>@remotion/media</b>
+            <p>视频、音频素材轨道；裁剪、变速、音量曲线。</p>
+          </article>
+          <article>
+            <b>@remotion/transitions</b>
+            <p>镜头之间做淡入、滑动、擦除；Overlay 做光效层。</p>
+          </article>
+          <article>
+            <b>本项目 renderer</b>
+            <p>读取 render_tasks 下的入参，生成企业培训视频。</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="remotion-guide__section" aria-labelledby="method-title">
+        <div class="remotion-guide__section-head">
+          <span>02</span>
+          <h2 id="method-title">制作规范</h2>
+        </div>
+        <div class="remotion-guide__rules">
+          <div>
+            <strong>先定 Composition</strong>
+            <p>id、fps、width、height、durationInFrames 是成片契约。</p>
+          </div>
+          <div>
+            <strong>所有动画按帧算</strong>
+            <p>useCurrentFrame + interpolate，比 CSS 动画更稳定。</p>
+          </div>
+          <div>
+            <strong>镜头用 Sequence 装</strong>
+            <p>from 控制开始帧，durationInFrames 控制挂载长度。</p>
+          </div>
+          <div>
+            <strong>素材走 staticFile</strong>
+            <p>public 暴露图片、音频、视频；路径由入参统一生成。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="remotion-guide__section" aria-labelledby="skill-title">
+        <div class="remotion-guide__section-head">
+          <span>03</span>
+          <h2 id="skill-title">Agent Skill 快照</h2>
+        </div>
+        <div class="remotion-guide__skill-grid">
+          <article class="remotion-guide__skill-card">
+            <b>什么时候必须加载</b>
+            <p>只要要写、审、改 Remotion 代码，就先加载 Remotion Skill，再决定 Composition、素材路径、时间线和渲染校验。</p>
+          </article>
+          <article class="remotion-guide__skill-card">
+            <b>关键禁区</b>
+            <p>不要用 CSS animation 或 Tailwind 动画类做视频动效；渲染帧不稳定。动效必须由 frame、interpolate、Easing 驱动。</p>
+          </article>
+          <article class="remotion-guide__skill-card">
+            <b>素材约束</b>
+            <p>图片、音频、视频进入 public 或可被 public 暴露的目录；React 里用 staticFile、Img、Audio、Video 引用。</p>
+          </article>
+          <article class="remotion-guide__skill-card">
+            <b>时间线约束</b>
+            <p>Sequence 控制延迟和持续帧数；Series 负责顺序播放；字幕、口播和画面层必须共用 fps 口径。</p>
+          </article>
+          <article class="remotion-guide__skill-card remotion-guide__skill-card--wide">
+            <b>本项目给 Agent 的编排 Brief</b>
+            <pre><code>目标：把 PPT、音频、视频/图片素材编排成企业培训 MP4。
+输入：director_manifest.json、render_plan.json、input-props.json、previews/、audio_workspace/。
+输出：Remotion React 组件 + 可渲染 MP4。
+必须做：
+- 用 Composition 定义 fps / 画幅 / 动态 durationInFrames。
+- 用 Sequence / Series 分镜；字幕和音频按帧对齐。
+- 用 useCurrentFrame + interpolate 做镜头运动、文字入场、证据层扫描。
+- 按 video_profile 切换规则质检、新人速训、SOP、销售赋能的画面策略。
+- 渲染前至少做 still/frame sanity check；发现遮挡、溢出、空白帧要回改。</code></pre>
+          </article>
+          <article class="remotion-guide__skill-card remotion-guide__skill-card--wide">
+            <b>常用 rules 索引</b>
+            <ul class="remotion-guide__source-list">
+              <li><span>sequencing</span>用 Sequence、Series、offset 拆时间线。</li>
+              <li><span>timing</span>用 interpolate + Bézier，把“什么时候动”和“动到哪里”分开。</li>
+              <li><span>transitions</span>需要镜头转场时再接 @remotion/transitions；Transition 会缩短总时长。</li>
+              <li><span>images / audio / videos</span>控制素材尺寸、裁剪、音量、变速、trimBefore / trimAfter。</li>
+              <li><span>measuring-text</span>标题、字幕、卡片文字可能溢出时必须测量或降级布局。</li>
+            </ul>
+          </article>
+        </div>
+        <div class="remotion-guide__commands">
+          <code>官方 Skill：github.com/remotion-dev/skills/tree/main/skills/remotion</code>
+          <code>本项目本地 Skill：.agents/skills/remotion-best-practices/SKILL.md</code>
+          <code>本项目 Remotion 入口：ppt_course_renderer/src/CourseDeckComposition.tsx</code>
+        </div>
+      </section>
+
+      <section class="remotion-guide__section remotion-guide__section--split" aria-labelledby="editing-title">
+        <div>
+          <div class="remotion-guide__section-head">
+            <span>04</span>
+            <h2 id="editing-title">剪辑和拼接</h2>
+          </div>
+          <ul class="remotion-guide__checklist">
+            <li>口播时长决定每页帧数：Math.ceil(seconds * fps)。</li>
+            <li>多段音频按顺序放入 Series，字幕按 start_sec / end_sec 对齐。</li>
+            <li>裁掉素材头尾：trimBefore / trimAfter。</li>
+            <li>转场用 TransitionSeries；Transition 会让两段重叠，Overlay 不改总时长。</li>
+            <li>培训视频保留证据画面：PPT 原页、局部截图、风险标记都来自 render_plan。</li>
+          </ul>
+        </div>
+        <pre class="remotion-guide__code"><code>&lt;TransitionSeries&gt;
+  {slides.map((slide) =&gt; (
+    &lt;TransitionSeries.Sequence durationInFrames={slide.durationInFrames}&gt;
+      &lt;CourseScene slide={slide} /&gt;
+    &lt;/TransitionSeries.Sequence&gt;
+  ))}
+&lt;/TransitionSeries&gt;</code></pre>
+      </section>
+
+      <section class="remotion-guide__section" aria-labelledby="project-title">
+        <div class="remotion-guide__section-head">
+          <span>05</span>
+          <h2 id="project-title">放到本项目</h2>
+        </div>
+        <div class="remotion-guide__pipeline">
+          <div><span>PPT</span><b>预览图 / 元数据</b></div>
+          <div><span>Director</span><b>scene / layout / 证据</b></div>
+          <div><span>Audio</span><b>mp3 / 秒数 / 字幕段</b></div>
+          <div><span>Adapter</span><b>render_plan + input-props</b></div>
+          <div><span>Remotion</span><b>MyVideoTest1 → MP4</b></div>
+        </div>
+        <div class="remotion-guide__commands">
+          <code>cd ppt_course_renderer</code>
+          <code>npm run dev</code>
+          <code>npx remotion render src/index.ts MyVideoTest1 render_tasks/&lt;task&gt;/out/video.mp4 --props render_tasks/&lt;task&gt;/input-props.json</code>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

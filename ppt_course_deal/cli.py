@@ -10,7 +10,7 @@ from ppt_course_deal.pipeline import transform_pptx
 
 app = typer.Typer(
     name="ppt-course",
-    help="PPT 课程化重构：文字密集型培训 PPT → 适合录课的结构化 PPTX（MVP）",
+    help="智课影擎：PPT 入仓、素材拆解、导演脚本、声音轨与 Remotion 成片",
     no_args_is_help=True,
     invoke_without_command=True,
 )
@@ -75,7 +75,7 @@ def cmd_serve(
         help="代码变更后自动重载（默认开启，避免新增接口后仍跑旧进程导致 404）；常驻可无 --no-reload",
     ),
 ) -> None:
-    """启动 Web 界面：浏览器上传 PPTX，下载课程化 PPTX。"""
+    """启动智课影擎 Web 工作台。"""
     try:
         import uvicorn
     except ImportError as e:

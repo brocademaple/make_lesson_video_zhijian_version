@@ -8,6 +8,8 @@ import os
 import shutil
 import sys
 import tempfile
+import threading
+import time
 from pathlib import Path
 
 
@@ -36,7 +38,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import quote
 from uuid import UUID, uuid4
 
-from fastapi import Body, FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import Body, FastAPI, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -111,6 +113,7 @@ from ppt_course_deal.task_storage import (
     tasks_dir,
     update_task_display_name,
 )
+from ppt_course_deal.video_profiles import video_profile
 from ppt_course_deal.transcript_import import (
     MAX_SCRIPT_CHARS as TRANSCRIPT_IMPORT_MAX_CHARS,
     merge_with_resolutions,
@@ -198,6 +201,19 @@ class PipelineRunStepBody(BaseModel):
     no_audio_frames: int = Field(default=90, ge=1, le=60 * 60 * 120)
     use_llm: bool = True
     llm_max_slides: Optional[int] = Field(default=None, ge=1)
+
+
+PIPELINE_JOB_STATUSES = {
+    "queued",
+    "running",
+    "succeeded",
+    "failed",
+    "cancel_requested",
+    "cancelled",
+}
+
+_pipeline_jobs_lock = threading.Lock()
+_pipeline_jobs: Dict[str, Dict[str, Any]] = {}
 
 
 class GenerateSlideVisualBody(BaseModel):
@@ -374,42 +390,42 @@ def build_task_pipeline_state(task_id: str, task: dict[str, Any]) -> dict[str, A
     stages = [
         _pipeline_stage(
             "deal",
-            "PPT 输入 / DL 解析",
+            "素材入仓",
             ready=slide_count > 0,
             detail=f"{slide_count} 页 · 预览 {preview_count} 页",
-            action="查看素材输入",
+            action="查看入仓素材",
             artifacts=[],
             missing_artifacts=[] if slide_count else ["parsed_task"],
             warnings=[] if preview_count else ["未检测到整页预览图"],
         ),
         _pipeline_stage(
             "raw_material",
-            "素材拆解清单",
+            "素材底稿",
             ready=raw_exists,
             detail=f"{rebuilder.get('raw_slide_count') or 0} 页 raw material",
-            action="生成原始素材 Manifest",
+            action="生成素材底稿",
             artifacts=[_artifact("raw_material_manifest.json", str(raw_path), raw_exists)],
             missing_artifacts=[] if raw_exists else ["raw_material_manifest.json"],
         ),
         _pipeline_stage(
             "course_material",
-            "素材理解 / 标记",
+            "素材地图",
             ready=material_exists,
             detail=f"{rebuilder.get('course_material_slide_count') or 0} 页素材已标记",
-            action="生成素材标记",
+            action="生成素材地图",
             artifacts=[_artifact("course_material.json", str(material_path), material_exists)],
             missing_artifacts=[] if material_exists else ["course_material.json"],
             warnings=[] if raw_exists else ["需要先生成 raw_material_manifest.json"],
         ),
         _pipeline_stage(
             "director",
-            "导演中枢",
+            "导演台",
             ready=director_exists,
             detail=(
                 f"{rebuilder.get('scene_count') or 0} 个镜头"
                 + (f" · {rebuilder.get('planning_mode')}" if rebuilder.get("planning_mode") else "")
             ),
-            action="生成课程化导演脚本",
+            action="生成分镜脚本",
             artifacts=[
                 _artifact("director_manifest.json", str(director_path), director_exists),
                 _artifact("approved_director_manifest.json", str(approved_path), approved_exists),
@@ -419,7 +435,7 @@ def build_task_pipeline_state(task_id: str, task: dict[str, Any]) -> dict[str, A
         ),
         _pipeline_stage(
             "audio",
-            "音频工坊",
+            "声音轨",
             ready=slides_with_audio > 0,
             detail=f"{slides_with_audio} 页已有音频 · {audio.get('generated_segment_count') or 0} 段",
             action="打开逐字稿与音频",
@@ -429,10 +445,10 @@ def build_task_pipeline_state(task_id: str, task: dict[str, Any]) -> dict[str, A
         ),
         _pipeline_stage(
             "render_plan",
-            "成片工厂",
+            "成片引擎",
             ready=render_plan_exists or input_props_exists,
             detail=remotion.get("render_plan_source") or ("input-props 已生成" if input_props_exists else "待生成"),
-            action="生成 RenderPlan / input-props",
+            action="生成成片蓝图",
             artifacts=[
                 _artifact("render_plan.json", str(remotion.get("render_plan_path") or ""), render_plan_exists),
                 _artifact("input-props.json", str(remotion.get("input_props_path") or ""), input_props_exists),
@@ -574,7 +590,7 @@ def run_pipeline_step(task_id: str, task: dict[str, Any], payload: PipelineRunSt
             stage=step,
             message=str(err),
             missing_artifacts=["director_manifest.json"],
-            next_action="先在导演中枢生成或审核导演脚本",
+            next_action="先在导演台生成或审核分镜脚本",
         ) from err
     return {
         "ok": True,
@@ -582,6 +598,121 @@ def run_pipeline_step(task_id: str, task: dict[str, Any], payload: PipelineRunSt
         "message": "已生成 RenderPlan / input-props",
         **data,
     }
+
+
+def _pipeline_job_public(job: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "job_id": job["job_id"],
+        "task_id": job["task_id"],
+        "step": job["step"],
+        "status": job["status"],
+        "message": job.get("message") or "",
+        "created_at": job.get("created_at"),
+        "started_at": job.get("started_at"),
+        "finished_at": job.get("finished_at"),
+        "cancel_requested": bool(job.get("cancel_requested")),
+        "result": job.get("result"),
+        "error": job.get("error"),
+    }
+
+
+def _pipeline_error_payload(err: BaseException) -> Dict[str, Any]:
+    if isinstance(err, HTTPException):
+        return {"status_code": err.status_code, "detail": err.detail}
+    return {"status_code": 500, "detail": str(err)}
+
+
+def _get_pipeline_job(job_id: str) -> Dict[str, Any]:
+    with _pipeline_jobs_lock:
+        job = _pipeline_jobs.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="流水线任务不存在")
+        return _pipeline_job_public(dict(job))
+
+
+def _set_pipeline_job(job_id: str, **updates: Any) -> None:
+    with _pipeline_jobs_lock:
+        job = _pipeline_jobs.get(job_id)
+        if job is not None:
+            job.update(updates)
+
+
+def _run_pipeline_job(job_id: str) -> None:
+    with _pipeline_jobs_lock:
+        job = _pipeline_jobs.get(job_id)
+        if job is None:
+            return
+        if job.get("status") == "cancelled":
+            return
+        job["status"] = "running"
+        job["started_at"] = time.time()
+        job["message"] = "执行中"
+        task_id = str(job["task_id"])
+        payload = job["payload"]
+
+    try:
+        task = load_task(task_id)
+        if task is None:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        result = run_pipeline_step(task_id, task, payload)
+        with _pipeline_jobs_lock:
+            job = _pipeline_jobs.get(job_id)
+            if job is None:
+                return
+            if job.get("cancel_requested"):
+                job["status"] = "cancel_requested"
+                job["message"] = "已收到取消请求；当前步骤已完成，产物可能已更新"
+            else:
+                job["status"] = "succeeded"
+                job["message"] = result.get("message") or "已完成"
+            job["result"] = result
+            job["finished_at"] = time.time()
+    except BaseException as err:
+        logger.exception("pipeline job failed: %s", job_id)
+        _set_pipeline_job(
+            job_id,
+            status="failed",
+            message="执行失败",
+            error=_pipeline_error_payload(err),
+            finished_at=time.time(),
+        )
+
+
+def create_pipeline_job(task_id: str, payload: PipelineRunStepBody) -> Dict[str, Any]:
+    step = payload.step.strip()
+    if step not in PIPELINE_STEP_LABELS:
+        raise _pipeline_http_error(
+            400,
+            stage=step or "unknown",
+            message="未知流水线步骤",
+            missing_artifacts=[],
+            next_action="请选择 raw_material / course_material / director / audio / render_plan",
+        )
+    job_id = str(uuid4())
+    job: Dict[str, Any] = {
+        "job_id": job_id,
+        "task_id": task_id,
+        "step": step,
+        "payload": payload,
+        "status": "queued",
+        "message": "已排队",
+        "created_at": time.time(),
+        "started_at": None,
+        "finished_at": None,
+        "cancel_requested": False,
+        "result": None,
+        "error": None,
+    }
+    with _pipeline_jobs_lock:
+        _pipeline_jobs[job_id] = job
+    worker = threading.Thread(
+        target=_run_pipeline_job,
+        args=(job_id,),
+        name=f"pipeline-job-{job_id[:8]}",
+        daemon=True,
+    )
+    worker.start()
+    return _pipeline_job_public(job)
 
 
 class MiniMaxTestBody(BaseModel):
@@ -737,8 +868,8 @@ async def _app_lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     application = FastAPI(
-        title="PPT 课程化重构",
-        description="上传原始培训 PPTX，解析预览后生成适合录课的结构化 PPTX（MVP）",
+        title="智课影擎 API",
+        description="PPT 入仓、素材拆解、导演脚本、声音轨与 Remotion 成片的本地工作台 API",
         version="0.1.0",
         lifespan=_app_lifespan,
     )
@@ -752,7 +883,10 @@ def create_app() -> FastAPI:
         }
 
     @application.post("/api/parse")
-    async def parse_api(file: UploadFile = File(...)) -> dict:
+    async def parse_api(
+        file: UploadFile = File(...),
+        video_profile_id: str = Form(default="quality", alias="video_profile"),
+    ) -> dict:
         """解析整份 PPTX；若本机具备 LibreOffice + Poppler，则生成逐页 PNG 供预览。"""
         if not file.filename or not file.filename.lower().endswith(".pptx"):
             raise HTTPException(status_code=400, detail="请上传 .pptx 文件")
@@ -774,6 +908,7 @@ def create_app() -> FastAPI:
         preview_count = 0
         preview_source: str = "libreoffice"
         task_persisted: Optional[str] = None
+        profile = video_profile(video_profile_id)
 
         work = Path(tempfile.mkdtemp(prefix="deck_preview_"))
         pngs: List[Path] = []
@@ -825,6 +960,7 @@ def create_app() -> FastAPI:
                 images_error,
                 images_available,
                 preview_count,
+                profile,
             )
 
             if pngs:
@@ -846,6 +982,7 @@ def create_app() -> FastAPI:
                     images_error,
                     False,
                     0,
+                    profile,
                 )
 
         return {
@@ -858,6 +995,7 @@ def create_app() -> FastAPI:
             "images_error": images_error,
             "preview_source": preview_source,
             "task_id": task_persisted,
+            "video_profile": profile,
         }
 
     @application.get("/api/tasks")
@@ -899,6 +1037,44 @@ def create_app() -> FastAPI:
         if data is None:
             raise HTTPException(status_code=404, detail="任务不存在")
         return run_pipeline_step(task_id, data, payload)
+
+    @application.post(
+        "/api/tasks/{task_id}/pipeline/jobs",
+        status_code=status.HTTP_202_ACCEPTED,
+    )
+    def post_task_pipeline_job(
+        task_id: str,
+        payload: PipelineRunStepBody,
+    ) -> Dict[str, Any]:
+        """创建异步流水线任务；前端通过 job_id 轮询状态。"""
+        data = load_task(task_id)
+        if data is None:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        return create_pipeline_job(task_id, payload)
+
+    @application.get("/api/pipeline/jobs/{job_id}")
+    def get_pipeline_job(job_id: str) -> Dict[str, Any]:
+        """读取异步流水线任务状态。"""
+        return _get_pipeline_job(job_id)
+
+    @application.post("/api/pipeline/jobs/{job_id}/cancel")
+    def cancel_pipeline_job(job_id: str) -> Dict[str, Any]:
+        """取消排队任务；运行中的步骤会记录取消请求，底层动作完成后停止推进。"""
+        with _pipeline_jobs_lock:
+            job = _pipeline_jobs.get(job_id)
+            if job is None:
+                raise HTTPException(status_code=404, detail="流水线任务不存在")
+            if job["status"] == "queued":
+                job["status"] = "cancelled"
+                job["cancel_requested"] = True
+                job["message"] = "已取消"
+                job["finished_at"] = time.time()
+            elif job["status"] == "running":
+                job["status"] = "cancel_requested"
+                job["cancel_requested"] = True
+                job["message"] = "已请求取消；当前步骤可能会完成"
+            public = _pipeline_job_public(dict(job))
+        return public
 
     @application.delete("/api/tasks/{task_id}")
     def delete_task_api(task_id: str) -> Dict[str, bool]:
@@ -1900,12 +2076,19 @@ def create_app() -> FastAPI:
         )
 
     index_path = STATIC_ROOT / "index.html"
+    remotion_guide_path = STATIC_ROOT / "remotion-guide.html"
 
     @application.get("/")
     def serve_index() -> FileResponse:
         if not index_path.is_file():
             raise HTTPException(status_code=404, detail="前端资源未找到")
-        return FileResponse(index_path)
+        return FileResponse(index_path, headers={"Cache-Control": "no-store, max-age=0"})
+
+    @application.get("/remotion-guide")
+    def serve_remotion_guide() -> FileResponse:
+        if not remotion_guide_path.is_file():
+            raise HTTPException(status_code=404, detail="Remotion 指南未找到")
+        return FileResponse(remotion_guide_path, headers={"Cache-Control": "no-store, max-age=0"})
 
     if STATIC_ROOT.is_dir():
         application.mount(

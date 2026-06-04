@@ -49,6 +49,7 @@ def save_task_from_parse(
     images_error: str | None,
     images_available: bool,
     preview_count: int,
+    video_profile: dict[str, Any] | None = None,
 ) -> str | None:
     """
     将本次解析结果写入磁盘；返回 task_id，失败时返回 None（不影响主流程）。
@@ -96,6 +97,7 @@ def save_task_from_parse(
             "images_available": images_available,
             "preview_count": preview_count,
             "shape_image_manifest": shape_manifest,
+            "video_profile": video_profile or {},
         }
         (base / "meta.json").write_text(
             json.dumps(meta, ensure_ascii=False, indent=2),
@@ -154,6 +156,7 @@ def list_task_summaries() -> list[dict[str, Any]]:
                 "slide_count": int(data.get("slide_count", 0)),
                 "preview_count": int(data.get("preview_count", 0)),
                 "images_available": bool(data.get("images_available")),
+                "video_profile": data.get("video_profile") if isinstance(data.get("video_profile"), dict) else {},
             }
         )
     out.sort(key=lambda x: x.get("created_at") or "", reverse=True)

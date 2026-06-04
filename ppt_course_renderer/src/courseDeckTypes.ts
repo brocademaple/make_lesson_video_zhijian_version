@@ -33,6 +33,19 @@ export type SceneTransition = {
   label?: string;
 };
 
+export type RenderProfile = {
+  id?: string;
+  label?: string;
+  motion_style?: string;
+  visual_strategy?: string;
+  remotion?: {
+    theme?: string;
+    shot_motion?: string;
+    overlay_density?: string;
+    evidence_mode?: string;
+  };
+};
+
 export type CourseDeckSlideSpec = {
   /** 整页预览：相对仓库根，如 `.../previews/slide-0000/full.png` */
   imageRelative: string;
@@ -72,6 +85,8 @@ export type CourseDeckSlideSpec = {
   riskBadge?: RiskBadge;
   /** 章节/镜头转场意图。 */
   transition?: SceneTransition;
+  /** 从视频意图下沉到 Remotion 的主题、镜头运动和证据层策略。 */
+  renderProfile?: RenderProfile;
   /** 当前 scene 在完整视频中的位置。 */
   progress?: {
     index: number;
@@ -96,5 +111,6 @@ export type CourseDeckSlideSpec = {
 export type CourseDeckProps = {
   fps: number;
   workspaceRoot?: string;
+  videoProfile?: RenderProfile;
   slides: CourseDeckSlideSpec[];
 };

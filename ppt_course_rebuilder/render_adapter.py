@@ -162,6 +162,20 @@ def _transition(scene: dict[str, Any], index: int) -> dict[str, str]:
     }
 
 
+def _render_profile(scene: dict[str, Any], manifest_profile: dict[str, Any]) -> dict[str, Any]:
+    overlays = scene.get("render_overlays")
+    raw = overlays.get("render_profile") if isinstance(overlays, dict) else None
+    if isinstance(raw, dict) and raw.get("id"):
+        return raw
+    return {
+        "id": str(manifest_profile.get("id") or ""),
+        "label": str(manifest_profile.get("label") or ""),
+        "motion_style": str(manifest_profile.get("motion_style") or ""),
+        "visual_strategy": str(manifest_profile.get("visual_strategy") or ""),
+        "remotion": manifest_profile.get("remotion") if isinstance(manifest_profile.get("remotion"), dict) else {},
+    }
+
+
 def _shape_relatives(task_root: Path, slide_index: int, root: Path) -> list[str]:
     shapes_dir = task_root / "previews" / f"slide-{slide_index:04d}" / "shapes"
     if not shapes_dir.is_dir():
@@ -223,6 +237,7 @@ def _scene_plan_entries(
                 "risk_badge": prop_slide.get("riskBadge") or {},
                 "risk_flags": prop_slide.get("riskFlags") or [],
                 "transition": prop_slide.get("transition") or {},
+                "render_profile": prop_slide.get("renderProfile") or {},
             }
         )
     return entries
@@ -243,6 +258,10 @@ def director_manifest_to_props(
         raw_scenes = raw_scenes[:max_scenes]
     root = repo_root()
     total_scenes = sum(1 for scene in raw_scenes if isinstance(scene, dict))
+    manifest_intent = director_manifest.get("render_intent")
+    manifest_profile = {}
+    if isinstance(manifest_intent, dict) and isinstance(manifest_intent.get("profile"), dict):
+        manifest_profile = manifest_intent["profile"]
     for scene_index, scene in enumerate(raw_scenes):
         if not isinstance(scene, dict):
             continue
@@ -275,6 +294,7 @@ def director_manifest_to_props(
             "riskBadge": _risk_badge(scene),
             "riskFlags": scene.get("risk_flags") if isinstance(scene.get("risk_flags"), list) else [],
             "transition": _transition(scene, scene_index),
+            "renderProfile": _render_profile(scene, manifest_profile),
             "progress": {"index": scene_index + 1, "total": total_scenes},
             "sourceEvidence": scene.get("source_evidence") if isinstance(scene.get("source_evidence"), list) else [],
             "sourceSlideIds": source_ids if isinstance(source_ids, list) else [source_id],
@@ -283,7 +303,7 @@ def director_manifest_to_props(
             slide_obj["audioRelatives"] = audio_rels
             slide_obj["audioSegmentDurationInFrames"] = segment_frames
         slides.append(slide_obj)
-    return {"fps": fps, "slides": slides}
+    return {"fps": fps, "videoProfile": manifest_profile, "slides": slides}
 
 
 def write_render_plan_from_task(
@@ -329,6 +349,7 @@ def write_render_plan_from_task(
         "output_video_path": str(paths["output_video"]),
         "render_command": render_command_for_task(task_id, root=root),
         "props_summary": summarize_props(props),
+        "video_profile": props.get("videoProfile") or {},
         "scene_count": len(props.get("slides") or []),
         "layout_counts": _layout_counts(props.get("slides") or []),
         "risk_scene_count": sum(1 for slide in props.get("slides") or [] if (slide.get("riskBadge") or {}).get("show")),

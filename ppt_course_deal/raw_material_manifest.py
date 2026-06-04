@@ -83,6 +83,7 @@ def build_raw_material_manifest(task_id: str) -> dict[str, Any]:
         "task_id": task_id,
         "source_pptx": "source.pptx",
         "task_root": task_root_str,
+        "video_profile": meta.get("video_profile") if isinstance(meta.get("video_profile"), dict) else {},
         "slides": slides_out,
         "data_root": str(get_data_root().resolve()),
     }

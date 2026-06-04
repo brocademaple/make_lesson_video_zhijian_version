@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -212,8 +213,8 @@ def test_pipeline_state_exposes_middle_office_stages(monkeypatch, tmp_path: Path
     assert res.status_code == 200
     data = res.json()
     labels = [stage["label"] for stage in data["pipeline"]["stages"]]
-    assert "素材理解 / 标记" in labels
-    assert "导演中枢" in labels
+    assert "素材地图" in labels
+    assert "导演台" in labels
     assert data["pipeline"]["stage_count"] == 7
     assert data["pipeline"]["ready_count"] >= 3
 
@@ -250,6 +251,44 @@ def test_pipeline_run_step_delegates_render_plan(monkeypatch) -> None:
     assert received["tid"] == task_id
     assert received["kwargs"]["fps"] == 24
     assert received["kwargs"]["max_scenes"] == 4
+
+
+def test_pipeline_job_endpoint_runs_async_step(monkeypatch) -> None:
+    task_id = "task-1"
+    received = {}
+
+    monkeypatch.setattr(web_app, "load_task", lambda tid: {"task_id": tid, "slides": [{}]})
+
+    def fake_run_pipeline_step(tid, task, payload):
+        received["tid"] = tid
+        received["task"] = task
+        received["step"] = payload.step
+        return {"ok": True, "stage": payload.step, "message": "fake done"}
+
+    monkeypatch.setattr(web_app, "run_pipeline_step", fake_run_pipeline_step)
+
+    client = TestClient(web_app.create_app())
+    create_res = client.post(
+        f"/api/tasks/{task_id}/pipeline/jobs",
+        json={"step": "render_plan"},
+    )
+
+    assert create_res.status_code == 202
+    job_id = create_res.json()["job_id"]
+    final = None
+    for _ in range(20):
+        poll_res = client.get(f"/api/pipeline/jobs/{job_id}")
+        assert poll_res.status_code == 200
+        final = poll_res.json()
+        if final["status"] == "succeeded":
+            break
+        time.sleep(0.05)
+
+    assert final is not None
+    assert final["status"] == "succeeded"
+    assert final["result"]["message"] == "fake done"
+    assert received["tid"] == task_id
+    assert received["step"] == "render_plan"
 
 
 def test_pipeline_audio_step_reports_missing_artifacts(monkeypatch, tmp_path: Path) -> None:
