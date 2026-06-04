@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>智课影擎 · PPT 到培训视频的生成工作台</title>
+    <title>智课影擎 · PPT 课件视频生产线</title>
     <meta
       name="description"
-      content="智课影擎把企业培训 PPT 拆成素材、脚本、口播和 Remotion 成片计划，形成可审核、可复现的视频生产链路。"
+      content="智课影擎把企业培训 PPT 拆成素材、导演脚本、口播音频和 Remotion 渲染入参，形成可审核、可复现的课件视频生产线。"
     />
     <link rel="stylesheet" href="assets/css/site.css" />
   </head>
@@ -33,14 +33,14 @@
     <main id="top">
       <section class="hero" aria-labelledby="hero-title">
         <div class="hero__copy glass-panel">
-          <p class="hero__label">AI Native Course Video Studio</p>
-          <h1 id="hero-title">一份 PPT，炼成一条培训片</h1>
+          <p class="hero__label">PPT Course Video Pipeline</p>
+          <h1 id="hero-title">把培训课件做成可审核的视频生产线</h1>
           <p class="hero__lead">
-            上传课件后，系统会拆素材、写脚本、配口播、生成 Remotion 成片蓝图，让培训视频从“手工剪”变成可审核的生产线。
+            面向企业内训、质检规范和流程教学：上传 PPT 后，系统会拆页、标注素材、生成导演脚本、维护口播音频，并交给 Remotion 渲染成片。
           </p>
           <div class="hero__actions">
-            <a class="button button--primary" href="#studio">看工作台</a>
-            <a class="button" href="#scroll-story">看生成链路</a>
+            <a class="button button--primary" href="#studio">看工作台截图</a>
+            <a class="button" href="#scroll-story">看产物链路</a>
           </div>
         </div>
         <div class="hero__visual glass-panel" aria-label="产品首页截图">
@@ -62,8 +62,8 @@
         </article>
         <article>
           <span>02</span>
-          <strong>左侧任务资产</strong>
-          <p>首页看历史任务，详情页切成 PPT 缩略图。</p>
+          <strong>任务与页预览</strong>
+          <p>首页管理历史任务，详情页查看 PPT 缩略图。</p>
         </article>
         <article>
           <span>03</span>
@@ -79,10 +79,10 @@
 
       <section class="scroll-story" id="scroll-story" aria-labelledby="story-title">
         <div class="story-copy">
-          <p class="section-label">Workflow</p>
-          <h2 id="story-title">像 GitHub 首页那样，边下拉边切换生成阶段</h2>
+          <p class="section-label">Production Pipeline</p>
+          <h2 id="story-title">从 PPT 到 MP4，每一步都有产物可查</h2>
           <p>
-            这条链路不靠一句“AI 生成视频”糊过去。每个阶段都会留下可检查的文件，方便你回看、重跑、替换模型或接入人工审核。
+            这个项目的核心不是单次生成，而是把课件视频拆成可审、可重跑、可替换模型的产物链路。
           </p>
         </div>
         <div class="story-layout">
@@ -90,22 +90,22 @@
             <article class="story-step glass-panel" data-story-step="materials">
               <span>Step 01</span>
               <h3>素材入仓</h3>
-              <p>抽取 PPT 预览、正文、备注和图片素材，形成 raw material manifest。</p>
+              <p>抽取 PPT 预览图、正文、备注和图片素材，形成 raw_material_manifest.json。</p>
             </article>
             <article class="story-step glass-panel" data-story-step="director">
               <span>Step 02</span>
               <h3>导演中枢</h3>
-              <p>按视频方向重组素材，生成可审核的章节、镜头和画面意图。</p>
+              <p>按视频方向重组素材，生成 director_manifest.json，记录章节、镜头和画面意图。</p>
             </article>
             <article class="story-step glass-panel" data-story-step="audio">
               <span>Step 03</span>
               <h3>声音工坊</h3>
-              <p>逐页维护口播稿，支持多段音频和 MiniMax / Edge TTS 兜底。</p>
+              <p>逐页维护口播稿和音频版本，支持 MiniMax，也能用 Edge TTS 兜底跑通链路。</p>
             </article>
             <article class="story-step glass-panel" data-story-step="render">
               <span>Step 04</span>
               <h3>成片引擎</h3>
-              <p>把导演脚本转成 render plan 和 input-props，由 Remotion 渲染 MP4。</p>
+              <p>把导演脚本转成 render_plan.json 和 input-props.json，由 Remotion 渲染 MP4。</p>
             </article>
           </div>
           <aside class="story-board glass-panel" aria-label="当前阶段看板">
@@ -148,8 +148,8 @@
       <section class="architecture glass-panel" id="architecture" aria-labelledby="architecture-title">
         <div class="section-head">
           <p class="section-label">Architecture</p>
-          <h2 id="architecture-title">项目架构图</h2>
-          <p>前端工作台负责引导和审核，后端流水线负责生成产物，Remotion 只吃确定的入参。</p>
+          <h2 id="architecture-title">项目里真正发生了什么</h2>
+          <p>前端工作台负责上传、选择视频方向和审核产物；后端流水线负责生成 JSON 与媒体文件；Remotion 只接收确定的渲染入参。</p>
         </div>
         <div class="arch-map" role="img" aria-label="智课影擎架构：PPT 上传进入 FastAPI 工作台，生成素材、导演脚本、音频和 Remotion 入参，最后渲染 MP4">
           <div class="arch-node arch-node--source">PPT / 音频 / 图片</div>
@@ -180,7 +180,7 @@
     </main>
 
     <footer class="site-footer">
-      <span>Built for PPT course video production.</span>
+      <span>智课影擎：PPT 课件视频生产链路。</span>
       <a href="https://github.com/brocademaple/make_lesson_video_zhijian_version">View repository</a>
     </footer>
     <script src="assets/js/site.js"></script>
