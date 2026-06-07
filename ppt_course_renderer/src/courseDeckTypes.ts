@@ -67,6 +67,23 @@ export type CourseDeckSlideSpec = {
   audioSegmentDurationInFrames?: number[];
   /** 来自 director/render_plan 的镜头标识，用于调试与未来缓存。 */
   sceneId?: string;
+  /** 导演模块分配的镜头角色：content / transition / intro / recap / concept_animation。 */
+  sceneRole?: string;
+  /** 双引擎调度结果：remotion_stable / hyperframes_creative / hybrid。 */
+  renderEngine?: "remotion_stable" | "hyperframes_creative" | "hybrid" | string;
+  /** 创意资产缺失或失败时使用的兜底引擎。 */
+  fallbackEngine?: string;
+  /** 给 Hyperframes 或 Remotion 创意模板的导演 brief。 */
+  creativeBrief?: Record<string, unknown>;
+  /** Hyperframes 预渲染产物；Remotion 最终 timeline 只引用该资产，不把导出权交给 Hyperframes。 */
+  creativeAsset?: {
+    clipRelative?: string;
+    clipPath?: string;
+    exists?: boolean;
+    mode?: "replace" | "overlay" | string;
+    assetManifestPath?: string;
+    creativeBriefPath?: string;
+  };
   /** 初版 scene-aware layout：full_slide / rule_card / split_panel / case_dialogue / summary。 */
   layout?: "full_slide" | "rule_card" | "split_panel" | "case_dialogue" | "summary" | string;
   /** 高风险规则、金额、处罚等标记；模板仅做轻量提示，不改变原 PPT 证据。 */
@@ -109,8 +126,20 @@ export type CourseDeckSlideSpec = {
 };
 
 export type CourseDeckProps = {
+  schemaVersion?: string;
   fps: number;
   workspaceRoot?: string;
   videoProfile?: RenderProfile;
+  timelineItems?: Array<{
+    index: number;
+    scene_id: string;
+    scene_role?: string;
+    render_engine?: string;
+    fallback_engine?: string;
+    start_frame: number;
+    duration_frames: number;
+    end_frame: number;
+    layout?: string;
+  }>;
   slides: CourseDeckSlideSpec[];
 };

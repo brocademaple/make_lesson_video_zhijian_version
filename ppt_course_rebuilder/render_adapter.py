@@ -13,12 +13,16 @@ from ppt_course_deal.remotion_input_props import (
     rel_for_props,
     render_command_for_task,
     render_task_paths,
+    renderer_root,
     repo_root,
     safe_render_task_name,
     summarize_props,
 )
 from ppt_course_deal.task_storage import get_data_root
 from ppt_course_rebuilder.manifest_reader import read_json, write_json
+
+CREATIVE_ENGINES = {"hyperframes_creative", "hybrid"}
+REMOTION_STABLE = "remotion_stable"
 
 
 def _slide_index_from_id(slide_id: str) -> int:
@@ -187,6 +191,122 @@ def _layout_counts(slides: list[dict[str, Any]]) -> dict[str, int]:
     return dict(Counter(str(slide.get("layout") or "full_slide") for slide in slides))
 
 
+def _engine_counts(slides: list[dict[str, Any]]) -> dict[str, int]:
+    return dict(Counter(str(slide.get("renderEngine") or REMOTION_STABLE) for slide in slides))
+
+
+def _safe_scene_id(scene_id: str, fallback: str) -> str:
+    text = "".join(
+        ch if ch.isalnum() or ch in "-_." else "-"
+        for ch in str(scene_id or fallback)
+    )
+    text = text.strip(".-_")
+    return text or fallback
+
+
+def _ensure_public_render_tasks_link(root: Path) -> None:
+    public_dir = root / "public"
+    render_tasks_dir = root / "render_tasks"
+    link = public_dir / "render_tasks"
+    if link.exists() or link.is_symlink():
+        return
+    try:
+        public_dir.mkdir(parents=True, exist_ok=True)
+        render_tasks_dir.mkdir(parents=True, exist_ok=True)
+        link.symlink_to(Path("..") / "render_tasks")
+    except OSError:
+        # Remotion can still render stable scenes; the status manifest makes the missing link visible.
+        return
+
+
+def _creative_asset_payload(
+    *,
+    task_name: str,
+    task_dir: Path,
+    scene: dict[str, Any],
+    scene_index: int,
+    fps: int,
+    duration_frames: int,
+) -> dict[str, Any]:
+    scene_id = _safe_scene_id(str(scene.get("scene_id") or ""), f"sc-{scene_index:04d}")
+    asset_dir = task_dir / "creative_assets" / scene_id
+    clip_path = asset_dir / "clip.mp4"
+    rel = (
+        Path("render_tasks") / task_name / "creative_assets" / scene_id / "clip.mp4"
+    ).as_posix()
+    brief = scene.get("creative_brief") if isinstance(scene.get("creative_brief"), dict) else {}
+    brief = {
+        **brief,
+        "scene_id": str(scene.get("scene_id") or scene_id),
+        "duration_frames": duration_frames,
+        "duration_sec": round(duration_frames / float(fps), 3)
+        if fps > 0
+        else brief.get("duration_sec", 0),
+        "canvas": {
+            **(brief.get("canvas") if isinstance(brief.get("canvas"), dict) else {}),
+            "width": 1920,
+            "height": 1080,
+            "fps": fps,
+        },
+        "output": {"clip": "clip.mp4", "asset_manifest": "asset_manifest.json"},
+    }
+    return {
+        "scene_id": str(scene.get("scene_id") or scene_id),
+        "asset_dir": asset_dir,
+        "clip_path": clip_path,
+        "clip_relative": rel,
+        "brief": brief,
+        "brief_path": asset_dir / "creative_brief.json",
+        "asset_manifest_path": asset_dir / "asset_manifest.json",
+        "exists": clip_path.is_file(),
+    }
+
+
+def _write_hyperframes_task(asset: dict[str, Any], *, render_engine: str) -> dict[str, Any]:
+    asset_dir = Path(asset["asset_dir"])
+    asset_dir.mkdir(parents=True, exist_ok=True)
+    write_json(Path(asset["brief_path"]), asset["brief"])
+    manifest = {
+        "schema_version": "hyperframes_asset.v1",
+        "scene_id": asset["scene_id"],
+        "render_engine": render_engine,
+        "status": "ready" if asset["exists"] else "pending",
+        "clip_path": str(asset["clip_path"]),
+        "clip_relative": asset["clip_relative"],
+        "creative_brief_path": str(asset["brief_path"]),
+        "render_command_hint": "npx hyperframes render index.html clip.mp4",
+        "notes": "Hyperframes 只生成创意资产；最终 timeline 和导出仍由 Remotion 控制。",
+    }
+    write_json(Path(asset["asset_manifest_path"]), manifest)
+    return manifest
+
+
+def _timeline_items_from_slides(slides: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    cursor = 0
+    for idx, slide in enumerate(slides):
+        duration = int(slide.get("durationInFrames") or 0)
+        item = {
+            "index": idx,
+            "scene_id": str(slide.get("sceneId") or f"sc-{idx:04d}"),
+            "scene_role": str(slide.get("sceneRole") or "content"),
+            "render_engine": str(slide.get("renderEngine") or REMOTION_STABLE),
+            "fallback_engine": str(slide.get("fallbackEngine") or ""),
+            "start_frame": cursor,
+            "duration_frames": duration,
+            "end_frame": cursor + duration,
+            "layout": str(slide.get("layout") or "full_slide"),
+            "source_slide_ids": slide.get("sourceSlideIds")
+            if isinstance(slide.get("sourceSlideIds"), list)
+            else [],
+        }
+        if isinstance(slide.get("creativeAsset"), dict):
+            item["creative_asset"] = slide["creativeAsset"]
+        items.append(item)
+        cursor += duration
+    return items
+
+
 def _audio_for_slide(task_id: str, slide_index: int, *, fps: int) -> tuple[list[str], list[int]]:
     meta = load_meta("task", task_id)
     durations = meta.get("segment_duration_sec")
@@ -229,9 +349,21 @@ def _scene_plan_entries(
                 "scene_id": str(scene.get("scene_id") or ""),
                 "source_slide_ids": scene.get("source_slide_ids") or [],
                 "layout": str(prop_slide.get("layout") or _screen_layout(scene)),
+                "scene_role": str(
+                    prop_slide.get("sceneRole") or scene.get("scene_role") or "content"
+                ),
+                "render_engine": str(
+                    prop_slide.get("renderEngine")
+                    or scene.get("render_engine")
+                    or REMOTION_STABLE
+                ),
+                "fallback_engine": str(
+                    prop_slide.get("fallbackEngine") or scene.get("fallback_engine") or ""
+                ),
                 "title": str(scene.get("title") or ""),
                 "durationInFrames": prop_slide.get("durationInFrames", 0),
                 "audio_segment_count": len(prop_slide.get("audioRelatives") or []),
+                "creative_asset": prop_slide.get("creativeAsset") or {},
                 "callouts": prop_slide.get("callouts") or [],
                 "evidence_panel": prop_slide.get("evidencePanel") or {},
                 "risk_badge": prop_slide.get("riskBadge") or {},
@@ -250,6 +382,7 @@ def director_manifest_to_props(
     fps: int = 30,
     no_audio_frames: int = 90,
     max_scenes: int | None = None,
+    renderer_root_path: Path | None = None,
 ) -> dict[str, Any]:
     task_root = get_data_root() / "tasks" / task_id
     slides: list[dict[str, Any]] = []
@@ -258,6 +391,8 @@ def director_manifest_to_props(
         raw_scenes = raw_scenes[:max_scenes]
     root = repo_root()
     total_scenes = sum(1 for scene in raw_scenes if isinstance(scene, dict))
+    task_name = safe_render_task_name(task_id)
+    task_dir = render_task_paths(task_id, root=renderer_root_path)["task_dir"]
     manifest_intent = director_manifest.get("render_intent")
     manifest_profile = {}
     if isinstance(manifest_intent, dict) and isinstance(manifest_intent.get("profile"), dict):
@@ -285,6 +420,12 @@ def director_manifest_to_props(
             "durationInFrames": frames,
             "caption": caption,
             "sceneId": str(scene.get("scene_id") or f"sc-{scene_index:04d}"),
+            "sceneRole": str(scene.get("scene_role") or "content"),
+            "renderEngine": str(scene.get("render_engine") or REMOTION_STABLE),
+            "fallbackEngine": str(scene.get("fallback_engine") or ""),
+            "creativeBrief": scene.get("creative_brief")
+            if isinstance(scene.get("creative_brief"), dict)
+            else {},
             "layout": layout,
             "onscreenText": _clean_text(scene.get("onscreen_text"), limit=360),
             "subtitleSegments": _subtitle_segments(scene),
@@ -302,8 +443,67 @@ def director_manifest_to_props(
         if audio_rels:
             slide_obj["audioRelatives"] = audio_rels
             slide_obj["audioSegmentDurationInFrames"] = segment_frames
+        if slide_obj["renderEngine"] in CREATIVE_ENGINES:
+            asset = _creative_asset_payload(
+                task_name=task_name,
+                task_dir=task_dir,
+                scene=scene,
+                scene_index=scene_index,
+                fps=fps,
+                duration_frames=frames,
+            )
+            slide_obj["creativeAsset"] = {
+                "clipRelative": asset["clip_relative"],
+                "clipPath": str(asset["clip_path"]),
+                "exists": bool(asset["exists"]),
+                "mode": "overlay" if slide_obj["renderEngine"] == "hybrid" else "replace",
+            }
         slides.append(slide_obj)
-    return {"fps": fps, "videoProfile": manifest_profile, "slides": slides}
+    return {
+        "schemaVersion": "course_deck_props.v2",
+        "fps": fps,
+        "videoProfile": manifest_profile,
+        "timelineItems": _timeline_items_from_slides(slides),
+        "slides": slides,
+    }
+
+
+def _write_hyperframes_tasks_from_props(
+    task_id: str,
+    props: dict[str, Any],
+    *,
+    paths: dict[str, Path],
+    fps: int,
+) -> list[dict[str, Any]]:
+    task_name = safe_render_task_name(task_id)
+    tasks: list[dict[str, Any]] = []
+    slides = props.get("slides") if isinstance(props.get("slides"), list) else []
+    for idx, slide in enumerate(slides):
+        if not isinstance(slide, dict):
+            continue
+        render_engine = str(slide.get("renderEngine") or REMOTION_STABLE)
+        if render_engine not in CREATIVE_ENGINES:
+            continue
+        scene = {
+            "scene_id": slide.get("sceneId") or f"sc-{idx:04d}",
+            "creative_brief": slide.get("creativeBrief") if isinstance(slide.get("creativeBrief"), dict) else {},
+        }
+        asset = _creative_asset_payload(
+            task_name=task_name,
+            task_dir=paths["task_dir"],
+            scene=scene,
+            scene_index=idx,
+            fps=fps,
+            duration_frames=int(slide.get("durationInFrames") or 0),
+        )
+        manifest = _write_hyperframes_task(asset, render_engine=render_engine)
+        if isinstance(slide.get("creativeAsset"), dict):
+            slide["creativeAsset"]["exists"] = bool(asset["exists"])
+            slide["creativeAsset"]["assetManifestPath"] = str(asset["asset_manifest_path"])
+            slide["creativeAsset"]["creativeBriefPath"] = str(asset["brief_path"])
+        tasks.append(manifest)
+    props["timelineItems"] = _timeline_items_from_slides(slides)
+    return tasks
 
 
 def write_render_plan_from_task(
@@ -335,12 +535,21 @@ def write_render_plan_from_task(
         fps=fps,
         no_audio_frames=no_audio_frames,
         max_scenes=max_scenes,
+        renderer_root_path=root,
     )
     paths = render_task_paths(task_id, root=root)
     paths["output_video"].parent.mkdir(parents=True, exist_ok=True)
+    _ensure_public_render_tasks_link(root or renderer_root())
+    hyperframes_tasks = _write_hyperframes_tasks_from_props(
+        task_id,
+        props,
+        paths=paths,
+        fps=fps,
+    )
     write_json(paths["input_props"], props)
+    timeline_items = props.get("timelineItems") if isinstance(props.get("timelineItems"), list) else []
     plan = {
-        "schema_version": "render_plan.v1",
+        "schema_version": "render_plan.v2",
         "task_id": task_id,
         "source": "approved_director_manifest" if source_path == approved else "director_manifest",
         "source_manifest_path": str(source_path),
@@ -352,7 +561,17 @@ def write_render_plan_from_task(
         "video_profile": props.get("videoProfile") or {},
         "scene_count": len(props.get("slides") or []),
         "layout_counts": _layout_counts(props.get("slides") or []),
-        "risk_scene_count": sum(1 for slide in props.get("slides") or [] if (slide.get("riskBadge") or {}).get("show")),
+        "engine_counts": _engine_counts(props.get("slides") or []),
+        "risk_scene_count": sum(
+            1
+            for slide in props.get("slides") or []
+            if (slide.get("riskBadge") or {}).get("show")
+        ),
+        "timeline_items": timeline_items,
+        "timeline_item_count": len(timeline_items),
+        "hyperframes_tasks": hyperframes_tasks,
+        "hyperframes_task_count": len(hyperframes_tasks),
+        "creative_asset_ready_count": sum(1 for task in hyperframes_tasks if task.get("status") == "ready"),
         "scenes": _scene_plan_entries(manifest, props_slides=props.get("slides") or [], max_scenes=max_scenes),
     }
     render_plan_path = paths["task_dir"] / "render_plan.json"
@@ -367,6 +586,10 @@ def write_render_plan_from_task(
         "render_command": plan["render_command"],
         "scene_count": plan["scene_count"],
         "layout_counts": plan["layout_counts"],
+        "engine_counts": plan["engine_counts"],
         "risk_scene_count": plan["risk_scene_count"],
+        "timeline_item_count": len(timeline_items),
+        "hyperframes_task_count": plan["hyperframes_task_count"],
+        "creative_asset_ready_count": plan["creative_asset_ready_count"],
         **plan["props_summary"],
     }

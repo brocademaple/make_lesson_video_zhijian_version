@@ -14,4 +14,8 @@ ppt_course_data/
 *.pptx
 !tests/fixtures/**/*.pptx
 .DS_Store
+.claude/
+.gemini/
+**/.gemini/
 ppt_course_renderer/render_tasks/
+ppt_course_renderer/public/render_tasks

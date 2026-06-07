@@ -17,6 +17,7 @@ from ppt_course_rebuilder.models import utc_now_iso
 from ppt_course_rebuilder.narration import build_narration
 from ppt_course_rebuilder.scene_planner import infer_scene_type, scene_title_for_type
 from ppt_course_rebuilder.subtitle import split_subtitle_segments
+from ppt_course_rebuilder.visual_director import apply_visual_direction
 from ppt_course_deal.video_profiles import DEFAULT_VIDEO_PROFILE_ID, video_profile
 
 logger = logging.getLogger(__name__)
@@ -511,6 +512,12 @@ def rebuild_course_from_raw_manifest(
             scenes_out = _build_heuristic_scenes(slides=slides, task_id=task_id, material=material, profile=profile)
     else:
         scenes_out = _build_heuristic_scenes(slides=slides, task_id=task_id, material=material, profile=profile)
+
+    total_scenes = len(scenes_out)
+    scenes_out = [
+        apply_visual_direction(scene, index=i, total=total_scenes, profile=profile)
+        for i, scene in enumerate(scenes_out)
+    ]
 
     pending = sum(
         1 for s in scenes_out if s.get("review_status") == "pending"

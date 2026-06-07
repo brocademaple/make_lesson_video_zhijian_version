@@ -5,6 +5,7 @@ import {
   Easing,
   Img,
   interpolate,
+  OffthreadVideo,
   Sequence,
   Series,
   staticFile,
@@ -671,6 +672,72 @@ function SceneFrame({
   );
 }
 
+function CreativeClip({
+  slide,
+  overlay = false,
+}: {
+  slide: CourseDeckSlideSpec;
+  overlay?: boolean;
+}) {
+  const frame = useCurrentFrame();
+  const rel = slide.creativeAsset?.clipRelative;
+  if (!rel || !slide.creativeAsset?.exists) {
+    return null;
+  }
+  const opacity = overlay ? interpolate(frame, [0, 18], [0, 0.42], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  }) : fadeIn(frame);
+  return (
+    <AbsoluteFill
+      style={{
+        backgroundColor: "#050814",
+        opacity,
+        mixBlendMode: overlay ? "screen" : "normal",
+      }}
+    >
+      <OffthreadVideo
+        src={publicAsset(rel)}
+        muted
+        style={{
+          width: "100%",
+          height: "100%",
+          objectFit: "cover",
+        }}
+      />
+    </AbsoluteFill>
+  );
+}
+
+function StableSceneSeries({
+  slide,
+  profile,
+}: {
+  slide: CourseDeckSlideSpec;
+  profile?: RenderProfile;
+}) {
+  const shots = slideShotRelatives(slide);
+  const segmentFrames = splitFrames(slide.durationInFrames, shots.length);
+  return (
+    <Series>
+      {shots.map((rel, j) => (
+        <Series.Sequence
+          key={`${rel}-${j}`}
+          durationInFrames={segmentFrames[j] ?? 1}
+        >
+          <AbsoluteFill>
+            <SceneFrame
+              slide={slide}
+              activeShot={rel}
+              profile={profile}
+            />
+          </AbsoluteFill>
+        </Series.Sequence>
+      ))}
+    </Series>
+  );
+}
+
 export const CourseDeckComposition: React.FC<CourseDeckProps> = ({
   slides,
   videoProfile,
@@ -679,8 +746,11 @@ export const CourseDeckComposition: React.FC<CourseDeckProps> = ({
     <AbsoluteFill style={{backgroundColor: "#000"}}>
       <Series>
         {slides.map((slide, i) => {
-          const shots = slideShotRelatives(slide);
-          const segmentFrames = splitFrames(slide.durationInFrames, shots.length);
+          const profile = slide.renderProfile || videoProfile;
+          const canUseCreative = Boolean(slide.creativeAsset?.exists && slide.creativeAsset?.clipRelative);
+          const renderEngine = slide.renderEngine || "remotion_stable";
+          const replaceWithCreative = renderEngine === "hyperframes_creative" && canUseCreative;
+          const overlayCreative = renderEngine === "hybrid" && canUseCreative;
 
           return (
             <Series.Sequence
@@ -688,22 +758,21 @@ export const CourseDeckComposition: React.FC<CourseDeckProps> = ({
               durationInFrames={slide.durationInFrames}
             >
               <AbsoluteFill>
-                <Series>
-                  {shots.map((rel, j) => (
-                    <Series.Sequence
-                      key={`${rel}-${j}`}
-                      durationInFrames={segmentFrames[j] ?? 1}
-                    >
-                      <AbsoluteFill>
-                        <SceneFrame
-                          slide={slide}
-                          activeShot={rel}
-                          profile={slide.renderProfile || videoProfile}
-                        />
-                      </AbsoluteFill>
-                    </Series.Sequence>
-                  ))}
-                </Series>
+                {replaceWithCreative ? (
+                  <>
+                    <CreativeClip slide={slide} />
+                    <Sequence from={14} durationInFrames={Math.max(1, slide.durationInFrames - 14)} layout="none">
+                      <SubtitleTrack slide={slide} />
+                    </Sequence>
+                    <ProfileCue profile={profile} />
+                    <ProgressRail slide={slide} />
+                  </>
+                ) : (
+                  <>
+                    <StableSceneSeries slide={slide} profile={profile} />
+                    {overlayCreative ? <CreativeClip slide={slide} overlay /> : null}
+                  </>
+                )}
                 {slide.audioRelatives && slide.audioRelatives.length > 0 ? (
                   <Series>
                     {slide.audioRelatives.map((rel, idx) => (

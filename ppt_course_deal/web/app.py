@@ -310,10 +310,15 @@ def build_task_workspace_status(task_id: str, task: dict[str, Any]) -> dict[str,
             **remotion,
             "render_plan_exists": render_plan_path.is_file(),
             "render_plan_path": str(render_plan_path),
+            "render_plan_schema_version": render_plan.get("schema_version") or "",
             "render_plan_source": render_plan.get("source") or "",
             "scene_count": render_plan.get("scene_count") or 0,
             "layout_counts": render_plan.get("layout_counts") or {},
+            "engine_counts": render_plan.get("engine_counts") or {},
             "risk_scene_count": render_plan.get("risk_scene_count") or 0,
+            "timeline_item_count": render_plan.get("timeline_item_count") or len(render_plan.get("timeline_items") or []),
+            "hyperframes_task_count": render_plan.get("hyperframes_task_count") or 0,
+            "creative_asset_ready_count": render_plan.get("creative_asset_ready_count") or 0,
         },
     }
 
@@ -361,6 +366,238 @@ def _pipeline_stage(
 
 def _artifact(label: str, path: str, exists: bool) -> Dict[str, Any]:
     return {"label": label, "path": path, "exists": exists}
+
+
+def _seconds_from_frames(frames: Any, fps: Any) -> float:
+    if isinstance(frames, bool) or not isinstance(frames, (int, float)):
+        return 0.0
+    if isinstance(fps, bool) or not isinstance(fps, (int, float)) or fps <= 0:
+        fps = 30
+    return round(float(frames) / float(fps), 3)
+
+
+def _timecode(seconds: float) -> str:
+    total = max(0, int(round(seconds)))
+    minutes, sec = divmod(total, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours:02d}:{minutes:02d}:{sec:02d}"
+    return f"{minutes:02d}:{sec:02d}"
+
+
+def _source_type_label(source_type: Any) -> str:
+    labels = {"pptx": "PPT", "pdf": "PDF", "demo": "Demo", "unknown": "素材"}
+    return labels.get(str(source_type or "").lower(), "素材")
+
+
+def _project_kind_label(project_kind: Any) -> str:
+    labels = {
+        "quality": "质检规则",
+        "training": "培训课程",
+        "onboarding": "培训课程",
+        "retrospective": "作品复盘",
+        "product": "产品介绍",
+        "knowledge": "知识讲解",
+        "sop": "流程教学",
+        "creative": "创意工作坊",
+        "general": "视频项目",
+    }
+    return labels.get(str(project_kind or "").lower(), "视频项目")
+
+
+def _scene_role_label(role: Any) -> str:
+    labels = {
+        "intro": "片头",
+        "transition": "过渡",
+        "content": "内容讲解",
+        "concept_animation": "概念动画",
+        "recap": "总结复盘",
+    }
+    return labels.get(str(role or "").lower(), "内容讲解")
+
+
+def _engine_label(engine: Any) -> str:
+    labels = {
+        "remotion_stable": "Remotion 稳定镜头",
+        "hyperframes_creative": "Hyperframes 创意镜头",
+        "hybrid": "Remotion + Hyperframes",
+    }
+    return labels.get(str(engine or "").lower(), str(engine or "未指定"))
+
+
+def _source_slide_label(value: Any) -> str:
+    text = str(value or "").strip()
+    if text.startswith("slide-"):
+        suffix = text.removeprefix("slide-")
+        if suffix.isdigit():
+            return f"第 {int(suffix) + 1} 页"
+    return text or "未指定"
+
+
+def _scene_purpose_text(item: dict[str, Any], slide: dict[str, Any] | None) -> str:
+    role = str(item.get("scene_role") or "").lower()
+    engine = str(item.get("render_engine") or "").lower()
+    source_ids = item.get("source_slide_ids") if isinstance(item.get("source_slide_ids"), list) else []
+    title = ""
+    if isinstance(slide, dict):
+        caption = slide.get("caption") if isinstance(slide.get("caption"), dict) else {}
+        title = str(caption.get("title") or slide.get("onscreenText") or "").strip()
+    source_text = "、".join(_source_slide_label(x) for x in source_ids) if source_ids else "当前素材"
+    if role == "intro":
+        base = "这一镜用于建立开场和主题预期"
+    elif role == "transition":
+        base = "这一镜用于衔接章节和调整节奏"
+    elif role == "recap":
+        base = "这一镜用于收束观点并帮助观众回忆重点"
+    elif role == "concept_animation":
+        base = "这一镜用于把抽象概念转成更容易理解的画面"
+    else:
+        base = "这一镜用于稳定讲解素材中的核心信息"
+    if engine == "hybrid":
+        base += "，Remotion 负责主时间线，创意资产负责局部表现"
+    elif engine == "hyperframes_creative":
+        base += "，适合交给创意镜头引擎增强视觉节奏"
+    else:
+        base += "，适合保持原文和字幕的稳定呈现"
+    if title:
+        return f"{base}。来源：{source_text}，主题：{title}"
+    return f"{base}。来源：{source_text}"
+
+
+def _build_render_explanation(
+    render_plan: dict[str, Any],
+    input_props: dict[str, Any],
+) -> dict[str, Any]:
+    fps = input_props.get("fps") or 30
+    if isinstance(fps, bool) or not isinstance(fps, (int, float)) or fps <= 0:
+        fps = 30
+    timeline_items = render_plan.get("timeline_items")
+    if not isinstance(timeline_items, list):
+        timeline_items = []
+    slides = input_props.get("slides")
+    if not isinstance(slides, list):
+        slides = []
+    slides_by_scene = {
+        str(slide.get("sceneId")): slide
+        for slide in slides
+        if isinstance(slide, dict) and slide.get("sceneId")
+    }
+
+    total_frames = render_plan.get("total_frames") or input_props.get("durationInFrames")
+    if not total_frames:
+        total_frames = sum(
+            int(slide.get("durationInFrames") or 0)
+            for slide in slides
+            if isinstance(slide, dict) and not isinstance(slide.get("durationInFrames"), bool)
+        )
+    engine_counts = render_plan.get("engine_counts") if isinstance(render_plan.get("engine_counts"), dict) else {}
+    missing_audio = []
+    for idx, slide in enumerate(slides):
+        if isinstance(slide, dict) and not (slide.get("audioRelatives") or slide.get("audioRelative")):
+            missing_audio.append(idx)
+
+    timeline = []
+    missing_creative_assets = 0
+    fallback_count = 0
+    for idx, item in enumerate(timeline_items):
+        if not isinstance(item, dict):
+            continue
+        scene_id = str(item.get("scene_id") or f"scene-{idx + 1}")
+        slide = slides_by_scene.get(scene_id)
+        start_sec = _seconds_from_frames(item.get("start_frame"), fps)
+        end_sec = _seconds_from_frames(item.get("end_frame"), fps)
+        duration_sec = _seconds_from_frames(item.get("duration_frames"), fps)
+        asset = item.get("creative_asset") if isinstance(item.get("creative_asset"), dict) else {}
+        engine = str(item.get("render_engine") or "")
+        creative_needed = engine in {"hyperframes_creative", "hybrid"}
+        creative_ready = bool(asset.get("exists"))
+        fallback_used = creative_needed and not creative_ready and bool(item.get("fallback_engine"))
+        if creative_needed and not creative_ready:
+            missing_creative_assets += 1
+        if fallback_used:
+            fallback_count += 1
+        source_ids = item.get("source_slide_ids") if isinstance(item.get("source_slide_ids"), list) else []
+        timeline.append(
+            {
+                "index": idx + 1,
+                "scene_id": scene_id,
+                "time_range": f"{_timecode(start_sec)} - {_timecode(end_sec)}",
+                "start_sec": start_sec,
+                "end_sec": end_sec,
+                "duration_sec": duration_sec,
+                "role": item.get("scene_role") or "",
+                "role_label": _scene_role_label(item.get("scene_role")),
+                "engine": engine,
+                "engine_label": _engine_label(engine),
+                "source_slide_ids": source_ids,
+                "source_label": "、".join(_source_slide_label(x) for x in source_ids) or "未指定",
+                "purpose": _scene_purpose_text(item, slide),
+                "creative_asset_ready": creative_ready if creative_needed else None,
+                "fallback_used": fallback_used,
+                "status": "创意资产缺失，已回退 Remotion" if fallback_used else "可按计划渲染",
+            }
+        )
+
+    risks: list[str] = []
+    if missing_creative_assets:
+        risks.append(f"{missing_creative_assets} 个创意镜头缺少 Hyperframes 资产，最终会使用 Remotion fallback。")
+    if missing_audio:
+        risks.append(
+            "以下页面没有检测到音频，将使用占位时长："
+            + "、".join(f"第 {idx + 1} 页" for idx in missing_audio)
+            + "。"
+        )
+    if not render_plan:
+        risks.append("尚未生成 render_plan.json，无法解读最终时间线。")
+    if not input_props:
+        risks.append("尚未生成 input-props.json，无法确认 Remotion 入参。")
+
+    duration_sec = _seconds_from_frames(total_frames, fps) if total_frames else 0
+    return {
+        "summary": {
+            "duration_sec": duration_sec,
+            "duration_label": _timecode(duration_sec),
+            "total_frames": int(total_frames or 0),
+            "fps": fps,
+            "timeline_item_count": len(timeline),
+            "engine_counts": engine_counts,
+            "fallback_count": fallback_count,
+            "missing_creative_asset_count": missing_creative_assets,
+            "missing_audio_slide_indexes": missing_audio,
+        },
+        "timeline": timeline,
+        "risks": risks,
+    }
+
+
+def _video_summary_from_task(task: dict[str, Any]) -> dict[str, Any]:
+    task_id = str(task.get("id") or task.get("task_id") or "")
+    remotion = render_task_status(task_id) if task_id else {}
+    render_plan_path = Path(remotion.get("task_dir") or "") / "render_plan.json"
+    render_plan = _read_json_file(render_plan_path)
+    duration = remotion.get("duration_sec") or render_plan.get("duration_sec") or 0
+    try:
+        updated_at = (tasks_dir() / task_id / "meta.json").stat().st_mtime
+    except OSError:
+        updated_at = 0
+    return {
+        "task_id": task_id,
+        "filename": task.get("filename") or "",
+        "source_type": task.get("source_type") or "unknown",
+        "source_type_label": _source_type_label(task.get("source_type")),
+        "project_kind": task.get("project_kind") or "general",
+        "project_kind_label": _project_kind_label(task.get("project_kind")),
+        "has_output_video": bool(remotion.get("output_video_exists")),
+        "output_video_url": f"/api/tasks/{quote(task_id)}/output-video" if remotion.get("output_video_exists") else "",
+        "duration_sec": duration,
+        "duration_label": _timecode(float(duration or 0)),
+        "slide_count": task.get("slide_count") or 0,
+        "updated_at": updated_at,
+        "created_at": task.get("created_at") or "",
+        "render_engine_counts": render_plan.get("engine_counts") if isinstance(render_plan.get("engine_counts"), dict) else {},
+        "has_render_plan": bool(task.get("has_render_plan")),
+        "has_director_manifest": bool(task.get("has_director_manifest")),
+    }
 
 
 def build_task_pipeline_state(task_id: str, task: dict[str, Any]) -> dict[str, Any]:
@@ -445,7 +682,7 @@ def build_task_pipeline_state(task_id: str, task: dict[str, Any]) -> dict[str, A
         ),
         _pipeline_stage(
             "render_plan",
-            "成片引擎",
+            "成片线",
             ready=render_plan_exists or input_props_exists,
             detail=remotion.get("render_plan_source") or ("input-props 已生成" if input_props_exists else "待生成"),
             action="生成成片蓝图",
@@ -868,8 +1105,8 @@ async def _app_lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     application = FastAPI(
-        title="智课影擎 API",
-        description="PPT 入仓、素材拆解、导演脚本、声音轨与 Remotion 成片的本地工作台 API",
+        title="个人影像工坊 API",
+        description="素材入仓、素材拆解、导演脚本、声音轨与 Remotion 成片的本地工作台 API",
         version="0.1.0",
         lifespan=_app_lifespan,
     )
@@ -950,7 +1187,7 @@ def create_app() -> FastAPI:
                     preview_count,
                 )
 
-            # 先持久化（复制 PNG / 写 meta），再注册内存会话；避免 create_session 抛错导致从未写入「已存任务」
+            # 先持久化（复制 PNG / 写 meta），再注册内存会话；避免 create_session 抛错导致从未写入项目库。
             task_persisted = save_task_from_parse(
                 raw,
                 file.filename or "uploaded.pptx",
@@ -1002,6 +1239,17 @@ def create_app() -> FastAPI:
     def list_tasks_api() -> Dict[str, List[Dict[str, Any]]]:
         """已持久化的解析任务摘要列表；完整正文见 GET /api/tasks/{id}。"""
         return {"tasks": list_task_summaries()}
+
+    @application.get("/api/videos")
+    def list_videos_api() -> Dict[str, Any]:
+        """所有作品项目的成片摘要；用于首页和作品库集中展示。"""
+        videos = [_video_summary_from_task(task) for task in list_task_summaries()]
+        return {
+            "ok": True,
+            "videos": videos,
+            "output_count": sum(1 for item in videos if item.get("has_output_video")),
+            "project_count": len(videos),
+        }
 
     @application.get("/api/tasks/{task_id}")
     def get_task_api(task_id: str) -> dict:
@@ -1238,10 +1486,43 @@ def create_app() -> FastAPI:
             **status,
             "render_plan_exists": render_plan_path.is_file(),
             "render_plan_path": str(render_plan_path),
+            "render_plan_schema_version": render_plan.get("schema_version") or "",
             "render_plan_source": render_plan.get("source") or "",
             "scene_count": render_plan.get("scene_count") or 0,
             "layout_counts": render_plan.get("layout_counts") or {},
+            "engine_counts": render_plan.get("engine_counts") or {},
             "risk_scene_count": render_plan.get("risk_scene_count") or 0,
+            "timeline_item_count": render_plan.get("timeline_item_count") or len(render_plan.get("timeline_items") or []),
+            "hyperframes_task_count": render_plan.get("hyperframes_task_count") or 0,
+            "creative_asset_ready_count": render_plan.get("creative_asset_ready_count") or 0,
+        }
+
+    @application.get("/api/tasks/{task_id}/render-artifacts")
+    def get_render_artifacts(task_id: str) -> Dict[str, Any]:
+        """读取 render_plan / input-props，并给出面向用户的规则化解读。"""
+        if load_task(task_id) is None:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        status = render_task_status(task_id)
+        task_dir = Path(status.get("task_dir") or "")
+        render_plan_path = task_dir / "render_plan.json"
+        input_props_path = Path(status.get("input_props_path") or "")
+        render_plan = _read_json_file(render_plan_path)
+        input_props = _read_json_file(input_props_path)
+        return {
+            "ok": True,
+            "task_id": task_id,
+            **status,
+            "render_plan_raw": render_plan,
+            "input_props_raw": input_props,
+            "explanation": _build_render_explanation(render_plan, input_props),
+            "file_paths": {
+                "render_plan": str(render_plan_path),
+                "render_plan_exists": render_plan_path.is_file(),
+                "input_props": str(input_props_path),
+                "input_props_exists": input_props_path.is_file(),
+                "output_video": str(status.get("output_video_path") or ""),
+                "output_video_exists": bool(status.get("output_video_exists")),
+            },
         }
 
     @application.get("/api/tasks/{task_id}/output-video")
@@ -1553,7 +1834,7 @@ def create_app() -> FastAPI:
             return ("session", sid)
         raise HTTPException(
             status_code=400,
-            detail="请提供有效的 task_id（已存任务）或 session_id（当前预览会话）",
+            detail="请提供有效的 task_id（作品项目）或 session_id（当前预览会话）",
         )
 
     @application.get("/api/settings/external")
@@ -1779,7 +2060,7 @@ def create_app() -> FastAPI:
             if slide_count is None:
                 raise HTTPException(
                     status_code=400,
-                    detail="非已存任务时请传入 slide_count",
+                    detail="非作品项目时请传入 slide_count",
                 )
             sc = slide_count
         ensure_segment_versions_migrated(kind, key)
@@ -1914,7 +2195,7 @@ def create_app() -> FastAPI:
         if not tid:
             raise HTTPException(
                 status_code=400,
-                detail="task_id 无效：须为有效 UUID（已存任务 ID）",
+                detail="task_id 无效：须为有效 UUID（作品项目 ID）",
             )
         if load_task(tid) is None:
             raise HTTPException(status_code=404, detail="任务不存在或已删除")
@@ -1946,7 +2227,7 @@ def create_app() -> FastAPI:
         if not tid:
             raise HTTPException(
                 status_code=400,
-                detail="task_id 无效：须为有效 UUID（已存任务 ID）",
+                detail="task_id 无效：须为有效 UUID（作品项目 ID）",
             )
         if load_task(tid) is None:
             raise HTTPException(status_code=404, detail="任务不存在或已删除")

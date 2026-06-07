@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>智课影擎</title>
+    <title>个人影像工坊</title>
     <script>
       (function () {
         try {
@@ -17,7 +17,7 @@
         }
       })();
     </script>
-    <link rel="stylesheet" href="/assets/styles.css?v=2.90" />
+    <link rel="stylesheet" href="/assets/styles.css?v=2.96" />
   </head>
   <body>
     <canvas class="creative-bg" id="creative-bg" aria-hidden="true"></canvas>
@@ -25,7 +25,8 @@
       <header class="topbar">
         <div class="brand">
           <div class="brand-row">
-            <span class="brand-title">智课影擎</span>
+            <span class="brand-title">个人影像工坊</span>
+            <span class="brand-subtitle">把图文、PPT 和声音材料变成视频作品</span>
             <button
               type="button"
               class="icon-help"
@@ -144,16 +145,16 @@
 
       <div class="app-main" id="app-main">
         <div class="sidebar-column" id="sidebar-column">
-          <aside class="sidebar-task-panel" id="sidebar-task-panel" aria-label="已存任务">
-            <section class="task-panel" aria-label="已存解析任务">
+          <aside class="sidebar-task-panel" id="sidebar-task-panel" aria-label="项目库">
+            <section class="task-panel" aria-label="作品项目库">
               <div class="task-panel-head">
                 <div class="task-panel-title-row">
-                  <span class="task-panel-title">已存任务</span>
+                  <span class="task-panel-title">项目库</span>
                   <button
                     type="button"
                     class="icon-help icon-help--sm"
                     id="btn-help-task-list"
-                    aria-label="已存任务说明"
+                    aria-label="项目库说明"
                     title="说明"
                   >
                     <svg class="icon-help__svg" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
@@ -263,7 +264,7 @@
               <div class="dropzone-inner">
                 <span class="drop-icon" aria-hidden="true">📂</span>
                 <div class="drop-title-row">
-                  <p class="drop-title">上传培训用 .pptx</p>
+                  <p class="drop-title">导入素材成片</p>
                   <button
                     type="button"
                     class="icon-help"
@@ -298,47 +299,63 @@
                   />
                 </svg>
               </button>
-              <span class="hint-cli__text"><code>ppt-course transform 输入.pptx</code></span>
+              <span class="hint-cli__text">PPTX 可直接拖入；PDF 可用 <code>ppt-course import-pdf-task 输入.pdf</code> 入库。</span>
             </p>
             <section class="home-studio" aria-label="视频生成方向" data-home-studio>
               <div class="home-studio__view is-active" data-home-view="generate">
                 <div class="home-studio__header">
                   <div>
-                    <h1>想把这份 PPT 做成什么片？</h1>
-                    <p>先选方向，再把课件拖到上方上传区。</p>
+                    <p class="home-studio__eyebrow">Builder Video Studio</p>
+                    <h1>管理你的素材项目，把它们推进成片。</h1>
+                    <p>这里是个人视频生成中台：收集材料、生成导演计划、整理声音轨，最后交给成片线导出作品。</p>
                   </div>
                   <div class="home-studio__flow" aria-label="生成流程">
-                    <span>拆页</span>
-                    <span>写脚本</span>
-                    <span>配音</span>
-                    <span>出视频</span>
+                    <span>素材台</span>
+                    <span>导演台</span>
+                    <span>声音轨</span>
+                    <span>成片线</span>
                   </div>
                 </div>
+                <section class="home-assets" aria-label="作品项目">
+                  <div class="home-assets__head">
+                    <div>
+                      <strong>作品项目</strong>
+                      <p>从已导入的 PPT、PDF 和 demo 中继续创作，查看导演计划与成片状态。</p>
+                    </div>
+                    <button type="button" class="btn btn-text" id="home-assets-refresh">刷新</button>
+                  </div>
+                  <ul class="home-assets__list" id="home-assets-list" role="list"></ul>
+                </section>
                 <div class="home-studio__templates" aria-label="视频方向">
-                  <button type="button" class="home-template is-active" data-home-preset="quality">
-                    <span>质检</span>
-                    <strong>讲规则</strong>
-                    <em>适合制度、质检、合规课件；优先讲清风险点、金额和处罚口径</em>
+                  <button type="button" class="home-template is-active" data-home-preset="knowledge">
+                    <span>知识</span>
+                    <strong>知识讲解</strong>
+                    <em>把资料拆成清晰段落，适合做观点解释、读书笔记和方法论视频</em>
                   </button>
-                  <button type="button" class="home-template" data-home-preset="onboarding">
+                  <button type="button" class="home-template" data-home-preset="retrospective">
+                    <span>复盘</span>
+                    <strong>作品复盘</strong>
+                    <em>把项目过程、关键判断和结果沉淀成可分享的复盘视频</em>
+                  </button>
+                  <button type="button" class="home-template" data-home-preset="product">
+                    <span>产品</span>
+                    <strong>产品介绍</strong>
+                    <em>面向 Side Project、功能 demo 和发布说明，突出价值与使用场景</em>
+                  </button>
+                  <button type="button" class="home-template" data-home-preset="training">
                     <span>培训</span>
-                    <strong>带新人</strong>
-                    <em>适合新人入门和转岗培训；把术语、步骤、易错点讲顺</em>
+                    <strong>培训课程</strong>
+                    <em>保留课件结构，重排讲解节奏，适合新人、流程和内部宣讲</em>
                   </button>
-                  <button type="button" class="home-template" data-home-preset="sop">
-                    <span>流程</span>
-                    <strong>教流程</strong>
-                    <em>适合操作手册和系统教学；按动作顺序拆镜头和检查点</em>
-                  </button>
-                  <button type="button" class="home-template" data-home-preset="sales">
-                    <span>话术</span>
-                    <strong>讲销售话术</strong>
-                    <em>适合产品介绍和销售培训；突出卖点、异议处理和案例</em>
+                  <button type="button" class="home-template" data-home-preset="quality">
+                    <span>质检</span>
+                    <strong>质检规则</strong>
+                    <em>保留红线、证据和处罚口径，作为合规/质检类视频模板</em>
                   </button>
                 </div>
                 <div class="home-profile-card" id="home-profile-card">
-                  <strong>讲规则</strong>
-                  <p>上传后会优先保留处罚、金额、边界条件和原页证据，方便做成合规/质检培训视频。</p>
+                  <strong>知识讲解</strong>
+                  <p>默认把资料拆成清晰段落，适合做观点解释、读书笔记和方法论视频。</p>
                 </div>
               </div>
             </section>
@@ -350,18 +367,18 @@
           <section class="task-workflow" id="task-workflow" aria-label="任务工作流" data-workbench-route="deal">
             <div class="task-workflow__head">
               <div>
-                <p class="task-workflow__eyebrow">智课影擎 · 课件成片系统</p>
-                <h1 class="task-workflow__title" id="task-workflow-title">任务流</h1>
+                <p class="task-workflow__eyebrow">个人影像工坊 · 项目工作流</p>
+                <h1 class="task-workflow__title" id="task-workflow-title">作品项目</h1>
               </div>
               <button type="button" class="btn btn-text" id="btn-workflow-refresh">刷新状态</button>
             </div>
-            <nav class="platform-nav" id="platform-nav" aria-label="智课影擎模块导航">
-              <button type="button" class="platform-nav__item" data-workbench-route="deal">素材入仓</button>
-              <button type="button" class="platform-nav__item" data-workbench-route="materials">素材拆解</button>
+            <nav class="platform-nav" id="platform-nav" aria-label="个人影像工坊模块导航">
+              <button type="button" class="platform-nav__item" data-workbench-route="deal">素材台</button>
+              <button type="button" class="platform-nav__item" data-workbench-route="materials">素材地图</button>
               <button type="button" class="platform-nav__item" data-workbench-route="director">导演台</button>
               <button type="button" class="platform-nav__item" data-workbench-route="audio">声音轨</button>
-              <button type="button" class="platform-nav__item" data-workbench-route="render">成片引擎</button>
-              <button type="button" class="platform-nav__item" data-workbench-route="output">成片库</button>
+              <button type="button" class="platform-nav__item" data-workbench-route="render">成片线</button>
+              <button type="button" class="platform-nav__item" data-workbench-route="output">作品库</button>
             </nav>
             <div class="task-workflow__meter" id="task-workflow-meter"></div>
             <div class="task-workflow__steps" id="task-workflow-steps" role="list"></div>
@@ -411,7 +428,7 @@
                 class="btn btn-secondary btn-generate-visual"
                 id="btn-generate-slide-visual"
                 disabled
-                title="请先打开已存任务"
+                title="请先打开作品项目"
               >
                 生成全新PPT画面
               </button>
@@ -564,12 +581,12 @@
                     <div class="director-panel__scenes" id="director-scenes"></div>
                   </section>
 
-                  <section class="remotion-panel" id="remotion-panel" aria-label="成片引擎任务">
+                  <section class="remotion-panel" id="remotion-panel" aria-label="成片线任务">
                     <div class="remotion-panel__head">
-                      <span class="remotion-panel__title">成片引擎</span>
+                      <span class="remotion-panel__title">导演成片</span>
                     </div>
                     <p class="remotion-panel__hint">
-                      生成成片蓝图与 Remotion 入参，把画面、口播和时长对齐到同一条时间线。
+                      查看导演时间线，确认每个镜头的位置、作用和执行引擎。
                     </p>
                     <div class="remotion-panel__actions">
                       <button type="button" class="btn btn-secondary" id="btn-remotion-generate">
@@ -588,7 +605,7 @@
                       <span class="output-panel__title">成片展示</span>
                     </div>
                     <p class="output-panel__hint">
-                      这里汇总当前任务最终 MP4、渲染命令与可演示产物。若还没有视频，先在「成片引擎」生成入参并执行 Remotion render。
+                      预览当前任务的最终 MP4，并回到关联环节继续修改。
                     </p>
                     <div class="output-panel__summary" id="output-summary"></div>
                   </section>
@@ -643,7 +660,7 @@
         type="button"
         id="btn-workspace-task-drawer"
         class="workspace-task-drawer-tab hidden"
-        aria-label="展开已存任务列表"
+        aria-label="展开项目库"
         aria-expanded="false"
         aria-controls="workspace-task-drawer-panel"
       >
@@ -658,17 +675,17 @@
       <aside
         id="workspace-task-drawer-panel"
         class="workspace-task-drawer-panel"
-        aria-label="已存任务"
+        aria-label="项目库"
         aria-modal="false"
         aria-hidden="true"
         role="dialog"
       >
         <div class="workspace-task-drawer-panel__head">
-          <h2 class="workspace-task-drawer-panel__title">已存任务</h2>
+          <h2 class="workspace-task-drawer-panel__title">项目库</h2>
           <button type="button" class="btn btn-text" id="btn-workspace-task-drawer-close">关闭</button>
         </div>
         <ul class="task-list task-list--drawer" id="workspace-task-drawer-list" role="list"></ul>
-        <p class="workspace-task-drawer-panel__hint">刷新、删除或重命名请在上传首页左侧「已存任务」操作。</p>
+        <p class="workspace-task-drawer-panel__hint">刷新、删除或重命名请在首页左侧「项目库」操作。</p>
       </aside>
 
       <dialog
@@ -1865,7 +1882,7 @@
       </div>
     </div>
 
-    <script src="/assets/workflow_ui.js?v=2.90" defer></script>
-    <script src="/assets/app.js?v=2.90" defer></script>
+    <script src="/assets/workflow_ui.js?v=2.96" defer></script>
+    <script src="/assets/app.js?v=2.96" defer></script>
   </body>
 </html>

@@ -91,6 +91,17 @@
 | `render_overlays.risk_badge` | 风险提示条，避免高风险规则在模板里被遮掉 |
 | `render_overlays.transition` | 章节或普通镜头转场意图 |
 
+### 双引擎导演字段
+
+每条 scene 会补齐视觉导演字段，用于让 Rebuilder 真正统筹 Remotion 与 Hyperframes：
+
+| 字段 | 说明 |
+|------|------|
+| `scene_role` | `content` / `transition` / `intro` / `recap` / `concept_animation` |
+| `render_engine` | `remotion_stable` / `hyperframes_creative` / `hybrid` |
+| `fallback_engine` | 创意资产缺失或失败时的兜底引擎；当前统一回到 `remotion_stable` |
+| `creative_brief` | 给 Hyperframes 创意资产生成器的画面意图、风格、文案、时长、素材引用与禁用事项 |
+
 ### AssetSpec（素材）
 
 关键字段：`asset_id`、`source`、`source_slide_id`、`path`、`asset_type`、`semantic_tags`、`transparent`、`quality_status`、`usage_suggestion`、`review_status`。
@@ -106,4 +117,4 @@
 
 Web 使用 **`POST /api/tasks/{task_id}/remotion-render-plan`**，CLI 使用 **`ppt-course remotion-render-plan <task_id>`**。若没有导演脚本，adapter 会回退到 Deal 元数据直出的旧 `input-props` 生成逻辑。
 
-`render_plan.json` 现在同时记录 `scene_count`、`layout_counts`、`risk_scene_count` 以及每个 scene 的 `callouts`、`evidence_panel`、`risk_badge` 和 `transition`，用于工作台“成片工厂”判断当前视频是否真正使用了导演信息。
+`render_plan.json` 使用 `render_plan.v2`，同时记录 `timeline_items`、`engine_counts`、`hyperframes_tasks`、`scene_count`、`layout_counts`、`risk_scene_count` 以及每个 scene 的 `callouts`、`evidence_panel`、`risk_badge` 和 `transition`，用于工作台“导演成片”判断当前视频是否真正使用了导演信息。Hyperframes 只负责写入 `render_tasks/<task>/creative_assets/<scene>/creative_brief.json` 与 `asset_manifest.json`，最终 timeline、音频、字幕和 MP4 导出仍由 Remotion 控制。

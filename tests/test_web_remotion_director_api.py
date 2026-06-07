@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from pathlib import Path
 
@@ -338,3 +339,155 @@ def test_output_video_endpoint_serves_rendered_mp4(monkeypatch, tmp_path: Path) 
     assert res.status_code == 200
     assert res.content == b"fake-mp4"
     assert res.headers["content-type"].startswith("video/mp4")
+
+
+def test_videos_endpoint_summarizes_rendered_projects(monkeypatch, tmp_path: Path) -> None:
+    task_id = "task-1"
+    render_dir = tmp_path / "render_tasks" / task_id
+    render_dir.mkdir(parents=True)
+    (render_dir / "render_plan.json").write_text(
+        '{"engine_counts":{"hybrid":2},"duration_sec":12.5}',
+        encoding="utf-8",
+    )
+    task_root = tmp_path / "tasks" / task_id
+    task_root.mkdir(parents=True)
+    (task_root / "meta.json").write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(web_app, "tasks_dir", lambda: tmp_path / "tasks")
+    monkeypatch.setattr(
+        web_app,
+        "list_task_summaries",
+        lambda: [
+            {
+                "id": task_id,
+                "filename": "demo.pdf",
+                "source_type": "pdf",
+                "project_kind": "training",
+                "slide_count": 3,
+                "created_at": "2026-06-07T00:00:00Z",
+                "has_render_plan": True,
+                "has_director_manifest": True,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        web_app,
+        "render_task_status",
+        lambda tid: {
+            "task_dir": str(render_dir),
+            "output_video_exists": True,
+            "output_video_path": str(render_dir / "out" / "video.mp4"),
+            "duration_sec": 12.5,
+        },
+    )
+
+    client = TestClient(web_app.create_app())
+    res = client.get("/api/videos")
+
+    assert res.status_code == 200
+    data = res.json()
+    assert data["output_count"] == 1
+    video = data["videos"][0]
+    assert video["task_id"] == task_id
+    assert video["output_video_url"] == f"/api/tasks/{task_id}/output-video"
+    assert video["render_engine_counts"] == {"hybrid": 2}
+    assert video["source_type_label"] == "PDF"
+
+
+def test_render_artifacts_endpoint_returns_raw_and_explanation(monkeypatch, tmp_path: Path) -> None:
+    task_id = "task-1"
+    render_dir = tmp_path / "render_tasks" / task_id
+    render_dir.mkdir(parents=True)
+    input_props_path = render_dir / "input-props.json"
+    render_plan_path = render_dir / "render_plan.json"
+    render_plan_path.write_text(
+        json.dumps(
+            {
+                "engine_counts": {"hyperframes_creative": 1},
+                "timeline_items": [
+                    {
+                        "scene_id": "s1",
+                        "scene_role": "intro",
+                        "render_engine": "hyperframes_creative",
+                        "fallback_engine": "remotion_stable",
+                        "start_frame": 0,
+                        "duration_frames": 60,
+                        "end_frame": 60,
+                        "source_slide_ids": ["slide-0000"],
+                        "creative_asset": {"exists": False},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    input_props_path.write_text(
+        json.dumps(
+            {
+                "fps": 30,
+                "slides": [
+                    {
+                        "sceneId": "s1",
+                        "durationInFrames": 60,
+                        "caption": {"title": "开场页"},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(web_app, "load_task", lambda tid: {"task_id": tid})
+    monkeypatch.setattr(
+        web_app,
+        "render_task_status",
+        lambda tid: {
+            "task_dir": str(render_dir),
+            "input_props_path": str(input_props_path),
+            "input_props_exists": True,
+            "output_video_path": str(render_dir / "out" / "video.mp4"),
+            "output_video_exists": False,
+            "render_command": "npx remotion render ...",
+        },
+    )
+
+    client = TestClient(web_app.create_app())
+    res = client.get(f"/api/tasks/{task_id}/render-artifacts")
+
+    assert res.status_code == 200
+    data = res.json()
+    assert data["render_plan_raw"]["engine_counts"] == {"hyperframes_creative": 1}
+    assert data["input_props_raw"]["fps"] == 30
+    assert data["explanation"]["summary"]["timeline_item_count"] == 1
+    assert data["explanation"]["summary"]["fallback_count"] == 1
+    assert data["explanation"]["timeline"][0]["role_label"] == "片头"
+    assert "回退 Remotion" in data["explanation"]["timeline"][0]["status"]
+
+
+def test_render_artifacts_endpoint_handles_missing_files(monkeypatch, tmp_path: Path) -> None:
+    task_id = "task-1"
+    render_dir = tmp_path / "render_tasks" / task_id
+    render_dir.mkdir(parents=True)
+
+    monkeypatch.setattr(web_app, "load_task", lambda tid: {"task_id": tid})
+    monkeypatch.setattr(
+        web_app,
+        "render_task_status",
+        lambda tid: {
+            "task_dir": str(render_dir),
+            "input_props_path": str(render_dir / "input-props.json"),
+            "input_props_exists": False,
+            "output_video_path": str(render_dir / "out" / "video.mp4"),
+            "output_video_exists": False,
+        },
+    )
+
+    client = TestClient(web_app.create_app())
+    res = client.get(f"/api/tasks/{task_id}/render-artifacts")
+
+    assert res.status_code == 200
+    data = res.json()
+    assert data["render_plan_raw"] == {}
+    assert data["input_props_raw"] == {}
+    assert data["file_paths"]["render_plan_exists"] is False
+    assert data["explanation"]["risks"]

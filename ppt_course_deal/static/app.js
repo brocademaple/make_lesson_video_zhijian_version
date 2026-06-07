@@ -167,13 +167,43 @@
 
   var AUDIO_GEN_LS_KEY = "ppt_course_audio_gen_overrides";
   var HOME_PROFILE_LS_KEY = "zhike-home-video-profile";
+  var HOME_PROFILE_VERSION_LS_KEY = "zhike-home-video-profile-version";
+  var HOME_PROFILE_VERSION = "2";
   var HOME_PROFILES = {
+    knowledge: {
+      title: "知识讲解",
+      prompt: "知识讲解：把材料拆成清晰段落，优先建立观点、例子和节奏",
+      duration: "3-8 分钟",
+      motion: "结构拆解 + 重点浮层",
+      detail: "适合观点解释、读书笔记、研究摘要和方法论视频。导演会先提炼主线，再决定哪些地方需要创意动效。",
+    },
+    retrospective: {
+      title: "作品复盘",
+      prompt: "作品复盘：项目过程、关键判断和结果沉淀优先表达",
+      duration: "4-10 分钟",
+      motion: "时间线 + 决策节点",
+      detail: "适合 Side Project 复盘、阶段汇报和个人内容沉淀，把材料组织成有起承转合的项目故事。",
+    },
+    product: {
+      title: "产品介绍",
+      prompt: "产品介绍：使用场景、核心能力和差异化价值优先呈现",
+      duration: "2-5 分钟",
+      motion: "场景演示 + 功能聚焦",
+      detail: "适合做产品 demo、功能发布、工具介绍和自媒体短视频，把素材转成更像作品的讲解片。",
+    },
+    training: {
+      title: "培训课程",
+      prompt: "培训课程：术语解释、流程顺序和易错点优先讲清楚",
+      duration: "5-12 分钟",
+      motion: "步骤引导 + 章节转场",
+      detail: "适合新人培训、流程教学和内部宣讲，保留课件结构，同时把口播、字幕和节奏重排得更顺。",
+    },
     quality: {
-      title: "讲规则",
-      prompt: "讲规则：风险点、案例和处罚口径优先保真",
+      title: "质检规则",
+      prompt: "质检规则：风险点、案例和处罚口径优先保真",
       duration: "3-5 分钟",
       motion: "证据画面 + 风险标注",
-      detail: "上传后会优先保留处罚、金额、边界条件和原页证据，方便做成合规/质检培训视频。",
+      detail: "这是保留的业务模板：适合制度、质检、合规课件，优先讲清红线、金额、处罚和原页证据。",
     },
     onboarding: {
       title: "带新人",
@@ -190,11 +220,11 @@
       detail: "上传后会按先后顺序拆动作、检查点和交付物，适合系统操作、流程说明和标准动作培训。",
     },
     sales: {
-      title: "讲销售话术",
-      prompt: "讲销售话术：卖点、异议处理和案例亮点优先提炼",
+      title: "产品介绍",
+      prompt: "产品介绍：卖点、异议处理和案例亮点优先提炼",
       duration: "3-6 分钟",
       motion: "价值聚焦 + 案例对照",
-      detail: "上传后会提炼卖点、客户异议和案例亮点，方便做成销售培训或产品讲解视频。",
+      detail: "上传后会提炼卖点、客户异议和案例亮点，适合做成产品讲解、功能 demo 或业务案例视频。",
     },
   };
   var currentHomeProfile = readHomeProfile();
@@ -247,7 +277,7 @@
   let directorManifestCache = null;
   /** @type {any | null} */
   let pipelineStateCache = null;
-  /** 上传解析会话为 session；从已存任务打开为 stored */
+  /** 上传解析会话为 session；从项目库打开为 stored */
   let previewMode = "session";
 
   let pvMediaRequestId = 0;
@@ -280,13 +310,13 @@
   })();
 
   var HELP_PRODUCT_BODY =
-    "上传后解析全文稿；若本机安装了 LibreOffice + Poppler，服务端会将每一页渲染为 PNG，通过临时 URL 预览（类似私有图床）。";
+    "个人影像工坊会把 PPT、PDF、图片和声音材料沉淀为作品项目：先做素材预览，再生成导演计划、声音轨和最终成片。PPTX 可直接上传；PDF 可用命令导入。";
   var HELP_UPLOAD_BODY =
-    "主页左侧为**已存任务**列表（可滚动）；点击任务打开预览。上传解析后左侧切换为**幻灯片缩略图**列表；右侧为预览图，「当前页解析文本」可折叠查看抽取文本（默认展开）。";
+    "首页优先展示**作品项目**；点击项目打开预览。上传解析后左侧切换为**素材缩略图**列表，右侧为整页预览，「当前页解析文本」可折叠查看抽取文本（默认展开）。";
   var HELP_CLI_BODY =
-    "可在终端执行命令行转换：ppt-course transform 输入.pptx（将「输入.pptx」换成你的文件路径）。无需打开本页面。";
+    "可在终端执行命令行转换：ppt-course transform 输入.pptx，或用 ppt-course import-pdf-task 输入.pdf 把 PDF 入库。无需打开本页面。";
   var HELP_TASK_LIST_BODY =
-    "上传并成功解析后，文件副本与解析结果会保存在项目根目录下的 ppt_course_data/tasks/（每任务一个子文件夹），并出现在主页**左侧已存任务**列表中。点击某条会在主界面打开预览（左侧变为幻灯片缩略图 + 右侧大图）。\n\n列表为空表示尚无记录；可在服务端设置环境变量 PPT_COURSE_DATA 改用其它数据根目录。";
+    "导入并成功解析后，文件副本与解析结果会保存在项目根目录下的 ppt_course_data/tasks/（每个作品项目一个子文件夹），并出现在首页**作品项目**区。点击某个项目会进入工作台预览（左侧为素材缩略图，右侧为大图和解析文本）。\n\n列表为空表示尚无记录；可在服务端设置环境变量 PPT_COURSE_DATA 改用其它数据根目录。";
   var HELP_AUDIO_SEGMENTS_BODY =
     "主预览区标题栏喇叭只用于本页已生成各段 MP3：同一段可多次合成，喇叭弹窗内按「记录」列出历次生成，可分别试听、下载或删除（删除会移除服务端文件，并清除本站 IndexedDB 中为自动下载缓存的副本）。逐字稿编辑、口播优化与生成请用音频工作台里的「打开本页逐字稿与音频」。浏览器「下载」文件夹里另行出现的同名文件需自行整理。\n\n每一段口播对应多次可选的 MiniMax 合成。点击某段的「生成」会先弹出确认框（合成参数与文案预览），确认后再请求服务端调用 T2A；成功后通常会触发一条 mp3 的本地下载，服务端写入任务目录且不覆盖同段旧文件。\n\n「口播稿优化」在服务端调用 OpenAI 兼容大模型，按 MiniMax 官方文档白名单优化停顿与插入语；需先在顶栏「外部 API 配置」→「口播稿优化 API」启用并填写密钥。左右对比确认后再「采用改写稿」。「口播版本库」将多版改写稿存在浏览器本地，可按段选用。\n\n切换幻灯片后，若本弹窗保持打开，列表会随当前页刷新。\n\n「保存到服务端」会把当前内存中的全部逐字稿（含每一页的多段结构 transcript_segments）通过 PUT /api/audio/workspace 写入服务端工作区元数据，用于持久化与下次打开任务恢复；仅保存文本，不会在未点「生成」时调用 MiniMax。";
   var HELP_AUDIO_GENERATE_CONFIRM_BODY =
@@ -516,7 +546,7 @@
   }
   if (btnHelpTaskList) {
     btnHelpTaskList.addEventListener("click", function () {
-      openHelp("已存任务", HELP_TASK_LIST_BODY);
+      openHelp("项目库", HELP_TASK_LIST_BODY);
     });
   }
   if (btnHelpAudioSegments) {
@@ -731,8 +761,118 @@
     return btnInfo;
   }
 
+  function taskSourceLabel(t) {
+    var src = String((t && t.source_type) || "").toLowerCase();
+    if (src === "pdf") return "PDF";
+    if (src === "pptx") return "PPT";
+    if (src === "demo") return "DEMO";
+    return "素材";
+  }
+
+  function taskKindLabel(t) {
+    var kind = String((t && t.project_kind) || "").toLowerCase();
+    var labels = {
+      quality: "质检规则",
+      onboarding: "培训课程",
+      sop: "流程教学",
+      sales: "产品介绍",
+      creative: "创意工作坊",
+      general: "视频项目",
+      knowledge: "知识讲解",
+      retrospective: "作品复盘",
+      product: "产品介绍",
+      training: "培训课程",
+    };
+    return labels[kind] || "视频项目";
+  }
+
+  function taskStatusPill(label, ok) {
+    return (
+      '<span class="project-card__status ' +
+      (ok ? "is-ready" : "is-pending") +
+      '">' +
+      escapeHtml(label) +
+      "</span>"
+    );
+  }
+
+  function taskPreviewStyle(t) {
+    if (!t || !t.images_available || !t.id) {
+      return "";
+    }
+    return (
+      ' style="background-image: url(\'' +
+      storedPreviewUrl(t.id, 0).replace(/'/g, "%27") +
+      "');\""
+    );
+  }
+
+  function buildProjectCardItem(t) {
+    var li = document.createElement("li");
+    li.className = "project-card-li";
+    var card = document.createElement("article");
+    card.className = "project-card";
+    var primaryLabel = t.has_output_video ? "播放成片" : "继续制作";
+    var primaryRoute = t.has_output_video ? "output" : "render";
+    card.innerHTML =
+      '<span class="project-card__shine" aria-hidden="true"></span>' +
+      '<button type="button" class="project-card__main" aria-label="打开项目">' +
+      '<span class="project-card__thumb"' +
+      taskPreviewStyle(t) +
+      '><span class="project-card__thumb-fallback">' +
+      escapeHtml(taskSourceLabel(t)) +
+      "</span></span>" +
+      '<span class="project-card__body">' +
+      '<span class="project-card__topline"><span>' +
+      escapeHtml(taskSourceLabel(t)) +
+      "</span><span>" +
+      escapeHtml(taskKindLabel(t)) +
+      "</span></span>" +
+      '<strong class="project-card__title">' +
+      escapeHtml(t.filename || "未命名项目") +
+      "</strong>" +
+      '<span class="project-card__meta">' +
+      (t.slide_count || 0) +
+      " 页 · " +
+      escapeHtml(formatTaskTime(t.created_at)) +
+      "</span>" +
+      '<span class="project-card__statuses">' +
+      taskStatusPill("预览", !!t.images_available) +
+      taskStatusPill("导演", !!t.has_director_manifest) +
+      taskStatusPill("成片线", !!t.has_render_plan) +
+      taskStatusPill("MP4", !!t.has_output_video) +
+      "</span>" +
+      "</span>" +
+      "</button>" +
+      '<span class="project-card__actions">' +
+      '<button type="button" class="project-card__action project-card__action--primary" data-project-route="' +
+      primaryRoute +
+      '">' +
+      primaryLabel +
+      "</button>" +
+      '<button type="button" class="project-card__action" data-project-route="director">导演计划</button>' +
+      "</span>";
+    var main = card.querySelector(".project-card__main");
+    if (main) {
+      main.addEventListener("click", function () {
+        openStoredTask(t.id, "deal");
+      });
+    }
+    card.querySelectorAll("[data-project-route]").forEach(function (btn) {
+      btn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        openStoredTask(t.id, btn.getAttribute("data-project-route") || "deal");
+      });
+    });
+    li.appendChild(card);
+    return li;
+  }
+
   function buildTaskListItem(t, options) {
     var navOnly = options && options.navOnly;
+    if (options && options.projectCards) {
+      return buildProjectCardItem(t);
+    }
     var li = document.createElement("li");
     li.className = "task-li" + (navOnly ? " task-li--nav" : "");
     var main = document.createElement("button");
@@ -753,7 +893,7 @@
       "</span>";
     main.addEventListener("click", function () {
       if (navOnly) closeWorkspaceTaskDrawer();
-      openStoredTask(t.id);
+      openStoredTask(t.id, "deal");
     });
 
     li.appendChild(main);
@@ -794,24 +934,31 @@
 
   function readHomeProfile() {
     try {
+      var version = localStorage.getItem(HOME_PROFILE_VERSION_LS_KEY);
+      if (version !== HOME_PROFILE_VERSION) {
+        localStorage.setItem(HOME_PROFILE_LS_KEY, "knowledge");
+        localStorage.setItem(HOME_PROFILE_VERSION_LS_KEY, HOME_PROFILE_VERSION);
+        return "knowledge";
+      }
       var saved = localStorage.getItem(HOME_PROFILE_LS_KEY);
       if (saved && HOME_PROFILES[saved]) return saved;
     } catch (_) {}
-    return "quality";
+    return "knowledge";
   }
 
   function setHomeProfile(profileId, persist) {
-    var next = HOME_PROFILES[profileId] ? profileId : "quality";
+    var next = HOME_PROFILES[profileId] ? profileId : "knowledge";
     currentHomeProfile = next;
     if (persist) {
       try {
         localStorage.setItem(HOME_PROFILE_LS_KEY, next);
+        localStorage.setItem(HOME_PROFILE_VERSION_LS_KEY, HOME_PROFILE_VERSION);
       } catch (_) {}
     }
     homePresetButtons.forEach(function (item) {
       item.classList.toggle("is-active", item.getAttribute("data-home-preset") === next);
     });
-    var profile = HOME_PROFILES[next] || HOME_PROFILES.quality;
+    var profile = HOME_PROFILES[next] || HOME_PROFILES.knowledge;
     if (homeProfilePrompt) homeProfilePrompt.textContent = profile.prompt;
     if (homeProfileDuration) homeProfileDuration.textContent = profile.duration;
     if (homeProfileMotion) homeProfileMotion.textContent = profile.motion;
@@ -845,7 +992,10 @@
       if (listEl === homeAssetsList) {
         var empty = document.createElement("li");
         empty.className = "home-assets__empty";
-        empty.textContent = "还没有任务。先回到“生成”上传一份 PPT。";
+        empty.innerHTML =
+          '<span class="home-assets__empty-art" aria-hidden="true"></span>' +
+          "<strong>还没有作品项目</strong>" +
+          "<p>先导入一份 PPTX，或用命令导入 PDF，工坊会在这里沉淀素材、导演计划和成片状态。</p>";
         listEl.appendChild(empty);
       }
       listEl.setAttribute("aria-label", "暂无任务");
@@ -854,7 +1004,7 @@
     tasks.forEach(function (t) {
       listEl.appendChild(buildTaskListItem(t, options));
     });
-    listEl.setAttribute("aria-label", tasks.length ? "已存任务列表" : "暂无任务");
+    listEl.setAttribute("aria-label", tasks.length ? "项目库列表" : "暂无任务");
   }
 
   function setWorkspaceTaskDrawerTabVisible(show) {
@@ -967,7 +1117,7 @@
     }
     if (btnWorkspaceTaskDrawer) {
       btnWorkspaceTaskDrawer.setAttribute("aria-expanded", "false");
-      btnWorkspaceTaskDrawer.setAttribute("aria-label", "展开已存任务列表");
+      btnWorkspaceTaskDrawer.setAttribute("aria-label", "展开项目库");
     }
   }
 
@@ -987,7 +1137,7 @@
     workspaceTaskDrawerPanel.setAttribute("aria-modal", "true");
     if (btnWorkspaceTaskDrawer) {
       btnWorkspaceTaskDrawer.setAttribute("aria-expanded", "true");
-      btnWorkspaceTaskDrawer.setAttribute("aria-label", "收起已存任务列表");
+      btnWorkspaceTaskDrawer.setAttribute("aria-label", "收起项目库");
     }
   }
 
@@ -1006,7 +1156,7 @@
       var tasks = data.tasks || [];
       renderTaskListFromData(tasks, taskList, { navOnly: false });
       if (homeAssetsList) {
-        renderTaskListFromData(tasks, homeAssetsList, { navOnly: true });
+        renderTaskListFromData(tasks, homeAssetsList, { navOnly: true, projectCards: true });
       }
       if (workspaceTaskDrawerList) {
         renderTaskListFromData(tasks, workspaceTaskDrawerList, { navOnly: true });
@@ -1037,7 +1187,7 @@
         body: JSON.stringify({ filename: name }),
       });
       if (!res.ok) return;
-      if (currentTaskId === id && fileLabel) fileLabel.textContent = name + " · 已存任务";
+      if (currentTaskId === id && fileLabel) fileLabel.textContent = name + " · 作品项目";
       closeRenamePopover();
       refreshTaskList();
     } catch (_) {}
@@ -1058,7 +1208,7 @@
     btnGenerateSlideVisual.disabled = !ok;
     btnGenerateSlideVisual.title = ok
       ? "打开确认框：核对存储路径、模型与提示词后再调用文生图（消耗网关额度）"
-      : "需任务已持久化（解析返回 task_id，或从左侧打开已存任务）";
+      : "需项目已持久化（解析返回 task_id，或从左侧项目库打开）";
   }
 
   async function refreshGenVisualCoverage() {
@@ -1345,7 +1495,7 @@
     }
   }
 
-  async function openStoredTask(taskId) {
+  async function openStoredTask(taskId, routeName) {
     try {
       var res = await fetch("/api/tasks/" + encodeURIComponent(taskId));
       if (!res.ok) return;
@@ -1365,7 +1515,7 @@
       audioTranscriptSegments = slides.map(function () {
         return [""];
       });
-      fileLabel.textContent = (data.filename || "已存任务") + " · 已存任务";
+      fileLabel.textContent = (data.filename || "作品项目") + " · 作品项目";
       if (imagesAvailable) {
         imagesBanner.classList.add("hidden");
         imagesBanner.textContent = "";
@@ -1386,7 +1536,7 @@
       renderPreview();
       await loadAudioWorkspaceMeta();
       var msg =
-        "已打开已存任务（" +
+        "已打开作品项目（" +
         slides.length +
         " 页）。左侧为缩略图列表，可滚动选择页面。";
       if (!imagesAvailable) {
@@ -1399,7 +1549,7 @@
       void refreshDirectorManifest(true);
       void refreshRemotionStatus(true);
       void refreshWorkspaceStatus(true);
-      syncWorkbenchRouteFromHash();
+      setWorkbenchRoute(routeName || currentWorkbenchRouteName(), { updateHash: true, scroll: false });
     } catch (_) {}
   }
 
@@ -1768,7 +1918,7 @@
     if (!currentTaskId) {
       if (directorSummary) {
         directorSummary.innerHTML =
-          '<p class="director-panel__empty">需任务已持久化（解析返回 task_id，或从已存任务打开）。</p>';
+          '<p class="director-panel__empty">需项目已持久化（解析返回 task_id，或从项目库打开）。</p>';
       }
       if (directorScenes) directorScenes.innerHTML = "";
       directorManifestCache = null;
@@ -1992,6 +2142,66 @@
     }
   }
 
+  function formatEngineCounts(counts) {
+    counts = counts || {};
+    var labels = {
+      remotion_stable: "Remotion",
+      hyperframes_creative: "Hyperframes",
+      hybrid: "Hybrid",
+    };
+    return Object.keys(counts)
+      .map(function (key) {
+        return (labels[key] || key) + " " + counts[key];
+      })
+      .join(" / ");
+  }
+
+  function renderRenderTimeline(explanation) {
+    var timeline = explanation && Array.isArray(explanation.timeline) ? explanation.timeline : [];
+    if (!timeline.length) {
+      return '<p class="render-explain__empty">还没有可解读的时间线。请先生成成片蓝图。</p>';
+    }
+    return (
+      '<div class="render-timeline">' +
+      timeline
+        .map(function (item) {
+          return (
+            '<article class="render-scene-card">' +
+            '<div class="render-scene-card__head">' +
+            '<strong>第 ' +
+            escapeHtmlText(item.index) +
+            " 镜</strong>" +
+            '<span>' +
+            escapeHtmlText(item.time_range || "00:00 - 00:00") +
+            "</span>" +
+            "</div>" +
+            '<div class="render-scene-card__meta">' +
+            '<span>作用：' +
+            escapeHtmlText(item.role_label || "内容讲解") +
+            "</span>" +
+            '<span>执行：' +
+            escapeHtmlText(item.engine_label || item.engine || "未指定") +
+            "</span>" +
+            '<span>来源：' +
+            escapeHtmlText(item.source_label || "未指定") +
+            "</span>" +
+            "</div>" +
+            "<p>" +
+            escapeHtmlText(item.purpose || "这一镜用于承接当前素材内容。") +
+            "</p>" +
+            '<span class="render-scene-card__status ' +
+            (item.fallback_used ? "is-warn" : "is-ready") +
+            '">' +
+            escapeHtmlText(item.status || "可按计划渲染") +
+            "</span>" +
+            "</article>"
+          );
+        })
+        .join("") +
+      "</div>"
+    );
+  }
+
   function renderRemotionStatus(data) {
     if (!remotionSummary) return;
     if (!currentTaskId) {
@@ -2005,63 +2215,66 @@
     }
     var inputReady = Boolean(data && data.input_props_exists);
     var outputReady = Boolean(data && data.output_video_exists);
-    var missing = (data && data.missing_audio_slide_indexes) || [];
-    var missingText = missing.length
-      ? "缺音频页：" + missing.map(function (i) { return i + 1; }).join("、")
-      : "所有导出页均有音频";
-    var layoutCounts = (data && data.layout_counts) || {};
-    var layoutText = Object.keys(layoutCounts)
-      .map(function (key) {
-        return key + " " + layoutCounts[key];
-      })
-      .join(" / ");
+    var explanation = (data && data.explanation) || {};
+    var summary = explanation.summary || {};
+    var risks = Array.isArray(explanation.risks) ? explanation.risks : [];
+    var renderPlanRaw = data && data.render_plan_raw ? JSON.stringify(data.render_plan_raw, null, 2) : "尚未生成 render_plan.json";
+    var inputPropsRaw = data && data.input_props_raw ? JSON.stringify(data.input_props_raw, null, 2) : "尚未生成 input-props.json";
     remotionSummary.innerHTML =
-      '<div class="remotion-panel__summary-inner">' +
-      "<p><strong>入参</strong>：" +
-      (inputReady ? "已生成" : "未生成") +
-      "</p>" +
-      "<p><strong>成片</strong>：" +
-      (outputReady ? "已存在" : "未检测到") +
-      "</p>" +
-      "<p><strong>页数</strong>：" +
-      escapeHtmlText((data && data.slide_count) || "—") +
-      "　<strong>总帧数</strong>：" +
-      escapeHtmlText((data && data.total_frames) || "—") +
-      "　<strong>时长</strong>：" +
-      escapeHtmlText((data && data.duration_sec) || "—") +
-      " 秒</p>" +
-      "<p><strong>音频覆盖</strong>：" +
-      escapeHtmlText(missingText) +
-      "</p>" +
-      "<p><strong>Scene-aware</strong>：" +
-      escapeHtmlText(
-        ((data && data.scene_count) || 0) +
-          " 个镜头，风险镜头 " +
-          ((data && data.risk_scene_count) || 0) +
-          " 个"
-      ) +
-      "</p>" +
-      "<p><strong>Layout 分布</strong>：" +
-      escapeHtmlText(layoutText || "—") +
-      "</p>" +
-      "<p><strong>Render Plan</strong>：" +
-      escapeHtmlText(
-        data && data.render_plan_exists
-          ? (data.render_plan_source || "director") + " · " + (data.render_plan_path || "")
-          : "未生成"
-      ) +
-      "</p>" +
-      "<p><strong>input-props</strong>：" +
-      escapeHtmlText((data && data.input_props_path) || "—") +
-      "</p>" +
-      "<p><strong>输出文件</strong>：" +
-      escapeHtmlText((data && data.output_video_path) || "—") +
-      "</p>" +
+      '<div class="remotion-panel__summary-inner render-explain">' +
+      '<div class="render-explain__hero">' +
+      '<div><strong>' +
+      (inputReady ? "成片蓝图已生成" : "等待生成成片蓝图") +
+      "</strong><p>" +
+      (inputReady
+        ? "导演已经把素材编排为 Remotion 可执行的时间线。"
+        : "点击“生成渲染任务”后，这里会出现镜头时间线和执行说明。") +
+      "</p></div>" +
+      '<span class="render-explain__state ' +
+      (outputReady ? "is-ready" : inputReady ? "is-warn" : "is-todo") +
+      '">' +
+      (outputReady ? "MP4 已生成" : inputReady ? "待渲染 MP4" : "待生成") +
+      "</span>" +
+      "</div>" +
+      '<div class="render-explain__stats">' +
+      '<span><b>' +
+      escapeHtmlText(summary.timeline_item_count || (data && data.timeline_item_count) || 0) +
+      "</b>镜头</span>" +
+      '<span><b>' +
+      escapeHtmlText(summary.duration_label || "00:00") +
+      "</b>时长</span>" +
+      '<span><b>' +
+      escapeHtmlText(formatEngineCounts(summary.engine_counts || (data && data.engine_counts)) || "—") +
+      "</b>引擎</span>" +
+      '<span><b>' +
+      escapeHtmlText(String(summary.fallback_count || 0)) +
+      "</b>回退</span>" +
+      "</div>" +
+      (risks.length
+        ? '<div class="render-explain__risks">' +
+          risks.map(function (risk) { return "<p>" + escapeHtmlText(risk) + "</p>"; }).join("") +
+          "</div>"
+        : "") +
+      renderRenderTimeline(explanation) +
+      '<details class="render-artifacts">' +
+      "<summary>高级：查看原始文件与渲染命令</summary>" +
+      '<div class="render-artifacts__grid">' +
+      '<section><div class="render-artifacts__head"><strong>render_plan.json</strong><button type="button" class="btn btn-text" data-copy-artifact="render-plan">复制</button></div><pre id="render-plan-raw">' +
+      escapeHtmlText(renderPlanRaw) +
+      "</pre></section>" +
+      '<section><div class="render-artifacts__head"><strong>input-props.json</strong><button type="button" class="btn btn-text" data-copy-artifact="input-props">复制</button></div><pre id="input-props-raw">' +
+      escapeHtmlText(inputPropsRaw) +
+      "</pre></section>" +
+      "</div>" +
+      '<pre class="remotion-panel__command-inline">' +
+      escapeHtmlText((data && data.render_command) || "先生成成片蓝图 / input-props") +
+      "</pre>" +
+      "</details>" +
       "</div>";
     if (remotionCommand) {
       var cmd = (data && data.render_command) || "";
       remotionCommand.textContent = cmd;
-      remotionCommand.classList.toggle("hidden", !cmd);
+      remotionCommand.classList.add("hidden");
     }
   }
 
@@ -2134,10 +2347,17 @@
     var routeTaskId = decodeURIComponent(m[1]);
     var route = decodeURIComponent(m[2]);
     if (routeTaskId && (!currentTaskId || routeTaskId !== currentTaskId)) {
-      void openStoredTask(routeTaskId);
+      void openStoredTask(routeTaskId, route);
       return;
     }
     setWorkbenchRoute(route, { updateHash: false, scroll: true });
+  }
+
+  function currentWorkbenchRouteName() {
+    var m = window.location.hash.match(/^#\/tasks\/[^/]+\/([^/]+)/);
+    if (m && WORKBENCH_ROUTES[decodeURIComponent(m[1])]) return decodeURIComponent(m[1]);
+    var fromBody = document.body.getAttribute("data-workbench-route");
+    return WORKBENCH_ROUTES[fromBody] ? fromBody : "deal";
   }
 
   function renderPipelineState(data) {
@@ -2180,7 +2400,7 @@
     }
     try {
       var res = await fetch(
-        "/api/tasks/" + encodeURIComponent(currentTaskId) + "/remotion-render-task"
+        "/api/tasks/" + encodeURIComponent(currentTaskId) + "/render-artifacts"
       );
       var j = await res.json().catch(function () {
         return {};
@@ -2216,7 +2436,7 @@
         return {};
       });
       if (!res.ok) throw new Error(j.detail || "请求失败");
-      renderRemotionStatus(j);
+      await refreshRemotionStatus(true);
       void refreshWorkspaceStatus(true);
       if (statusLine) {
         statusLine.textContent =
@@ -4331,7 +4551,7 @@
       previewSource =
         data.preview_source === "placeholder" ? "placeholder" : "libreoffice";
       fileLabel.textContent = data.filename + " · " + formatSize(file.size);
-      uploadPanel.querySelector(".drop-title").textContent = "上传培训用 .pptx";
+      uploadPanel.querySelector(".drop-title").textContent = "导入素材成片";
 
       if (!slides.length) {
         throw new Error("未解析到任何幻灯片。");
@@ -4378,7 +4598,7 @@
       void refreshWorkspaceStatus(true);
     } catch (err) {
       showErr(errorUpload, err instanceof Error ? err.message : String(err));
-      uploadPanel.querySelector(".drop-title").textContent = "上传培训用 .pptx";
+      uploadPanel.querySelector(".drop-title").textContent = "导入素材成片";
       slideCounter.textContent = "第 — / — 页";
     }
   }
@@ -4414,7 +4634,7 @@
     fileInput.value = "";
     imagesBanner.classList.add("hidden");
     imagesBanner.textContent = "";
-    uploadPanel.querySelector(".drop-title").textContent = "上传培训用 .pptx";
+    uploadPanel.querySelector(".drop-title").textContent = "导入素材成片";
     statusLine.textContent = "";
     resetDownload();
     setImportTranscriptButtonVisible();
@@ -4450,7 +4670,7 @@
 
   homePresetButtons.forEach(function (btn) {
     btn.addEventListener("click", function () {
-      setHomeProfile(btn.getAttribute("data-home-preset") || "quality", true);
+      setHomeProfile(btn.getAttribute("data-home-preset") || "knowledge", true);
     });
   });
 
@@ -5786,6 +6006,28 @@
       true,
     );
   }
+
+  document.addEventListener("click", function (e) {
+    var target = e.target;
+    if (!target || !target.closest) return;
+    var btn = target.closest("[data-copy-artifact]");
+    if (!btn) return;
+    var kind = btn.getAttribute("data-copy-artifact");
+    var source =
+      kind === "input-props"
+        ? document.getElementById("input-props-raw")
+        : document.getElementById("render-plan-raw");
+    var text = source ? source.textContent || "" : "";
+    if (!text) return;
+    navigator.clipboard
+      .writeText(text)
+      .then(function () {
+        if (statusLine) statusLine.textContent = "已复制原始文件内容。";
+      })
+      .catch(function () {
+        if (statusLine) statusLine.textContent = "复制失败，请展开后手动选择文本。";
+      });
+  });
 
   initVoiceIdComboboxes();
 

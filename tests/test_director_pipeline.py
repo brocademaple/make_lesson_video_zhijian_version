@@ -108,6 +108,10 @@ def test_rebuild_produces_scenes_with_narration_and_subtitles(tmp_path: Path) ->
     segs = (sc.get("subtitle") or {}).get("segments") or []
     assert len(segs) >= 1
     assert all("start_sec" in s and "end_sec" in s and "text" in s for s in segs)
+    assert sc["scene_role"] == "intro"
+    assert sc["render_engine"] in {"hyperframes_creative", "remotion_stable"}
+    assert sc["creative_brief"]["title"] == sc["title"]
+    assert sc["fallback_engine"] in {"", "remotion_stable"}
 
 
 def test_rebuild_can_use_llm_director_output(tmp_path: Path) -> None:
@@ -148,6 +152,9 @@ def test_rebuild_can_use_llm_director_output(tmp_path: Path) -> None:
     assert scene["screen_design"]["layout"] == "rule_card"
     assert scene["tts_text"]
     assert scene["subtitle"]["segments"]
+    assert scene["scene_role"] == "intro"
+    assert scene["render_engine"] == "remotion_stable"
+    assert scene["creative_brief"]["engine"] == "remotion"
 
 
 def test_rebuild_falls_back_when_llm_unavailable(tmp_path: Path) -> None:

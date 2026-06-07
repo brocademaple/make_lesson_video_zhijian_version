@@ -123,7 +123,7 @@
       var remotion = data && data.remotion;
       if (!currentTaskId || !remotion) {
         outputSummary.innerHTML =
-          '<p class="output-panel__empty">打开已存任务后，这里会显示最终 MP4 和 Demo 产物。</p>';
+          '<p class="output-panel__empty">打开作品项目后，这里会显示最终 MP4。</p>';
         return;
       }
       var hasVideo = Boolean(remotion.output_video_exists);
@@ -131,28 +131,72 @@
         hasVideo && currentTaskId
           ? "/api/tasks/" + encodeURIComponent(currentTaskId) + "/output-video"
           : "";
+      var renderRoute = "#/tasks/" + encodeURIComponent(currentTaskId) + "/render";
+      var directorRoute = "#/tasks/" + encodeURIComponent(currentTaskId) + "/director";
+      var dealRoute = "#/tasks/" + encodeURIComponent(currentTaskId) + "/deal";
+      var duration = remotion.duration_sec ? remotion.duration_sec + " 秒" : "—";
+      var filename = (data && data.filename) || "作品项目";
       outputSummary.innerHTML =
         '<div class="output-panel__summary-inner output-panel__summary-inner--' +
         (hasVideo ? "ready" : "todo") +
         '">' +
+        '<div class="output-panel__hero">' +
+        '<div><strong>' +
+        escapeHtmlText(filename) +
+        '</strong><p>' +
+        (hasVideo ? "最终 MP4 已生成，可以直接预览和演示。" : "还没有检测到 MP4，先回到成片线生成蓝图并执行渲染。") +
+        "</p></div>" +
+        '<span class="output-panel__badge ' +
+        (hasVideo ? "is-ready" : "is-todo") +
+        '">' +
+        (hasVideo ? "可播放" : "待出片") +
+        "</span>" +
+        "</div>" +
         (videoUrl
           ? '<video class="output-panel__video" controls preload="metadata" src="' +
             escapeHtmlText(videoUrl) +
             '"></video>'
-          : "") +
-        "<p><strong>MP4 状态</strong>：" +
-        (hasVideo ? "已生成" : "未检测到本地视频") +
-        "</p>" +
+          : '<div class="output-panel__placeholder">暂无视频文件</div>') +
+        '<div class="output-panel__facts">' +
+        '<span><b>' +
+        escapeHtmlText(duration) +
+        "</b>成片时长</span>" +
+        '<span><b>' +
+        escapeHtmlText(remotion.output_video_size_bytes ? Math.round(remotion.output_video_size_bytes / 1024 / 1024 * 10) / 10 + " MB" : "—") +
+        "</b>文件大小</span>" +
+        '<span><b>' +
+        escapeHtmlText(remotion.render_plan_exists ? "已生成" : "待生成") +
+        "</b>成片蓝图</span>" +
+        "</div>" +
+        '<p class="output-panel__links-title">关联任务</p>' +
+        '<div class="output-panel__links">' +
+        '<a class="btn btn-secondary" href="' +
+        escapeHtmlText(hasVideo ? videoUrl : renderRoute) +
+        '"' +
+        (hasVideo ? ' target="_blank" rel="noopener noreferrer"' : "") +
+        ">" +
+        (hasVideo ? "新窗口播放" : "去成片线") +
+        "</a>" +
+        '<a class="btn btn-text" href="' +
+        escapeHtmlText(dealRoute) +
+        '">素材台</a>' +
+        '<a class="btn btn-text" href="' +
+        escapeHtmlText(directorRoute) +
+        '">导演台</a>' +
+        '<a class="btn btn-text" href="' +
+        escapeHtmlText(renderRoute) +
+        '">成片线</a>' +
+        "</div>" +
+        '<details class="output-panel__details"><summary>高级：文件路径与渲染命令</summary>' +
         "<p><strong>视频路径</strong>：" +
         escapeHtmlText(remotion.output_video_path || "—") +
         "</p>" +
         "<p><strong>成片蓝图</strong>：" +
         escapeHtmlText(remotion.render_plan_exists ? remotion.render_plan_path || "已生成" : "待生成") +
         "</p>" +
-        "<p><strong>渲染命令</strong>：</p>" +
         '<pre class="output-panel__command">' +
         escapeHtmlText(remotion.render_command || "先生成成片蓝图 / input-props") +
-        "</pre>" +
+        "</pre></details>" +
         "</div>";
     }
 
@@ -236,12 +280,12 @@
       renderPipelineState(data, currentTaskId);
       if (taskWorkflowTitle) {
         taskWorkflowTitle.textContent =
-          data && data.filename ? data.filename : currentTaskId ? "已存任务" : "任务流";
+          data && data.filename ? data.filename : currentTaskId ? "作品项目" : "项目工作流";
       }
       if (!taskWorkflowSteps) return;
       if (!currentTaskId || !data) {
         taskWorkflowSteps.innerHTML =
-          '<p class="task-workflow__empty">打开任务后显示入仓、拆解、导演、声音轨与成片状态。</p>';
+          '<p class="task-workflow__empty">打开作品项目后显示入仓、拆解、导演、声音轨与成片状态。</p>';
         renderWorkflowDetails(data, {}, currentTaskId);
         return;
       }
@@ -287,7 +331,7 @@
           "audio-workbench",
         ) +
         workflowStep(
-          "成片引擎",
+          "成片线",
           remotionState,
           remotion.output_video_exists
             ? "已检测到 MP4"
