@@ -20,7 +20,7 @@
         </a>
         <nav class="site-nav" aria-label="页面内导航">
           <a href="#studio">工作台</a>
-          <a href="#scroll-story">流程</a>
+          <a href="#workflow">流程</a>
           <a href="#architecture">架构</a>
           <a href="#run">运行</a>
         </nav>
@@ -32,15 +32,14 @@
 
     <main id="top">
       <section class="hero" aria-labelledby="hero-title">
-        <div class="hero__copy glass-panel">
-          <p class="hero__label">PPT Course Video Pipeline</p>
+        <div class="hero__copy">
           <h1 id="hero-title">把培训课件做成可审核的视频生产线</h1>
           <p class="hero__lead">
-            面向企业内训、质检规范和流程教学：上传 PPT 后，系统会拆页、标注素材、生成导演脚本、维护口播音频，并交给 Remotion 渲染成片。
+            智课影擎面向企业内训、质检规范和流程教学。上传 PPT 后，工作台会沉淀素材、脚本、口播和渲染入参，让每一步都能检查、重跑和替换。
           </p>
           <div class="hero__actions">
             <a class="button button--primary" href="#studio">看工作台截图</a>
-            <a class="button" href="#scroll-story">看产物链路</a>
+            <a class="button" href="#workflow">看产物链路</a>
           </div>
         </div>
         <div class="hero__visual glass-panel" aria-label="产品首页截图">
@@ -57,97 +56,96 @@
       <section class="quick-strip glass-panel" id="studio" aria-label="工作台能力">
         <article>
           <span>01</span>
-          <strong>唯一上传入口</strong>
+          <strong>上传</strong>
           <p>PPT 拖进去，任务立刻进入工作台。</p>
         </article>
         <article>
           <span>02</span>
-          <strong>任务与页预览</strong>
+          <strong>预览</strong>
           <p>首页管理历史任务，详情页查看 PPT 缩略图。</p>
         </article>
         <article>
           <span>03</span>
-          <strong>导演脚本可审</strong>
+          <strong>审核</strong>
           <p>每页素材、镜头和口播都有 JSON 产物。</p>
         </article>
         <article>
           <span>04</span>
-          <strong>React 渲染成片</strong>
+          <strong>成片</strong>
           <p>Remotion 用确定性时间线出 MP4。</p>
         </article>
       </section>
 
-      <section class="scroll-story" id="scroll-story" aria-labelledby="story-title">
-        <div class="story-copy">
-          <p class="section-label">Production Pipeline</p>
-          <h2 id="story-title">从 PPT 到 MP4，每一步都有产物可查</h2>
+      <section class="workflow" id="workflow" aria-labelledby="workflow-title">
+        <div class="section-head">
+          <h2 id="workflow-title">从 PPT 到 MP4，每一步都有产物可查</h2>
           <p>
-            这个项目把课件视频拆成可审、可重跑、可替换模型的产物链路，避免生成过程只停留在一次性结果。
+            页面先讲产品流程，再把工程产物放到对应步骤里。用户看到的是可审核的生产链路，开发者仍然能追到每个 JSON 文件。
           </p>
         </div>
-        <div class="story-layout">
-          <div class="story-steps" aria-label="生成阶段说明">
-            <article class="story-step glass-panel" data-story-step="materials">
-              <span>Step 01</span>
-              <h3>素材入仓</h3>
-              <p>抽取 PPT 预览图、正文、备注和图片素材，形成 raw_material_manifest.json。</p>
-            </article>
-            <article class="story-step glass-panel" data-story-step="director">
-              <span>Step 02</span>
-              <h3>导演中枢</h3>
-              <p>按视频方向重组素材，生成 director_manifest.json，记录章节、镜头和画面意图。</p>
-            </article>
-            <article class="story-step glass-panel" data-story-step="audio">
-              <span>Step 03</span>
-              <h3>声音工坊</h3>
-              <p>逐页维护口播稿和音频版本，支持 MiniMax，也能用 Edge TTS 兜底跑通链路。</p>
-            </article>
-            <article class="story-step glass-panel" data-story-step="render">
-              <span>Step 04</span>
-              <h3>成片引擎</h3>
-              <p>把导演脚本转成 render_plan.json 和 input-props.json，由 Remotion 渲染 MP4。</p>
-            </article>
+        <div class="workflow-grid" aria-label="生成阶段说明">
+          <article class="workflow-card glass-panel" data-story-step="materials">
+            <span>01</span>
+            <h3>素材入仓</h3>
+            <p>抽取 PPT 预览图、正文、备注和图片素材。</p>
+            <code>raw_material_manifest.json</code>
+          </article>
+          <article class="workflow-card glass-panel" data-story-step="director">
+            <span>02</span>
+            <h3>导演脚本</h3>
+            <p>按视频方向重组章节、镜头、旁白和画面意图。</p>
+            <code>director_manifest.json</code>
+          </article>
+          <article class="workflow-card glass-panel" data-story-step="audio">
+            <span>03</span>
+            <h3>口播音频</h3>
+            <p>逐页维护讲稿和音频版本，支持试听、替换和回滚。</p>
+            <code>audio_workspace/</code>
+          </article>
+          <article class="workflow-card glass-panel" data-story-step="render">
+            <span>04</span>
+            <h3>渲染成片</h3>
+            <p>把审核后的导演脚本转成 Remotion 可消费的入参。</p>
+            <code>render_plan.json / input-props.json</code>
+          </article>
+        </div>
+        <aside class="artifact-board glass-panel" aria-label="当前阶段看板">
+          <div class="artifact-tabs">
+            <button class="story-tile is-active" type="button" data-story-tile="materials">素材</button>
+            <button class="story-tile" type="button" data-story-tile="director">导演</button>
+            <button class="story-tile" type="button" data-story-tile="audio">音频</button>
+            <button class="story-tile" type="button" data-story-tile="render">渲染</button>
           </div>
-          <aside class="story-board glass-panel" aria-label="当前阶段看板">
-            <div class="story-board__grid">
-              <button class="story-tile is-active" type="button" data-story-tile="materials">
-                <span>素材</span>
-                <strong>75 页预览</strong>
-              </button>
-              <button class="story-tile" type="button" data-story-tile="director">
-                <span>导演</span>
-                <strong>镜头脚本</strong>
-              </button>
-              <button class="story-tile" type="button" data-story-tile="audio">
-                <span>音频</span>
-                <strong>口播轨</strong>
-              </button>
-              <button class="story-tile" type="button" data-story-tile="render">
-                <span>渲染</span>
-                <strong>MP4</strong>
-              </button>
-            </div>
-            <div class="story-board__screen">
-              <div class="story-board__screen-head">
-                <span id="story-board-kicker">素材入仓</span>
-                <strong id="story-board-title">生成 raw_material_manifest.json</strong>
-              </div>
-              <p id="story-board-copy">
-                每页预览图、正文、备注和图片素材都会落盘，后续脚本能引用真实课件证据。
-              </p>
-              <div class="story-board__bars" aria-hidden="true">
-                <span></span>
-                <span></span>
-                <span></span>
-              </div>
-            </div>
-          </aside>
+          <div class="artifact-detail">
+            <span id="story-board-kicker">素材入仓</span>
+            <strong id="story-board-title">生成 raw_material_manifest.json</strong>
+            <p id="story-board-copy">
+              每页预览图、正文、备注和图片素材都会落盘，后续脚本能引用真实课件证据。
+            </p>
+          </div>
+        </aside>
+      </section>
+
+      <section class="boundary" aria-labelledby="boundary-title">
+        <div class="section-head">
+          <h2 id="boundary-title">产品流程和工程流程分开看</h2>
+        </div>
+        <div class="boundary-grid">
+          <article class="boundary-card">
+            <span>用户侧</span>
+            <h3>上传课件，选择视频方向，审核脚本与音频</h3>
+            <p>页面聚焦“我要把这份 PPT 变成什么类型的视频”，让审核动作和成片结果成为主线。</p>
+          </article>
+          <article class="boundary-card">
+            <span>系统侧</span>
+            <h3>生成可追溯产物，再交给渲染器</h3>
+            <p>Manifest、音频工作区和 Remotion props 是工程产物，适合放在流程详情、架构图和运行说明里。</p>
+          </article>
         </div>
       </section>
 
       <section class="architecture glass-panel" id="architecture" aria-labelledby="architecture-title">
         <div class="section-head">
-          <p class="section-label">Architecture</p>
           <h2 id="architecture-title">项目里真正发生了什么</h2>
           <p>前端工作台负责上传、选择视频方向和审核产物；后端流水线负责生成 JSON 与媒体文件；Remotion 只接收确定的渲染入参。</p>
         </div>
@@ -167,8 +165,8 @@
 
       <section class="runbook" id="run" aria-labelledby="run-title">
         <div class="section-head">
-          <p class="section-label">Runbook</p>
           <h2 id="run-title">本地运行</h2>
+          <p>命令放在开发者区，不和产品流程抢层级。</p>
         </div>
         <div class="command-grid">
           <pre><code>.venv/bin/ppt-course serve --port 8765</code></pre>

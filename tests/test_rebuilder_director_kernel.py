@@ -273,3 +273,103 @@ def test_render_adapter_uses_director_manifest_before_fallback(
     assert result["layout_counts"] == {"rule_card": 1}
     assert result["risk_scene_count"] == 1
     assert plan_path.is_file()
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    assert plan["schema_version"] == "render_plan.v2"
+    assert plan["timeline_items"][0]["start_frame"] == 0
+    assert plan["timeline_items"][0]["duration_frames"] == 150
+
+
+def test_render_plan_v2_tracks_mixed_engines_and_hyperframes_fallback(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    task_id = "task-2"
+    data_root = tmp_path / "ppt_course_data"
+    task_root = data_root / "tasks" / task_id
+    for i in range(3):
+        preview = task_root / "previews" / f"slide-{i:04d}"
+        preview.mkdir(parents=True)
+        (preview / "full.png").write_bytes(b"png")
+    (task_root / "director_manifest.json").write_text(
+        json.dumps(
+            {
+                "render_intent": {"profile": {"id": "onboarding", "label": "入职培训"}},
+                "scenes": [
+                    {
+                        "scene_id": "sc-intro",
+                        "scene_type": "title",
+                        "scene_role": "intro",
+                        "render_engine": "hyperframes_creative",
+                        "fallback_engine": "remotion_stable",
+                        "source_slide_ids": ["slide-0000"],
+                        "title": "欢迎加入",
+                        "onscreen_text": "用轻快动效建立课程氛围",
+                        "subtitle": {"segments": [{"start_sec": 0, "end_sec": 2, "text": "欢迎加入"}]},
+                        "timing": {"estimated_duration_sec": 2},
+                        "screen_design": {"layout": "full_slide"},
+                        "creative_brief": {"title": "欢迎加入", "intent": "片头动效"},
+                    },
+                    {
+                        "scene_id": "sc-case",
+                        "scene_type": "case_dialogue",
+                        "scene_role": "concept_animation",
+                        "render_engine": "hybrid",
+                        "fallback_engine": "remotion_stable",
+                        "source_slide_ids": ["slide-0001"],
+                        "title": "场景判断",
+                        "onscreen_text": "Remotion 保留证据，Hyperframes 叠加动效",
+                        "subtitle": {"segments": [{"start_sec": 0, "end_sec": 3, "text": "场景判断"}]},
+                        "timing": {"estimated_duration_sec": 3},
+                        "screen_design": {"layout": "case_dialogue"},
+                        "creative_brief": {"title": "场景判断", "intent": "概念动画"},
+                    },
+                    {
+                        "scene_id": "sc-rule",
+                        "scene_type": "rule_card",
+                        "scene_role": "content",
+                        "render_engine": "remotion_stable",
+                        "source_slide_ids": ["slide-0002"],
+                        "title": "规则原文",
+                        "onscreen_text": "处罚标准：迟到罚款 50 元",
+                        "subtitle": {"segments": [{"start_sec": 0, "end_sec": 4, "text": "迟到罚款 50 元"}]},
+                        "timing": {"estimated_duration_sec": 4},
+                        "screen_design": {"layout": "rule_card"},
+                        "risk_flags": ["contains_penalty_or_amount"],
+                    },
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    import ppt_course_rebuilder.render_adapter as adapter
+
+    monkeypatch.setattr(adapter, "get_data_root", lambda: data_root)
+    monkeypatch.setattr(adapter, "load_meta", lambda _kind, _key: {})
+    monkeypatch.setattr(
+        adapter, "resolve_workspace_audio_path", lambda *_args, **_kwargs: None
+    )
+
+    renderer_root = tmp_path / "ppt_course_renderer"
+    result = write_render_plan_from_task(task_id, fps=30, root=renderer_root)
+
+    props = json.loads(Path(result["input_props_path"]).read_text(encoding="utf-8"))
+    plan = json.loads(Path(result["render_plan_path"]).read_text(encoding="utf-8"))
+    assert plan["schema_version"] == "render_plan.v2"
+    assert result["total_frames"] == 270
+    assert [item["start_frame"] for item in plan["timeline_items"]] == [0, 60, 150]
+    assert [item["end_frame"] for item in plan["timeline_items"]] == [60, 150, 270]
+    assert plan["engine_counts"] == {
+        "hyperframes_creative": 1,
+        "hybrid": 1,
+        "remotion_stable": 1,
+    }
+    assert result["hyperframes_task_count"] == 2
+    assert result["creative_asset_ready_count"] == 0
+    assert props["slides"][0]["creativeAsset"]["exists"] is False
+    assert props["slides"][0]["fallbackEngine"] == "remotion_stable"
+    assert props["slides"][1]["creativeAsset"]["mode"] == "overlay"
+    for task in plan["hyperframes_tasks"]:
+        assert Path(task["creative_brief_path"]).is_file()
+        assert Path(task["clip_path"]).name == "clip.mp4"
+        assert task["status"] == "pending"

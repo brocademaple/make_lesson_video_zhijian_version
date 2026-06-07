@@ -10,7 +10,7 @@ from ppt_course_deal.pipeline import transform_pptx
 
 app = typer.Typer(
     name="ppt-course",
-    help="PPT 课程化重构：文字密集型培训 PPT → 适合录课的结构化 PPTX（MVP）",
+    help="个人影像工坊：素材入仓、导演脚本、声音轨与 Remotion 成片",
     no_args_is_help=True,
     invoke_without_command=True,
 )
@@ -75,7 +75,7 @@ def cmd_serve(
         help="代码变更后自动重载（默认开启，避免新增接口后仍跑旧进程导致 404）；常驻可无 --no-reload",
     ),
 ) -> None:
-    """启动 Web 界面：浏览器上传 PPTX，下载课程化 PPTX。"""
+    """启动个人影像工坊 Web 工作台。"""
     try:
         import uvicorn
     except ImportError as e:
@@ -109,7 +109,7 @@ def cmd_serve(
 
 @app.command("remotion-input-props")
 def cmd_remotion_input_props(
-    task_id: str = typer.Argument(..., help="已存任务 task_id"),
+    task_id: str = typer.Argument(..., help="作品项目 task_id"),
     output: Path = typer.Option(
         ...,
         "-o",
@@ -160,7 +160,7 @@ def cmd_remotion_input_props(
 
 @app.command("bundle-task-audio")
 def cmd_bundle_task_audio(
-    task_id: str = typer.Argument(..., help="已存任务 task_id"),
+    task_id: str = typer.Argument(..., help="作品项目 task_id"),
     max_slides: Optional[int] = typer.Option(
         None,
         "--max-slides",
@@ -184,7 +184,7 @@ def cmd_bundle_task_audio(
 
 @app.command("rebuild-director")
 def cmd_rebuild_director(
-    task_id: str = typer.Argument(..., help="已存任务 task_id"),
+    task_id: str = typer.Argument(..., help="作品项目 task_id"),
     output: Optional[Path] = typer.Option(
         None,
         "-o",
@@ -203,7 +203,7 @@ def cmd_rebuild_director(
         help="LLM 最多读取前几页原始素材；默认读取该任务全部页",
     ),
 ) -> None:
-    """从已存任务生成 raw_material_manifest，并调用 rebuilder 写出 director_manifest。"""
+    """从作品项目生成 raw_material_manifest，并调用 rebuilder 写出 director_manifest。"""
     from ppt_course_deal.raw_material_manifest import build_raw_material_manifest
     from ppt_course_rebuilder.director import rebuild_course_from_raw_manifest
 
@@ -238,7 +238,7 @@ def cmd_rebuild_director(
 
 @app.command("course-material")
 def cmd_course_material(
-    task_id: str = typer.Argument(..., help="已存任务 task_id"),
+    task_id: str = typer.Argument(..., help="作品项目 task_id"),
     output: Optional[Path] = typer.Option(
         None,
         "-o",
@@ -272,7 +272,7 @@ def cmd_course_material(
 
 @app.command("remotion-render-plan")
 def cmd_remotion_render_plan(
-    task_id: str = typer.Argument(..., help="已存任务 task_id"),
+    task_id: str = typer.Argument(..., help="作品项目 task_id"),
     fps: int = typer.Option(30, "--fps", help="与 Remotion Composition 的 fps 一致"),
     max_slides: Optional[int] = typer.Option(
         None,
@@ -303,7 +303,107 @@ def cmd_remotion_render_plan(
     if data.get("render_plan_path"):
         typer.echo(f"Render Plan：{data['render_plan_path']}")
     typer.echo(f"来源：{data.get('source') or 'fallback'}")
+    if data.get("hyperframes_task_count") is not None:
+        typer.echo(
+            "Hyperframes 创意任务："
+            f"{data.get('creative_asset_ready_count', 0)} / {data.get('hyperframes_task_count', 0)} 已就绪"
+        )
     typer.echo(data.get("render_command") or "")
+
+
+@app.command("hyperframes-tasks")
+def cmd_hyperframes_tasks(
+    task_id: str = typer.Argument(..., help="作品项目 task_id"),
+    fps: int = typer.Option(30, "--fps", help="与最终 Remotion Composition 的 fps 一致"),
+    max_slides: Optional[int] = typer.Option(
+        None,
+        "--max-slides",
+        min=1,
+        help="最多导出前几个导演镜头/页面（默认该任务全部镜头）",
+    ),
+    no_audio_frames: int = typer.Option(
+        90,
+        "--no-audio-frames",
+        help="镜头尚无分段 mp3 时的占位帧数",
+    ),
+) -> None:
+    """生成 render_plan.v2 并列出需要 Hyperframes 生产的创意资产任务。"""
+    from ppt_course_rebuilder.render_adapter import write_render_plan_from_task
+
+    try:
+        data = write_render_plan_from_task(
+            task_id,
+            fps=fps,
+            no_audio_frames=no_audio_frames,
+            max_scenes=max_slides,
+        )
+    except ValueError as e:
+        typer.secho(str(e), fg=typer.colors.RED)
+        raise typer.Exit(1) from e
+    typer.secho(f"已写入 {data.get('render_plan_path')}", fg=typer.colors.GREEN)
+    typer.echo(
+        "Hyperframes 创意任务："
+        f"{data.get('creative_asset_ready_count', 0)} / {data.get('hyperframes_task_count', 0)} 已就绪"
+    )
+    typer.echo("creative_brief.json 与 asset_manifest.json 位于 render_tasks/<task>/creative_assets/<scene>/")
+
+
+@app.command("demo-dual-engine")
+def cmd_demo_dual_engine(
+    render: bool = typer.Option(
+        True,
+        "--render/--no-render",
+        help="是否调用 Remotion 渲染最终 MP4",
+    ),
+    try_hyperframes: bool = typer.Option(
+        True,
+        "--try-hyperframes/--no-try-hyperframes",
+        help="是否尝试调用 Hyperframes CLI；失败会记录并使用本地创意片段兜底",
+    ),
+) -> None:
+    """生成两个双引擎课程视频 demo 任务，并写入本地任务系统。"""
+    from ppt_course_deal.demo_dual_engine import generate_dual_engine_demo_tasks
+
+    result = generate_dual_engine_demo_tasks(
+        render=render,
+        try_hyperframes=try_hyperframes,
+    )
+    for item in result.get("tasks") or []:
+        status = "完成" if item.get("ok") else "有问题"
+        typer.echo(f"{status}：{item.get('slug')} / {item.get('task_id')}")
+        typer.echo(f"报告：{item.get('report_path')}")
+        remotion = item.get("remotion") or {}
+        if remotion.get("output_video_path"):
+            typer.echo(f"视频：{remotion.get('output_video_path')}")
+    if not result.get("ok"):
+        raise typer.Exit(1)
+
+
+@app.command("import-pdf-task")
+def cmd_import_pdf_task(
+    pdf_path: Path = typer.Argument(..., help="输入 PDF 文件路径", exists=True),
+    name: Optional[str] = typer.Option(None, "--name", help="项目库中显示的名称"),
+    max_pages: int = typer.Option(16, "--max-pages", help="最多导入多少页；0 表示全部页"),
+    profile: str = typer.Option("training", "--profile", help="视频画像：knowledge/product/training/quality 等；旧 onboarding/sales 仍兼容"),
+    no_director: bool = typer.Option(False, "--no-director", help="只导入项目，不生成导演脚本"),
+    no_render_plan: bool = typer.Option(False, "--no-render-plan", help="不生成 Remotion render_plan/input-props"),
+) -> None:
+    """将 PDF 导入为作品项目，并生成预览图、素材清单与导演计划。"""
+    from ppt_course_deal.pdf_task_importer import import_pdf_task
+
+    result = import_pdf_task(
+        pdf_path,
+        display_name=name,
+        max_pages=None if max_pages <= 0 else max_pages,
+        video_profile_id=profile,
+        build_director=not no_director,
+        build_render_plan=not no_render_plan,
+    )
+    typer.secho(f"已导入 PDF 项目：{result['task_id']}", fg=typer.colors.GREEN)
+    typer.echo(f"项目目录：{result['task_root']}")
+    typer.echo(f"页数：{result['slide_count']}")
+    if result.get("render_plan_path"):
+        typer.echo(f"Render Plan：{result['render_plan_path']}")
 
 
 def main() -> None:

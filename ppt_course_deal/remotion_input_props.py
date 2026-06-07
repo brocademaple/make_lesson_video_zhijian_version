@@ -191,6 +191,7 @@ def build_props(
 
     root = remotion_workspace_root or repo_root()
     task_meta = _load_task_meta(task_root)
+    task_video_profile = task_meta.get("video_profile") if isinstance(task_meta.get("video_profile"), dict) else {}
     meta = load_meta("task", task_id)
     raw_dur = meta.get("segment_duration_sec") or {}
     if not isinstance(raw_dur, dict):
@@ -241,6 +242,13 @@ def build_props(
         slide_obj: dict[str, Any] = {
             "imageRelative": image_rel,
             "durationInFrames": no_audio_frames,
+            "renderProfile": {
+                "id": str(task_video_profile.get("id") or "quality"),
+                "label": str(task_video_profile.get("label") or "规则质检片"),
+                "motion_style": str(task_video_profile.get("motion_style") or "audit_focus"),
+                "visual_strategy": str(task_video_profile.get("visual_strategy") or "source_slide_evidence_with_risk_callouts"),
+                "remotion": task_video_profile.get("remotion") if isinstance(task_video_profile.get("remotion"), dict) else {},
+            },
         }
         caption = _caption_for_slide(task_meta, i)
         if caption:
@@ -258,7 +266,7 @@ def build_props(
 
         slides.append(slide_obj)
 
-    return {"fps": fps, "slides": slides}
+    return {"fps": fps, "videoProfile": task_video_profile, "slides": slides}
 
 
 def write_props_file(

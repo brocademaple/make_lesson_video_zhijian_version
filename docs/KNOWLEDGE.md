@@ -18,7 +18,7 @@
   - [7.2 核心算法（`ppt_course_deal/shape_image_export.py`）](#72-核心算法ppt_course_dealshape_image_exportpy)
   - [7.3 何时写入磁盘、元数据与 API](#73-何时写入磁盘元数据与-api)
   - [7.4 小结](#74-小结)
-- [8. Swagger UI、OpenAPI 与课件工作台「全部 API」从哪来？](#8-swagger-uiopenapi-与课件工作台全部-api从哪来)
+- [8. Swagger UI、OpenAPI 与智课影擎「全部 API」从哪来？](#8-swagger-uiopenapi-与智课影擎全部-api从哪来)
   - [8.1 Swagger UI 是什么？](#81-swagger-ui-是什么)
   - [8.2 OpenAPI 与 `openapi.json`](#82-openapi-与-openapijson)
   - [8.3 为什么页面上能看到「当前项目的所有 API」？](#83-为什么页面上能看到当前项目的所有-api)
@@ -26,9 +26,9 @@
   - [8.5 常见误区与排障要点](#85-常见误区与排障要点)
 - [9. 可选延伸阅读（官方 / 项目）](#9-可选延伸阅读官方--项目)
 
-> **范围**：本文针对 **课件处理与工作台**（包 `ppt_course_deal`）：**第 1–6 节**为 **Web 整页预览** 与 `slide_render`（LibreOffice + Poppler）；**第 7 节**为 **页内「扣小图」**；**第 8 节**为 **Swagger UI / OpenAPI** 与 **`ppt-course serve`** 暴露的 HTTP API 文档原理。子目录 **`ppt_course_rebuilder/`**（**AI 课程重构管线**）若单独导出 PNG，见该子项目 `image_exporter` 与文档，与下述 `ppt_course_deal` 不是同一条代码路径。
+> **范围**：本文针对 **智课影擎工作台**（包 `ppt_course_deal`）：**第 1–6 节**为 **Web 整页预览** 与 `slide_render`（LibreOffice + Poppler）；**第 7 节**为 **页内「扣小图」**；**第 8 节**为 **Swagger UI / OpenAPI** 与 **`ppt-course serve`** 暴露的 HTTP API 文档原理。子目录 **`ppt_course_rebuilder/`** 若单独导出 PNG，见该子项目 `image_exporter` 与文档，与下述 `ppt_course_deal` 不是同一条代码路径。
 
-本文说明在 **课件工作台** **Web 整页预览** 链路中，`LibreOffice` 与 **Poppler（`pdftoppm`）** 各自做什么，以及它们为何能还原「幻灯片画面」（像素图），并与 **文本抽取** 区分。
+本文说明在 **智课影擎工作台** **Web 整页预览** 链路中，`LibreOffice` 与 **Poppler（`pdftoppm`）** 各自做什么，以及它们为何能还原「幻灯片画面」（像素图），并与 **文本抽取** 区分。
 
 ---
 
@@ -114,7 +114,7 @@ pdftoppm -png -r 144 <输入.pdf> <输出前缀>
 
 ## 6. 本机安装与自检（macOS 实践备忘）
 
-本节记录 **课件工作台** 依赖的「系统级」组件如何安装、如何确认就绪；与 **python-pptx 文本解析** 无关（后者仅需 `pip install` 根目录包）。
+本节记录 **智课影擎工作台** 依赖的「系统级」组件如何安装、如何确认就绪；与 **python-pptx 文本解析** 无关（后者仅需 `pip install` 根目录包）。
 
 ### 6.1 需要安装的两类组件
 
@@ -213,7 +213,7 @@ curl -s http://127.0.0.1:8765/api/health | python3 -m json.tool
 
 ---
 
-## 8. Swagger UI、OpenAPI 与课件工作台「全部 API」从哪来？
+## 8. Swagger UI、OpenAPI 与智课影擎「全部 API」从哪来？
 
 本节说明：浏览器里 **`/docs`**（Swagger UI）、**`/openapi.json`** 与 **`ppt_course_deal/web/app.py`** 里注册的接口之间的关系——**不是** Swagger「扫描磁盘自动生成 Python 路由」，而是 **FastAPI 根据已注册路由与类型注解汇总出一份 OpenAPI 描述**，Swagger UI 只负责把这份描述 **画成网页并支持调试**。
 

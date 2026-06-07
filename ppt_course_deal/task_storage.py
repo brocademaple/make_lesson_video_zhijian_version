@@ -1,4 +1,4 @@
-"""本机持久化：每次解析成功后的 PPT 与解析结果，供「已存任务」列表与弹窗回顾。"""
+"""本机持久化：每次解析成功后的素材与解析结果，供「项目库」列表与弹窗回顾。"""
 
 from __future__ import annotations
 
@@ -49,6 +49,7 @@ def save_task_from_parse(
     images_error: str | None,
     images_available: bool,
     preview_count: int,
+    video_profile: dict[str, Any] | None = None,
 ) -> str | None:
     """
     将本次解析结果写入磁盘；返回 task_id，失败时返回 None（不影响主流程）。
@@ -96,6 +97,7 @@ def save_task_from_parse(
             "images_available": images_available,
             "preview_count": preview_count,
             "shape_image_manifest": shape_manifest,
+            "video_profile": video_profile or {},
         }
         (base / "meta.json").write_text(
             json.dumps(meta, ensure_ascii=False, indent=2),
@@ -146,18 +148,76 @@ def list_task_summaries() -> list[dict[str, Any]]:
             data = json.loads(meta_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             continue
+        task_id = str(data.get("id", p.name))
+        profile = data.get("video_profile") if isinstance(data.get("video_profile"), dict) else {}
         out.append(
             {
-                "id": data.get("id", p.name),
+                "id": task_id,
                 "filename": data.get("filename", "unknown.pptx"),
                 "created_at": data.get("created_at", ""),
                 "slide_count": int(data.get("slide_count", 0)),
                 "preview_count": int(data.get("preview_count", 0)),
                 "images_available": bool(data.get("images_available")),
+                "video_profile": profile,
+                "source_type": _summary_source_type(data, p),
+                "project_kind": _summary_project_kind(data, profile),
+                "has_director_manifest": (p / "director_manifest.json").is_file(),
+                "has_render_plan": _summary_has_render_plan(task_id),
+                "has_output_video": _summary_has_output_video(task_id),
             }
         )
     out.sort(key=lambda x: x.get("created_at") or "", reverse=True)
     return out
+
+
+def _summary_source_type(data: dict[str, Any], task_root: Path) -> str:
+    raw = str(data.get("source_type") or "").strip().lower()
+    if raw in {"pptx", "pdf", "demo"}:
+        return raw
+    filename = str(data.get("filename") or data.get("source_filename") or "").lower()
+    if filename.endswith(".pdf") or (task_root / "source.pdf").is_file():
+        return "pdf"
+    if filename.endswith(".pptx") or (task_root / "source.pptx").is_file():
+        if isinstance(data.get("demo"), dict):
+            return "demo"
+        return "pptx"
+    return "unknown"
+
+
+def _summary_project_kind(data: dict[str, Any], profile: dict[str, Any]) -> str:
+    kind = str(profile.get("id") or "").strip().lower()
+    aliases = {
+        "sales": "product",
+        "onboarding": "training",
+    }
+    if kind:
+        return aliases.get(kind, kind)
+    name = str(data.get("filename") or "").lower()
+    if "质检" in name or "redline" in name or "quality" in name:
+        return "quality"
+    if "design" in name or "workshop" in name:
+        return "creative"
+    if "onboarding" in name or "新人" in name:
+        return "training"
+    return "general"
+
+
+def _summary_has_render_plan(task_id: str) -> bool:
+    try:
+        from ppt_course_deal.remotion_input_props import render_task_dir
+
+        return (render_task_dir(task_id) / "render_plan.json").is_file()
+    except Exception:
+        return False
+
+
+def _summary_has_output_video(task_id: str) -> bool:
+    try:
+        from ppt_course_deal.remotion_input_props import render_task_paths
+
+        return render_task_paths(task_id)["output_video"].is_file()
+    except Exception:
+        return False
 
 
 def load_task(task_id: str) -> dict[str, Any] | None:

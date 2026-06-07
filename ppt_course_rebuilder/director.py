@@ -17,6 +17,8 @@ from ppt_course_rebuilder.models import utc_now_iso
 from ppt_course_rebuilder.narration import build_narration
 from ppt_course_rebuilder.scene_planner import infer_scene_type, scene_title_for_type
 from ppt_course_rebuilder.subtitle import split_subtitle_segments
+from ppt_course_rebuilder.visual_director import apply_visual_direction
+from ppt_course_deal.video_profiles import DEFAULT_VIDEO_PROFILE_ID, video_profile
 
 logger = logging.getLogger(__name__)
 
@@ -143,6 +145,31 @@ def _layout_from_material(
     return fallback
 
 
+def _profile_from_raw(raw: dict[str, Any]) -> dict[str, Any]:
+    return video_profile(raw.get("video_profile") if isinstance(raw, dict) else None)
+
+
+def _profile_id(profile: dict[str, Any]) -> str:
+    return str(profile.get("id") or DEFAULT_VIDEO_PROFILE_ID)
+
+
+def _layout_for_profile(scene_type: str, profile: dict[str, Any], fallback: str) -> str:
+    bias = profile.get("layout_bias")
+    if not isinstance(bias, list) or not bias:
+        return fallback
+    profile_id = _profile_id(profile)
+    if profile_id == "quality" and scene_type in ("rule_explanation", "rule_card"):
+        return "rule_card"
+    if profile_id == "sop":
+        return "split_panel" if scene_type not in ("title", "summary") else fallback
+    if profile_id == "sales" and scene_type in ("case_dialogue", "explanation"):
+        return "case_dialogue"
+    if profile_id == "onboarding" and scene_type in ("explanation", "agenda"):
+        return "split_panel"
+    preferred = str(bias[0] or "").strip()
+    return preferred or fallback
+
+
 def _overlay_payload(
     *,
     title: str,
@@ -151,6 +178,7 @@ def _overlay_payload(
     source_evidence: list[dict[str, Any]],
     risk_items: list[dict[str, Any]],
     scene_type: str,
+    profile: dict[str, Any],
 ) -> dict[str, Any]:
     emphasis = _coerce_string_list(screen_design.get("emphasis"), limit=5)
     callouts = []
@@ -187,6 +215,13 @@ def _overlay_payload(
             "type": "chapter" if scene_type in ("title", "agenda", "summary") else "cut",
             "label": title,
         },
+        "render_profile": {
+            "id": _profile_id(profile),
+            "label": str(profile.get("label") or ""),
+            "motion_style": str(profile.get("motion_style") or ""),
+            "visual_strategy": str(profile.get("visual_strategy") or ""),
+            "remotion": profile.get("remotion") if isinstance(profile.get("remotion"), dict) else {},
+        },
     }
 
 
@@ -210,6 +245,7 @@ def _llm_scene_to_manifest_scene(
     task_id: str,
     slide_by_id: dict[str, dict[str, Any]],
     material_by_id: dict[str, dict[str, Any]],
+    profile: dict[str, Any],
 ) -> dict[str, Any]:
     source_slide_ids = _coerce_string_list(item.get("source_slide_ids"), limit=12)
     if not source_slide_ids:
@@ -236,10 +272,11 @@ def _llm_scene_to_manifest_scene(
         "layout": _layout_from_material(
             source_slide_ids,
             material_by_id,
-            str(screen_design.get("layout") or "full_slide"),
+            _layout_for_profile(scene_type, profile, str(screen_design.get("layout") or "full_slide")),
         ),
         "visual_strategy": str(
             screen_design.get("visual_strategy")
+            or profile.get("visual_strategy")
             or "use_full_slide_with_caption_and_subtitle"
         ),
         "emphasis": _coerce_string_list(screen_design.get("emphasis"), limit=6)
@@ -263,6 +300,7 @@ def _llm_scene_to_manifest_scene(
         source_evidence=source_evidence,
         risk_items=scene_risk_items,
         scene_type=scene_type,
+        profile=profile,
     )
 
     return {
@@ -284,7 +322,8 @@ def _llm_scene_to_manifest_scene(
         "timing": {"estimated_duration_sec": dur},
         "screen_design": screen_design,
         "render_intent": {
-            "style": "enterprise_training",
+            "style": _profile_id(profile),
+            "profile_label": str(profile.get("label") or ""),
             "layout": screen_design["layout"],
             "use_source_slide_as_evidence": True,
         },
@@ -311,10 +350,12 @@ def _build_heuristic_scenes(
     slides: list[dict[str, Any]],
     task_id: str,
     material: dict[str, Any] | None = None,
+    profile: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     scenes_out: list[dict[str, Any]] = []
     slide_by_id = _slide_lookup(slides)
     material_by_id = _material_slide_lookup(material or {})
+    profile = profile or video_profile(None)
     for slide in slides:
         slide_id = str(slide.get("slide_id") or "")
         idx = int(slide.get("slide_index") or 0)
@@ -344,12 +385,12 @@ def _build_heuristic_scenes(
             "layout": _layout_from_material(
                 [slide_id] if slide_id else [f"slide-{idx:04d}"],
                 material_by_id,
-                "full_slide" if scene_type != "case_dialogue" else "split_panel",
+                _layout_for_profile(scene_type, profile, "full_slide" if scene_type != "case_dialogue" else "split_panel"),
             ),
             "visual_strategy": (
                 "overlay_highlights"
                 if scene_type in ("rule_explanation", "rule_card")
-                else "standard_kinetic_type"
+                else str(profile.get("visual_strategy") or "standard_kinetic_type")
             ),
             "emphasis": [scene_type],
         }
@@ -363,6 +404,7 @@ def _build_heuristic_scenes(
             source_evidence=source_evidence,
             risk_items=scene_risk_items,
             scene_type=scene_type,
+            profile=profile,
         )
 
         scene = {
@@ -384,7 +426,8 @@ def _build_heuristic_scenes(
             "timing": {"estimated_duration_sec": dur},
             "screen_design": screen_design,
             "render_intent": {
-                "style": "enterprise_training",
+                "style": _profile_id(profile),
+                "profile_label": str(profile.get("label") or ""),
                 "layout": screen_design["layout"],
                 "use_source_slide_as_evidence": True,
             },
@@ -428,6 +471,7 @@ def rebuild_course_from_raw_manifest(
     filename_hint = Path(str(raw.get("source_pptx") or "课程")).stem
     material = _load_course_material(raw_manifest_path)
     material_by_id = _material_slide_lookup(material)
+    profile = _profile_from_raw(raw)
 
     planning_mode = "heuristic_v1"
     llm_error = ""
@@ -454,6 +498,7 @@ def rebuild_course_from_raw_manifest(
                     task_id=task_id,
                     slide_by_id=slide_by_id,
                     material_by_id=material_by_id,
+                    profile=profile,
                 )
                 for i, item in enumerate(llm_data.get("scenes") or [])
                 if isinstance(item, dict)
@@ -464,9 +509,15 @@ def rebuild_course_from_raw_manifest(
         except Exception as e:
             llm_error = str(e)
             logger.warning("LLM 导演规划失败，回退启发式：%s", e)
-            scenes_out = _build_heuristic_scenes(slides=slides, task_id=task_id, material=material)
+            scenes_out = _build_heuristic_scenes(slides=slides, task_id=task_id, material=material, profile=profile)
     else:
-        scenes_out = _build_heuristic_scenes(slides=slides, task_id=task_id, material=material)
+        scenes_out = _build_heuristic_scenes(slides=slides, task_id=task_id, material=material, profile=profile)
+
+    total_scenes = len(scenes_out)
+    scenes_out = [
+        apply_visual_direction(scene, index=i, total=total_scenes, profile=profile)
+        for i, scene in enumerate(scenes_out)
+    ]
 
     pending = sum(
         1 for s in scenes_out if s.get("review_status") == "pending"
@@ -508,7 +559,8 @@ def rebuild_course_from_raw_manifest(
         "course_outline": course_outline,
         "chapters": chapters,
         "render_intent": {
-            "style": "enterprise_internal_training",
+            "style": _profile_id(profile),
+            "profile": profile,
             "visual_policy": "source_slide_first_with_light_callouts",
             "layouts_supported": [
                 "full_slide",

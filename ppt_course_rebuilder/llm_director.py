@@ -48,7 +48,8 @@ USER_PROMPT_TEMPLATE = """请基于以下 raw_material_manifest 摘要，生成�
 3. tts_text 必须保留原文中的关键数字、金额、处罚后果和规则边界。
 4. bullets 最多 3 条，每条尽量短。
 5. 不要虚构案例；若原文没有案例，不要创造对话。
-6. 字段缺失时用空字符串或空数组，不要省略核心字段。
+6. 结合 video_profile 决定画面策略：规则质检片偏证据与风险标注；新人速训片偏术语解释与步骤引导；SOP 操作片偏动作序列；销售赋能片偏卖点、异议和案例亮点。
+7. 字段缺失时用空字符串或空数组，不要省略核心字段。
 
 【raw_material_manifest 摘要】
 {payload}
@@ -77,6 +78,7 @@ def build_director_prompt(raw_manifest: dict[str, Any], *, max_slides: int = 30)
     compact = {
         "task_id": raw_manifest.get("task_id") or "",
         "source_pptx": raw_manifest.get("source_pptx") or "",
+        "video_profile": raw_manifest.get("video_profile") if isinstance(raw_manifest.get("video_profile"), dict) else {},
         "slides": [_compact_slide(s, 1600) for s in slides[:max_slides] if isinstance(s, dict)],
     }
     payload = json.dumps(compact, ensure_ascii=False, indent=2)
