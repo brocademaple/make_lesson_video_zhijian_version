@@ -1,0 +1,222 @@
+<title>PRD - text2classvideo 个人影像工坊结构梳理</title>
+
+<callout emoji="📌" background-color="light-blue" border-color="blue">
+  <p><b>结论：</b>当前项目已经具备从素材入仓、预览、素材地图、导演脚本、声音轨、成片蓝图到 MP4 展示的本地工作台雏形，但页面结构把“项目库、上传入口、作品方向、任务工作流、模块导航、历史兼容能力”同时摊在一屏，导致主流程不够清晰。本 PRD 建议把产品收敛为“项目库 → 项目工作台 → 成片交付”的单主线，并把已实现能力和待实现需求分层管理。</p>
+</callout>
+
+<h1>1. 文档信息</h1>
+<table>
+  <thead><tr><th background-color="light-gray">字段</th><th background-color="light-gray">内容</th></tr></thead>
+  <tbody>
+    <tr><td>项目</td><td>text2classvideo / 个人影像工坊</td></tr>
+    <tr><td>日期</td><td>2026-07-11</td></tr>
+    <tr><td>创建方式</td><td>基于本地仓库、运行中的 Cursor 预览页、FastAPI 本地接口和截图证据整理</td></tr>
+    <tr><td>运行入口</td><td><code>ppt-course serve</code>，本地预览 <code>http://127.0.0.1:8765/</code></td></tr>
+    <tr><td>核心版本</td><td>Python 包 <code>ppt-course-mvp 0.1.0</code>；OpenAPI 标题为“个人影像工坊 API”；Remotion 工程位于 <code>ppt_course_renderer/</code></td></tr>
+  </tbody>
+</table>
+
+<h1>2. Executive Summary</h1>
+<p>我们要把 text2classvideo 收敛成一个面向个人创作者和课程/培训内容制作者的本地影像工作台：用户导入 PPT/PDF/demo/video_project 等素材后，系统生成可预览的项目，继续产出素材底稿、素材地图、导演脚本、声音轨和 Remotion 成片任务，最终得到可播放的 MP4。</p>
+<p>当前主要问题不是能力不足，而是功能层级混杂：同一页重复出现项目库和作品项目列表，任务内同时有阶段总览、素材台、素材地图、导演台、声音轨、成片线、作品库等多个一级入口，用户难以判断“下一步该做什么”。</p>
+
+<whiteboard type="mermaid">
+flowchart LR
+  A["项目库 / 新建项目"] --> B["素材入仓"]
+  B --> C["素材地图"]
+  C --> D["导演脚本"]
+  D --> E["声音轨"]
+  E --> F["成片蓝图"]
+  F --> G["MP4 作品"]
+  G --> H["复用 / 迭代"]
+</whiteboard>
+
+<h1>3. 问题陈述</h1>
+<grid>
+  <column width-ratio="0.5">
+    <h2>用户问题</h2>
+    <ul>
+      <li>用户进入首页后，会同时看到上传区、项目库、作品项目卡片、视频方向模板，入口重复。</li>
+      <li>进入任务后，页面同时承载预览、解析文本、工作流总览、导演台、声音轨、成片线等模块，主任务路径不够聚焦。</li>
+      <li>部分能力是已经可用的运行能力，部分只是预留、兼容或文档设想，目前没有被清楚标记。</li>
+    </ul>
+  </column>
+  <column width-ratio="0.5">
+    <h2>业务/产品影响</h2>
+    <ul>
+      <li>难以向新用户解释产品：它像 PPT 解析器、视频项目库、课程导演台、TTS 工具和 Remotion 控制台的混合体。</li>
+      <li>后续迭代容易继续加按钮，进一步放大结构问题。</li>
+      <li>功能验收容易混淆：例如“成片线已实现”其实是生成蓝图和展示渲染命令，服务端渲染队列仍未实现。</li>
+    </ul>
+  </column>
+</grid>
+
+<h1>4. 目标用户与场景</h1>
+<table>
+  <thead><tr><th background-color="light-gray">用户/场景</th><th background-color="light-gray">当前需要完成的任务</th><th background-color="light-gray">产品应提供的主路径</th></tr></thead>
+  <tbody>
+    <tr><td>个人 AIGC 创作者</td><td>把资料、截图、录屏、脚本拼成短视频</td><td>新建项目 → 管理素材 → 生成导演计划 → 生成成片</td></tr>
+    <tr><td>课程/培训内容制作者</td><td>把 PPT/PDF 课件转成讲解视频</td><td>导入课件 → 预览每页 → 生成分镜和口播 → 合成音频与视频</td></tr>
+    <tr><td>开发/演示用户</td><td>验证 pipeline、导演 manifest、Remotion 产物是否打通</td><td>任务状态总览 → 产物路径 → 本地渲染命令 → 输出视频</td></tr>
+  </tbody>
+</table>
+
+<h1>5. 建议的信息架构</h1>
+<table>
+  <thead><tr><th background-color="light-gray">层级</th><th background-color="light-gray">建议模块</th><th background-color="light-gray">保留/合并内容</th></tr></thead>
+  <tbody>
+    <tr><td>全局</td><td>项目库</td><td>项目列表、新建/导入、搜索筛选、状态标签、删除/重命名；首页右侧作品项目列表应并入这里。</td></tr>
+    <tr><td>全局</td><td>创建入口</td><td>PPTX 上传、PDF 入库提示、video_project/demo 模板；建议做成“新建项目”向导。</td></tr>
+    <tr><td>任务内</td><td>项目总览</td><td>完成度、缺失产物、下一步动作、关键路径；只显示当前任务下一步，不铺满全部系统细节。</td></tr>
+    <tr><td>任务内</td><td>素材</td><td>幻灯片缩略图、整页预览、页内切图、解析文本、AI 配图。</td></tr>
+    <tr><td>任务内</td><td>脚本</td><td>素材地图、导演脚本、镜头审核、导出定稿。当前“素材地图”和“导演台”可作为脚本域下的两个子页。</td></tr>
+    <tr><td>任务内</td><td>声音</td><td>多段逐字稿、口播优化、MiniMax TTS、版本库、试听下载。</td></tr>
+    <tr><td>任务内</td><td>成片</td><td>render_plan、input-props、渲染命令、MP4 状态和播放。当前“成片线”和“作品库”可合并为同一成片域的两个状态。</td></tr>
+    <tr><td>全局</td><td>设置与文档</td><td>外部 API、Remotion 指南、OpenAPI 文档。</td></tr>
+  </tbody>
+</table>
+
+<h1>6. 已实现功能清单</h1>
+<h2>6.1 项目入仓与预览</h2>
+<table>
+  <thead><tr><th background-color="light-gray">功能</th><th background-color="light-gray">状态</th><th background-color="light-gray">证据/说明</th></tr></thead>
+  <tbody>
+    <tr><td>Web 服务与健康检查</td><td>已实现</td><td><code>/api/health</code> 返回 ok；当前环境 LibreOffice 与 Poppler 均 ready，上传上限 50MB。</td></tr>
+    <tr><td>PPTX 上传解析</td><td>已实现</td><td><code>POST /api/parse</code> 解析 PPTX，写入任务目录，生成预览会话和任务 ID。</td></tr>
+    <tr><td>PDF/demo 任务入库展示</td><td>已实现</td><td>当前项目库有 6 个任务，包含 PDF、demo 和 PPTX；5 个任务已有 MP4。</td></tr>
+    <tr><td>项目库管理</td><td>已实现</td><td><code>GET /api/tasks</code>、重命名、删除、查看任务 ID；UI 有左侧项目库和任务抽屉。</td></tr>
+    <tr><td>整页预览与缩略图</td><td>已实现</td><td>任务内左侧缩略图列表、右侧整页预览；服务端接口支持 <code>/preview</code>、<code>/slide/full</code>。</td></tr>
+    <tr><td>页内切图</td><td>已实现</td><td><code>/slide/{index}/shapes</code> 和 <code>/shape/{shape_index}</code> 可返回内嵌图片资源。</td></tr>
+  </tbody>
+</table>
+
+<h2>6.2 工作流与中间产物</h2>
+<table>
+  <thead><tr><th background-color="light-gray">功能</th><th background-color="light-gray">状态</th><th background-color="light-gray">证据/说明</th></tr></thead>
+  <tbody>
+    <tr><td>统一工作流状态</td><td>已实现</td><td><code>/workspace-status</code> 和 <code>/pipeline-state</code> 聚合 Deal/Rebuilder/Audio/Remotion 状态。</td></tr>
+    <tr><td>异步 pipeline job</td><td>已实现</td><td><code>/pipeline/jobs</code> 支持 queued/running/succeeded/failed/cancelled，并支持取消。</td></tr>
+    <tr><td>素材底稿</td><td>已实现</td><td>生成 <code>raw_material_manifest.json</code>，汇总源文件、整页图、shape 图和文本。</td></tr>
+    <tr><td>素材地图</td><td>已实现</td><td>生成 <code>course_material.json</code>，聚合素材标签、音频段、AI 配图等。</td></tr>
+    <tr><td>导演脚本</td><td>已实现</td><td>生成 <code>director_manifest.json</code>；默认 LLM 优先，失败或未配置时回退 heuristic。</td></tr>
+    <tr><td>镜头审核</td><td>已实现</td><td>支持 approve/reject/export-approved；导出不会覆盖原始导演脚本。</td></tr>
+  </tbody>
+</table>
+
+<h2>6.3 声音轨与口播</h2>
+<table>
+  <thead><tr><th background-color="light-gray">功能</th><th background-color="light-gray">状态</th><th background-color="light-gray">证据/说明</th></tr></thead>
+  <tbody>
+    <tr><td>多段逐字稿</td><td>已实现</td><td><code>/api/audio/workspace</code> 读写 <code>transcript_segments</code>，支持按页多段。</td></tr>
+    <tr><td>MiniMax TTS</td><td>已实现</td><td>逐段生成音频、唯一文件名、版本列表、时长记录和试听下载。</td></tr>
+    <tr><td>口播稿优化</td><td>已实现</td><td>OpenAI-compatible chat completions；使用内置 MiniMax 口播规范，返回清洗稿和合成参数建议。</td></tr>
+    <tr><td>整稿导入</td><td>已实现</td><td>支持按 <code>### 第 N 页</code> 解析，预览冲突，再确认写入。</td></tr>
+    <tr><td>外部 API 配置</td><td>已实现</td><td>MiniMax、口播稿优化、导演模型、TTS 等配置已在本机 settings 接口中管理。</td></tr>
+  </tbody>
+</table>
+
+<h2>6.4 成片与渲染</h2>
+<table>
+  <thead><tr><th background-color="light-gray">功能</th><th background-color="light-gray">状态</th><th background-color="light-gray">证据/说明</th></tr></thead>
+  <tbody>
+    <tr><td>Remotion render_plan</td><td>已实现</td><td><code>/remotion-render-plan</code> 按 approved/director manifest 生成 <code>render_plan.json</code> 与 <code>input-props.json</code>。</td></tr>
+    <tr><td>Remotion 任务状态</td><td>已实现</td><td><code>/remotion-render-task</code> 返回 input props、MP4 文件、总帧数、时长和渲染命令。</td></tr>
+    <tr><td>MP4 展示</td><td>已实现</td><td><code>/output-video</code> 可播放本地已渲染视频；当前示例任务显示 90.767 秒、约 12.5MB。</td></tr>
+    <tr><td>双引擎导演字段</td><td>已实现初版</td><td>render_plan 统计 <code>hyperframes_creative</code>、<code>hybrid</code>、<code>remotion_stable</code>；缺创意资产时回退 Remotion。</td></tr>
+    <tr><td>通用 video_project 主线</td><td>已实现初版</td><td><code>video_project.json</code> 可转 <code>input-props.json</code>；Renderer 有 <code>ProductExperienceVideo</code> / <code>KnowledgeExplainer</code>。</td></tr>
+  </tbody>
+</table>
+
+<h2>6.5 CLI 与兼容能力</h2>
+<table>
+  <thead><tr><th background-color="light-gray">能力</th><th background-color="light-gray">状态</th><th background-color="light-gray">说明</th></tr></thead>
+  <tbody>
+    <tr><td><code>ppt-course serve</code></td><td>已实现</td><td>启动 FastAPI + 静态前端，默认 reload。</td></tr>
+    <tr><td><code>ppt-course transform</code></td><td>已实现</td><td>历史 PPTX 课程化输出仍保留。</td></tr>
+    <tr><td><code>ppt-course rebuild-director</code></td><td>已实现</td><td>生成 raw material 和 director manifest，可选 LLM。</td></tr>
+    <tr><td><code>ppt-course remotion-render-plan</code></td><td>已实现</td><td>生成 director-aware render plan / input props。</td></tr>
+    <tr><td>旧 Rebuilder CLI</td><td>保留</td><td><code>ppt_course_rebuilder/main.py</code> 的 analyze/plan/build/full 仍可用，但不是主 Web 入口。</td></tr>
+  </tbody>
+</table>
+
+<h1>7. 待实现与需求清单</h1>
+<table>
+  <thead><tr><th background-color="light-gray">类别</th><th background-color="light-gray">需求</th><th background-color="light-gray">优先级</th><th background-color="light-gray">验收标准</th></tr></thead>
+  <tbody>
+    <tr><td>信息架构</td><td>重构首页：项目库、上传入口、模板/方向选择不再重复并列。</td><td>P0</td><td>首页只有一个清晰主动作；项目列表只出现一次；用户能在 5 秒内判断如何继续旧项目或新建项目。</td></tr>
+    <tr><td>任务工作台</td><td>将“素材地图/导演台/声音轨/成片线/作品库”收敛成阶段导航或子页，减少一级入口。</td><td>P0</td><td>项目内始终显示当前阶段、下一步动作、缺失产物；已完成阶段折叠为摘要。</td></tr>
+    <tr><td>概念模型</td><td>统一 task/project/video_project/demo/PDF/PPT 的命名和状态机。</td><td>P0</td><td>代码、UI、文档中统一使用“项目”；任务 ID 作为技术字段，用户侧展示项目名和类型。</td></tr>
+    <tr><td>服务端渲染</td><td>Web 内直接启动、排队、取消 Remotion render，并显示实时进度。</td><td>P1</td><td>用户无需复制终端命令即可产出 MP4；失败时保留日志和重试入口。</td></tr>
+    <tr><td>创意资产</td><td>Hyperframes/外部创意资产 production 链路补全。</td><td>P1</td><td><code>creative_asset_ready_count</code> 能真实大于 0；缺资产时明确显示 fallback 原因。</td></tr>
+    <tr><td>编辑闭环</td><td>Web 内编辑解析文本、素材标签、镜头脚本后重新生成下游产物。</td><td>P1</td><td>修改能版本化保存，并触发下游状态变为需刷新。</td></tr>
+    <tr><td>音频闭环</td><td>声音轨和成片线强绑定：缺音频页、占位时长、真实音频时长必须在成片入口清晰展示。</td><td>P1</td><td>成片前检查列出所有缺音频页；用户能选择占位渲染或补齐音频。</td></tr>
+    <tr><td>AI 配图</td><td>明确“试验级 API 生成图”和“生产级素材策略”的边界。</td><td>P1</td><td>每页 AI 图有版本、模型、提示词、来源和是否采用的状态。</td></tr>
+    <tr><td>发布/分享</td><td>对象存储、CDN、公网分享或飞书/云盘导出。</td><td>P2</td><td>本地 MP4 可以一键导出到指定云端位置，并返回可分享链接。</td></tr>
+    <tr><td>权限/多租户</td><td>账号、权限、多人协作。</td><td>P2</td><td>支持用户级项目隔离、权限控制和协作者访问。</td></tr>
+    <tr><td>第三方剪辑</td><td>剪映等外部剪辑工具自动化。</td><td>P3</td><td>能导出剪辑工程或通过受控自动化创建项目。</td></tr>
+    <tr><td>高保真课件</td><td>动画、母版、复杂图表深度还原。</td><td>P3</td><td>明确支持范围；复杂 PPT 至少给出差异报告。</td></tr>
+  </tbody>
+</table>
+
+<h1>8. MVP 重组建议</h1>
+<h2>8.1 P0：先把结构理顺</h2>
+<checkbox done="false">首页只保留“项目库 + 新建项目”两件事；移除重复的右侧作品项目列表，或把它变成项目库的卡片视图。</checkbox>
+<checkbox done="false">项目内默认打开“项目总览”，展示当前完成度、下一步、缺失产物、关键产物路径。</checkbox>
+<checkbox done="false">将“成片线”和“作品库”合并成“成片”，用状态区分“蓝图已生成 / MP4 已生成 / 可播放”。</checkbox>
+<checkbox done="false">将“素材地图”和“导演台”合并到“脚本”域下，降低导航复杂度。</checkbox>
+
+<h2>8.2 P1：补成真正可交付的视频工作台</h2>
+<checkbox done="false">实现 Web 内 Remotion 渲染队列和日志。</checkbox>
+<checkbox done="false">补齐脚本/素材/音频编辑后刷新下游产物的状态依赖。</checkbox>
+<checkbox done="false">将 Hyperframes 创意资产从 brief 生成推进到真实可用素材产物。</checkbox>
+<checkbox done="false">统一导出入口：MP4、render_plan、input-props、素材包。</checkbox>
+
+<h1>9. 成功指标</h1>
+<table>
+  <thead><tr><th background-color="light-gray">指标</th><th background-color="light-gray">当前基线</th><th background-color="light-gray">目标</th></tr></thead>
+  <tbody>
+    <tr><td>首次进入后找到继续制作入口的时间</td><td>🔶 Assumption: 目前大于 10 秒，因入口重复。</td><td>小于 5 秒。</td></tr>
+    <tr><td>从已有项目到生成/查看成片的点击数</td><td>🔶 Assumption: 目前依赖多个入口和状态判断。</td><td>小于 3 次点击可到达成片状态。</td></tr>
+    <tr><td>Pipeline 缺失项可解释率</td><td>当前接口已能列 missing_artifacts，但 UI 仍分散。</td><td>所有阻塞项都有下一步按钮和原因说明。</td></tr>
+    <tr><td>无需终端完成 MP4 产出</td><td>未实现服务端渲染队列。</td><td>P1 后 Web 内可完成。</td></tr>
+  </tbody>
+</table>
+
+<h1>10. 风险与依赖</h1>
+<table>
+  <thead><tr><th background-color="light-gray">风险</th><th background-color="light-gray">影响</th><th background-color="light-gray">缓解方案</th></tr></thead>
+  <tbody>
+    <tr><td>历史能力多，直接删入口会伤到可用路径。</td><td>用户找不到旧功能。</td><td>先做结构分组和重命名，保留高级入口在折叠区。</td></tr>
+    <tr><td>服务端渲染耗时长且依赖 Node/Remotion 环境。</td><td>Web 阻塞或失败难排查。</td><td>用异步 job + 日志文件 + 可复制命令兜底。</td></tr>
+    <tr><td>AI/LLM/TTS 外部 API 配置复杂。</td><td>功能看似可用但运行失败。</td><td>配置页按能力分组，所有生成动作前做连通性与成本确认。</td></tr>
+    <tr><td>项目数据存本地，路径和数据根可能变化。</td><td>截图、音频、MP4 引用失效。</td><td>用项目内 manifest 管理相对路径，并提供一键检查。</td></tr>
+  </tbody>
+</table>
+
+<h1>11. Open Questions</h1>
+<table>
+  <thead><tr><th background-color="light-gray">问题</th><th background-color="light-gray">建议 owner</th><th background-color="light-gray">状态</th></tr></thead>
+  <tbody>
+    <tr><td>产品名最终叫“个人影像工坊”“智课影擎工作台”还是其他？</td><td>产品负责人</td><td>Open</td></tr>
+    <tr><td>主目标是“课程/PPT 转视频”，还是更宽泛的“个人素材成片工作台”？</td><td>产品负责人</td><td>Open</td></tr>
+    <tr><td>Web 内服务端渲染是否必须进入下一版，还是继续只给本地命令？</td><td>工程负责人</td><td>Open</td></tr>
+    <tr><td>Hyperframes 是正式双引擎，还是先作为实验性创意资产生成？</td><td>工程/产品</td><td>Open</td></tr>
+    <tr><td>是否需要把当前文档中的“未纳入范围”单独变成 Roadmap？</td><td>产品负责人</td><td>Open</td></tr>
+  </tbody>
+</table>
+
+<h1>12. 截图证据附录</h1>
+<p>以下截图已从本地运行页面和 Cursor 预览中采集，并作为“已实现功能”的界面证据插入到文档末尾。图片顺序对应：</p>
+<ol>
+  <li seq="auto">首页：项目库、上传区、作品项目卡片和视频方向模板。</li>
+  <li seq="auto">Cursor 当前预览：证明项目在 Cursor 预览中运行，且旁边已有项目启动说明。</li>
+  <li seq="auto">项目工作台：缩略图、工作流完成度、素材台和整页预览。</li>
+  <li seq="auto">导演台：素材底稿、素材地图、分镜脚本和镜头详情。</li>
+  <li seq="auto">声音轨：逐字稿与音频入口、保存逐字稿、音频设置。</li>
+  <li seq="auto">成片线：render_plan、引擎统计、fallback 信息和镜头时间线。</li>
+  <li seq="auto">作品库：最终 MP4 播放、时长、文件大小、关联任务入口。</li>
+</ol>
+
+<callout emoji="❗" background-color="light-yellow" border-color="yellow">
+  <p><b>关键假设：</b>本 PRD 以 2026-07-11 当前本地代码和运行页面为准；未在本轮执行全量单元测试，也未改动产品代码。仓库已有多处未提交改动，本次仅新增 PRD 截图和文档草稿。</p>
+</callout>

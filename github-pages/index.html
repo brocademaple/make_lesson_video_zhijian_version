@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>智课影擎 · PPT 课件视频生产线</title>
+    <title>any2video · 本地视频创作工作台</title>
     <meta
       name="description"
-      content="智课影擎把企业培训 PPT 拆成素材、导演脚本、口播音频和 Remotion 渲染入参，形成可审核、可复现的课件视频生产线。"
+      content="any2video 把文字、图片、音频和课件素材组织成可审核、可复现的 Remotion 视频。"
     />
     <link rel="stylesheet" href="assets/css/site.css" />
   </head>
@@ -15,8 +15,8 @@
     <header class="site-header">
       <div class="site-header__inner">
         <a class="site-logo" href="#top" aria-label="回到首页">
-          <span class="site-logo__mark">Z</span>
-          <span>智课影擎</span>
+          <span class="site-logo__mark">a2v</span>
+          <span>any2video</span>
         </a>
         <nav class="site-nav" aria-label="页面内导航">
           <a href="#studio">工作台</a>
@@ -35,7 +35,7 @@
         <div class="hero__copy">
           <h1 id="hero-title">把培训课件做成可审核的视频生产线</h1>
           <p class="hero__lead">
-            智课影擎面向企业内训、质检规范和流程教学。上传 PPT 后，工作台会沉淀素材、脚本、口播和渲染入参，让每一步都能检查、重跑和替换。
+            any2video 面向个人创作者和内容团队。放入文字、图片、音频或课件素材后，工作台会沉淀脚本、口播和渲染入参，让每一步都能检查、重跑和替换。
           </p>
           <div class="hero__actions">
             <a class="button button--primary" href="#studio">看工作台截图</a>
@@ -44,7 +44,7 @@
         </div>
         <div class="hero__visual glass-panel" aria-label="产品首页截图">
           <div class="product-shot">
-            <img src="assets/images/product-home.png" alt="智课影擎首页：左侧任务列表，右侧上传 PPT 和视频方向选择" />
+            <img src="assets/images/product-home.png" alt="any2video 工作台：左侧项目列表，中间素材编辑，右侧成片预览" />
           </div>
           <div class="hero__floating-card">
             <strong>讲规则 / 带新人 / 教流程 / 讲销售话术</strong>
@@ -149,7 +149,7 @@
           <h2 id="architecture-title">项目里真正发生了什么</h2>
           <p>前端工作台负责上传、选择视频方向和审核产物；后端流水线负责生成 JSON 与媒体文件；Remotion 只接收确定的渲染入参。</p>
         </div>
-        <div class="arch-map" role="img" aria-label="智课影擎架构：PPT 上传进入 FastAPI 工作台，生成素材、导演脚本、音频和 Remotion 入参，最后渲染 MP4">
+        <div class="arch-map" role="img" aria-label="any2video 架构：素材进入 FastAPI 工作台，生成导演脚本、音频和 Remotion 入参，最后渲染 MP4">
           <div class="arch-node arch-node--source">PPT / 音频 / 图片</div>
           <div class="arch-arrow"></div>
           <div class="arch-node">FastAPI 工作台</div>
@@ -169,16 +169,16 @@
           <p>命令放在开发者区，不和产品流程抢层级。</p>
         </div>
         <div class="command-grid">
-          <pre><code>.venv/bin/ppt-course serve --port 8765</code></pre>
-          <pre><code>.venv/bin/ppt-course course-material &lt;task_id&gt;</code></pre>
-          <pre><code>.venv/bin/ppt-course rebuild-director &lt;task_id&gt; --no-llm</code></pre>
-          <pre><code>.venv/bin/ppt-course remotion-render-plan &lt;task_id&gt; --max-slides 4</code></pre>
+          <pre><code>.venv/bin/any2video serve --port 8765</code></pre>
+          <pre><code>.venv/bin/any2video course-material &lt;task_id&gt;</code></pre>
+          <pre><code>.venv/bin/any2video rebuild-director &lt;task_id&gt; --no-llm</code></pre>
+          <pre><code>.venv/bin/any2video remotion-render-plan &lt;task_id&gt; --max-slides 4</code></pre>
         </div>
       </section>
     </main>
 
     <footer class="site-footer">
-      <span>智课影擎：PPT 课件视频生产链路。</span>
+      <span>any2video：从现有素材到可复现成片。</span>
       <a href="https://github.com/brocademaple/make_lesson_video_zhijian_version">View repository</a>
     </footer>
     <script src="assets/js/site.js"></script>

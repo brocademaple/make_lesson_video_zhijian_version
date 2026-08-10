@@ -1,10 +1,10 @@
-# 智课影擎与 ppt_course_rebuilder 集成说明
+# any2video 与 ppt_course_rebuilder 集成说明
 
 ## 产品形态（当前）
 
 | 组件 | 角色 |
 |------|------|
-| **`ppt_course_deal`** | **智课影擎唯一 FastAPI + Web 工作台**：上传、解析、预览、已存任务、音频、外部 API、素材底稿、素材地图、分镜脚本与成片蓝图 |
+| **`ppt_course_deal`** | **any2video 的兼容 FastAPI + Web 包**：上传、解析、预览、已存任务、音频、外部 API、素材底稿、素材地图、分镜脚本与成片蓝图 |
 | **`ppt_course_rebuilder`** | **Python 包**：作为库被 deal **import**；读取 **`raw_material_manifest.json`**，生成 **`course_material.json`**、**`director_manifest.json`**，并通过 Render Adapter 写出 **`render_plan/input-props`**；默认优先 Director LLM，失败回退启发式；不单独监听端口、不提供独立 Web 前端 |
 | **`ppt_course_renderer`** | **Remotion 工程**：工作台可为已存任务生成 `render_tasks/<task>/render_plan.json`、`input-props.json` 与本地渲染命令；实际 MP4 渲染由本机 Remotion CLI 执行 |
 
@@ -40,7 +40,7 @@
 
 根目录 **`pip install -e .`** 会安装 **`ppt_course_deal`** 与 **`ppt_course_rebuilder`**（见 **`pyproject.toml`** `packages.find`）。
 
-启动工作台：`ppt-course serve`（与此前一致）。
+启动工作台：`any2video serve`。旧命令 `ppt-course serve` 继续兼容。
 
 ## 局限（刻意保留）
 

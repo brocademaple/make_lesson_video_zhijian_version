@@ -7,6 +7,7 @@
   "private": true,
   "dependencies": {
     "@remotion/cli": "4.0.458",
+    "@remotion/media": "4.0.458",
     "@remotion/tailwind-v4": "4.0.458",
     "react": "19.2.3",
     "react-dom": "19.2.3",
@@ -29,7 +30,8 @@
     "build": "remotion bundle",
     "upgrade": "remotion upgrade",
     "lint": "eslint src && tsc",
-    "render:test1": "remotion render src/index.ts MyVideoTest1 render_tasks/my-video-test1/out/video.mp4 --props render_tasks/my-video-test1/input-props.json"
+    "render:test1": "remotion render src/index.ts CourseDeck render_tasks/my-video-test1/out/video.mp4 --props render_tasks/my-video-test1/input-props.json",
+    "render:product-demo": "remotion render src/index.ts ProductExperienceVideo render_tasks/product-experience-demo/out/video.mp4 --props render_tasks/product-experience-demo/input-props.json"
   },
   "sideEffects": [
     "*.css"

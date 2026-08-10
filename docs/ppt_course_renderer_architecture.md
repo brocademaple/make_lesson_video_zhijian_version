@@ -1,13 +1,13 @@
-# 智课影擎 Remotion 渲染架构
+# any2video Remotion 渲染架构
 
-与 **`ppt_course_deal/`** 平行的 **Remotion 成片引擎**：接收智课影擎工作台提供的逐页图片、口播音频、逐字稿和分镜元数据，组装为 [Remotion](https://github.com/remotion-dev/remotion) 可用的合成数据，再驱动模板生成 MP4。
+与 **`ppt_course_deal/`** 平行的 **Remotion 成片引擎**：接收 any2video 提供的 `video_project.json`、素材、口播音频、字幕和分镜元数据，组装为 [Remotion](https://github.com/remotion-dev/remotion) 可用的合成数据，再驱动模板生成 MP4。
 
 ## 关系（数据流）
 
 ```
-ppt_course_deal（PPT 入仓 / 预览图 / 分镜脚本 / 声音轨）
+ppt_course_deal（素材入仓 / video_project / 声音轨 / 版本）
         │
-        ▼ render_tasks/<task>/render_plan.json + input-props.json
+        ▼ render_tasks/<task>/video_project.json + input-props.json
 ppt_course_renderer（本目录：Node / Remotion 项目）
         │
         ▼ 成片文件（MP4）
@@ -20,22 +20,36 @@ ppt_course_renderer（本目录：Node / Remotion 项目）
 
 ## 当前入口状态
 
-工作台已经能为具体任务生成渲染入参：
+工作台已经有两条渲染入参路径：
+
+1. 新主线：`video_project.json` → `ProductExperienceVideo` / `KnowledgeExplainer`
+2. 兼容线：PPT/PDF 任务 → `CourseDeck`
+
+新主线示例：
 
 ```bash
 cd ppt_course_renderer
-npx remotion render src/index.ts MyVideoTest1 \
+npx remotion render src/index.ts ProductExperienceVideo \
+  render_tasks/product-experience-demo/out/video.mp4 \
+  --props render_tasks/product-experience-demo/input-props.json
+```
+
+兼容线示例：
+
+```bash
+cd ppt_course_renderer
+npx remotion render src/index.ts CourseDeck \
   render_tasks/<task_id>/out/video.mp4 \
   --props render_tasks/<task_id>/input-props.json
 ```
 
-目前还保留一个偏样例工程的入口：Remotion composition 的默认 props 会指向一个固定样例 JSON。举例说，工作台任务 **`2555ebfb-ca07-4982-bf41-03d80b37dbad`** 已生成自己的 **`render_tasks/task-2555.../input-props.json`**，CLI 带 `--props` 渲染时会使用这个任务的数据；但如果直接打开 Remotion Studio，Studio 可能仍展示默认样例任务。这个现象就是“Remotion 入口还不够产品化”。
+当前正式 Composition 为 **`CourseDeck`**。举例说，工作台任务 **`2555ebfb-ca07-4982-bf41-03d80b37dbad`** 已生成自己的 **`render_tasks/task-2555.../input-props.json`**，CLI 带 `--props` 渲染时会使用这个任务的数据。
 
-后续应把 Studio 入口做成任务感知：
+后续可继续把 Studio 入口做成任务感知：
 
 - 工作台点击“预览成片”时传入当前任务的 `input-props.json`。
 - Renderer 启动时读取 `REMOTION_INPUT_PROPS` 或 `render_tasks/latest/input-props.json`。
-- composition id 和任务标题从当前任务派生，避免 Studio 里只看到 `MyVideoTest1` 这类工程名。
+- 任务标题从当前任务派生，方便 Studio 中辨认当前预览对象。
 
 ## Cursor / Agent 编码规范
 

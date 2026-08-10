@@ -24,10 +24,10 @@ def _validate_task_id(task_id: str) -> bool:
 
 
 def get_data_root() -> Path:
-    """数据根目录：优先环境变量，否则为仓库根下 `ppt_course_data/`（与包内代码并列，便于在资源管理器中查看）。"""
+    """数据根目录：any2video 新变量优先，旧变量继续兼容。"""
     import os
 
-    env = os.environ.get("PPT_COURSE_DATA")
+    env = os.environ.get("ANY2VIDEO_DATA_ROOT") or os.environ.get("PPT_COURSE_DATA")
     if env:
         return Path(env).expanduser().resolve()
     repo_root = Path(__file__).resolve().parent.parent

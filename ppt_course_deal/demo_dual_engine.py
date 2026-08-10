@@ -756,7 +756,7 @@ def _render_with_remotion(course: DemoCourse, report: dict[str, Any]) -> None:
         "remotion",
         "render",
         "src/index.ts",
-        "MyVideoTest1",
+        "CourseDeck",
         f"render_tasks/{task_name}/out/video.mp4",
         "--props",
         f"render_tasks/{task_name}/input-props.json",

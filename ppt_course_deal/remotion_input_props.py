@@ -18,6 +18,7 @@ from ppt_course_deal.task_storage import get_data_root
 
 
 DEFAULT_RENDER_TASK_NAME_PREFIX = "task-"
+REMOTION_COMPOSITION_ID = "CourseDeck"
 
 
 def repo_root() -> Path:
@@ -160,7 +161,7 @@ def render_command_for_task(task_id: str, *, root: Path | None = None) -> str:
     output_rel = Path("render_tasks") / task_name / "out" / "video.mp4"
     return (
         f"cd {base} && "
-        f"npx remotion render src/index.ts MyVideoTest1 {output_rel.as_posix()} "
+        f"npx remotion render src/index.ts {REMOTION_COMPOSITION_ID} {output_rel.as_posix()} "
         f"--props {input_rel.as_posix()}"
     )
 

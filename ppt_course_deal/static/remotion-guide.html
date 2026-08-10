@@ -3,11 +3,11 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Remotion 视频编排手册</title>
+    <title>any2video · Remotion 视频编排手册</title>
     <script>
       (function () {
         try {
-          var t = localStorage.getItem("ppt-theme");
+          var t = localStorage.getItem("any2video-theme");
           document.documentElement.setAttribute(
             "data-theme",
             t === "light" || t === "dark" ? t : "dark"
@@ -23,7 +23,7 @@
     <main class="remotion-guide" aria-labelledby="remotion-guide-title">
       <header class="remotion-guide__hero">
         <div class="remotion-guide__hero-copy">
-          <div class="remotion-guide__eyebrow">React + Timeline + Agent Skill</div>
+          <div class="remotion-guide__eyebrow">any2video · React + Timeline</div>
           <h1 id="remotion-guide-title">Remotion 视频编排手册</h1>
           <p>PPT 课件进来，导演脚本定镜头，音频定时长，Agent 按 Remotion Skill 约束写 React 成片。</p>
           <div class="remotion-guide__hero-actions">
@@ -74,7 +74,7 @@
             <p>镜头之间做淡入、滑动、擦除；Overlay 做光效层。</p>
           </article>
           <article>
-            <b>本项目 renderer</b>
+            <b>any2video renderer</b>
             <p>读取 render_tasks 下的入参，生成企业培训视频。</p>
           </article>
         </div>
@@ -129,14 +129,14 @@
           </article>
           <article class="remotion-guide__skill-card remotion-guide__skill-card--wide">
             <b>本项目给 Agent 的编排 Brief</b>
-            <pre><code>目标：把 PPT、音频、视频/图片素材编排成企业培训 MP4。
-输入：director_manifest.json、render_plan.json、input-props.json、previews/、audio_workspace/。
+            <pre><code>目标：把素材、脚本、音频和视效组件编排成个人创作 MP4。
+输入：video_project.json、render_plan.json、input-props.json、screenshots/、audio_workspace/。
 输出：Remotion React 组件 + 可渲染 MP4。
 必须做：
 - 用 Composition 定义 fps / 画幅 / 动态 durationInFrames。
 - 用 Sequence / Series 分镜；字幕和音频按帧对齐。
-- 用 useCurrentFrame + interpolate 做镜头运动、文字入场、证据层扫描。
-- 按 video_profile 切换规则质检、新人速训、SOP、销售赋能的画面策略。
+- 用 useCurrentFrame + interpolate 做镜头运动、文字入场、局部变焦和标注。
+- 按 templatePackage 切换产品体验、知识讲解、作品复盘、工具教程等画面策略。
 - 渲染前至少做 still/frame sanity check；发现遮挡、溢出、空白帧要回改。</code></pre>
           </article>
           <article class="remotion-guide__skill-card remotion-guide__skill-card--wide">
@@ -168,7 +168,7 @@
             <li>多段音频按顺序放入 Series，字幕按 start_sec / end_sec 对齐。</li>
             <li>裁掉素材头尾：trimBefore / trimAfter。</li>
             <li>转场用 TransitionSeries；Transition 会让两段重叠，Overlay 不改总时长。</li>
-            <li>培训视频保留证据画面：PPT 原页、局部截图、风险标记都来自 render_plan。</li>
+            <li>创作视频保留素材依据：截图、局部放大、重点标注都来自 video_project / render_plan。</li>
           </ul>
         </div>
         <pre class="remotion-guide__code"><code>&lt;TransitionSeries&gt;
@@ -186,16 +186,16 @@
           <h2 id="project-title">放到本项目</h2>
         </div>
         <div class="remotion-guide__pipeline">
-          <div><span>PPT</span><b>预览图 / 元数据</b></div>
-          <div><span>Director</span><b>scene / layout / 证据</b></div>
+          <div><span>素材</span><b>截图 / 录屏 / 文案</b></div>
+          <div><span>计划</span><b>scene / effects / variants</b></div>
           <div><span>Audio</span><b>mp3 / 秒数 / 字幕段</b></div>
           <div><span>Adapter</span><b>render_plan + input-props</b></div>
-          <div><span>Remotion</span><b>MyVideoTest1 → MP4</b></div>
+          <div><span>Remotion</span><b>ProductExperienceVideo → MP4</b></div>
         </div>
         <div class="remotion-guide__commands">
           <code>cd ppt_course_renderer</code>
           <code>npm run dev</code>
-          <code>npx remotion render src/index.ts MyVideoTest1 render_tasks/&lt;task&gt;/out/video.mp4 --props render_tasks/&lt;task&gt;/input-props.json</code>
+          <code>npx remotion render src/index.ts ProductExperienceVideo render_tasks/&lt;task&gt;/out/video.mp4 --props render_tasks/&lt;task&gt;/input-props.json</code>
         </div>
       </section>
     </main>
