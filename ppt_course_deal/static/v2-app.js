@@ -202,6 +202,24 @@
     }).join("") + "</div>";
   }
 
+  function rememberProject(project) {
+    if (!project) return;
+    state.project = project;
+    var summary = {
+      id: project.id,
+      title: project.title,
+      status: project.status,
+      asset_count: Array.isArray(project.assets) ? project.assets.length : Number(project.asset_count || 0),
+      scene_count: project.scene_plan && Array.isArray(project.scene_plan.scenes)
+        ? project.scene_plan.scenes.length
+        : Number(project.scene_count || 0),
+      output_count: Array.isArray(project.outputs) ? project.outputs.length : Number(project.output_count || 0),
+    };
+    var index = state.projects.findIndex(function (item) { return item.id === project.id; });
+    if (index >= 0) state.projects[index] = Object.assign({}, state.projects[index], summary);
+    else state.projects.unshift(summary);
+  }
+
   function renderComposer() {
     if (!state.project) {
       return [
@@ -550,7 +568,7 @@
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({title: title, aspect_ratio: "9:16", platform: "短视频", style: "clean", target_duration_sec: 30}),
     }).then(function (project) {
-      state.project = project;
+      rememberProject(project);
       return loadProjects(false);
     }).then(function () {
       toast("项目已创建");
@@ -565,7 +583,7 @@
     if (content) form.append("content", content);
     if (file) form.append("file", file);
     return api("/api/v2/projects/" + encodeURIComponent(state.project.id) + "/assets", {method: "POST", body: form}).then(function (data) {
-      state.project = data.project;
+      rememberProject(data.project);
       return data.asset;
     });
   }
@@ -598,7 +616,7 @@
       updateBusyLabel();
       return api("/api/v2/projects/" + encodeURIComponent(state.project.id) + "/scene-plan/quick", {method: "POST"});
     }).then(function (data) {
-      state.project = data.project;
+      rememberProject(data.project);
       state.selectedSceneId = scenes().length ? scenes()[0].id : "";
       toast("镜头初稿已生成");
     }).catch(showError).finally(function () { setBusy(false); });
@@ -640,7 +658,7 @@
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify(payload),
     }).then(function (response) {
-      state.project = response.project;
+      rememberProject(response.project);
       state.selectedSceneId = sceneId;
       toast("镜头已保存");
     }).catch(showError).finally(function () { setBusy(false); });
@@ -654,7 +672,7 @@
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({after_scene_id: state.selectedSceneId || null}),
     }).then(function (response) {
-      state.project = response.project;
+      rememberProject(response.project);
       state.selectedSceneId = response.scene.id;
       toast("已新增镜头");
     }).catch(showError).finally(function () { setBusy(false); });
@@ -665,7 +683,7 @@
     setBusy(true, "正在复制镜头");
     api("/api/v2/projects/" + encodeURIComponent(state.project.id) + "/scenes/" + encodeURIComponent(sceneId) + "/duplicate", {method: "POST"})
       .then(function (response) {
-        state.project = response.project;
+        rememberProject(response.project);
         state.selectedSceneId = response.scene.id;
         toast("镜头已复制");
       }).catch(showError).finally(function () { setBusy(false); });
@@ -679,7 +697,7 @@
     setBusy(true, "正在删除镜头");
     api("/api/v2/projects/" + encodeURIComponent(state.project.id) + "/scenes/" + encodeURIComponent(sceneId), {method: "DELETE"})
       .then(function (response) {
-        state.project = response.project;
+        rememberProject(response.project);
         var next = scenes()[Math.min(index, Math.max(0, scenes().length - 1))];
         state.selectedSceneId = next ? next.id : "";
         toast("镜头已删除");
@@ -695,7 +713,7 @@
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({scene_ids: ids}),
     }).then(function (response) {
-      state.project = response.project;
+      rememberProject(response.project);
       toast("镜头顺序已保存");
     }).catch(showError).finally(function () { setBusy(false); });
   }
@@ -729,7 +747,7 @@
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({execute: true, timeout_sec: 300}),
     }).then(function (data) {
-      state.project = data.project;
+      rememberProject(data.project);
       if (data.output && data.output.status === "failed") throw new Error("视频生成失败，请查看渲染日志");
       toast("成片已生成");
     }).catch(showError).finally(function () { setBusy(false); });
@@ -759,7 +777,7 @@
     if (!projectId) return Promise.resolve();
     setBusy(true, "正在打开项目");
     return api("/api/v2/projects/" + encodeURIComponent(projectId)).then(function (project) {
-      state.project = project;
+      rememberProject(project);
       state.selectedSceneId = project.scene_plan && project.scene_plan.scenes && project.scene_plan.scenes.length ? project.scene_plan.scenes[0].id : "";
     }).catch(showError).finally(function () { setBusy(false); });
   }

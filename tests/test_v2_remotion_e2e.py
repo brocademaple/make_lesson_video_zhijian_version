@@ -73,6 +73,15 @@ def test_real_text_images_audio_render_contains_video_and_audio(monkeypatch, tmp
     assert audio.status_code == 200
     assert abs(audio.json()["asset"]["duration_sec"] - duration_sec) < 0.01
 
+    draft = client.post(f"/api/v2/projects/{project_id}/scene-plan/quick")
+    assert draft.status_code == 200
+    first_scene = draft.json()["scene_plan"]["scenes"][0]
+    edited = client.put(
+        f"/api/v2/projects/{project_id}/scenes/{first_scene['id']}",
+        json={"title": "人工加长的开场", "duration_sec": 1.2},
+    )
+    assert edited.status_code == 200
+
     rendered = client.post(
         f"/api/v2/projects/{project_id}/render",
         json={"execute": True, "timeout_sec": 300},
@@ -81,6 +90,7 @@ def test_real_text_images_audio_render_contains_video_and_audio(monkeypatch, tmp
     payload = rendered.json()
     assert payload["output"]["status"] == "ready", payload["output"].get("log")
     assert len(payload["project"]["scene_plan"]["scenes"]) == 3
+    assert payload["project"]["scene_plan"]["scenes"][0]["title"] == "人工加长的开场"
 
     video_path = Path(payload["output"]["video_path"])
     assert video_path.is_file()
@@ -110,4 +120,4 @@ def test_real_text_images_audio_render_contains_video_and_audio(monkeypatch, tmp
     assert video["height"] == 1920
     assert video["avg_frame_rate"] == "30/1"
     assert audio_stream["codec_name"] == "aac"
-    assert abs(float(metadata["format"]["duration"]) - duration_sec) <= 0.1
+    assert abs(float(metadata["format"]["duration"]) - 2.8) <= 0.1

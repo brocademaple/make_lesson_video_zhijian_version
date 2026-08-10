@@ -303,7 +303,10 @@ def test_v03_scene_director_crud_order_and_render_preserves_edits(monkeypatch, t
     assert next(scene for scene in scenes if scene["id"] == first["id"])["title"] == "手工修改的开场"
     props = payload["project"]["render_plan"]["props"]["scenes"]
     assert [scene["id"] for scene in props] == [created_id, second["id"], first["id"]]
-    assert next(scene for scene in props if scene["id"] == first["id"])["title"] == "手工修改的开场"
+    edited_props = next(scene for scene in props if scene["id"] == first["id"])
+    assert edited_props["title"] == "手工修改的开场"
+    assert edited_props["durationSec"] == 1.5
+    assert edited_props["durationInFrames"] == 45
 
 
 def test_text_over_mvp_limit_is_rejected(monkeypatch, tmp_path: Path) -> None:

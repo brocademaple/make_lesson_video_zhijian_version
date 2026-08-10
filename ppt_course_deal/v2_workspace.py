@@ -690,6 +690,9 @@ def update_scene(project_id: str, scene_id: str, body: SceneUpdateBody) -> dict[
     for key, value in updates.items():
         if value is not None:
             scene[key] = value
+    if "duration_sec" in updates and updates["duration_sec"] is not None:
+        fps = int(plan.get("fps") or DEFAULT_FPS)
+        scene["duration_frames"] = max(1, round(float(scene["duration_sec"]) * fps))
     plan["scenes"] = scenes
     plan["updated_at"] = now_iso()
     write_json(scene_plan_path(project_id), plan)

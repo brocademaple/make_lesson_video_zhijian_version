@@ -268,11 +268,13 @@ def _llm_scene_to_manifest_scene(
     screen_design = item.get("screen_design")
     if not isinstance(screen_design, dict):
         screen_design = {}
+    requested_layout = str(screen_design.get("layout") or "").strip()
     screen_design = {
-        "layout": _layout_from_material(
+        "layout": requested_layout
+        or _layout_from_material(
             source_slide_ids,
             material_by_id,
-            _layout_for_profile(scene_type, profile, str(screen_design.get("layout") or "full_slide")),
+            _layout_for_profile(scene_type, profile, "full_slide"),
         ),
         "visual_strategy": str(
             screen_design.get("visual_strategy")
