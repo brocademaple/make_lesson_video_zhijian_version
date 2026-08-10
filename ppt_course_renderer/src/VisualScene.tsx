@@ -4,6 +4,7 @@ import {
   Easing,
   Img,
   interpolate,
+  OffthreadVideo,
   staticFile,
   useCurrentFrame,
   useVideoConfig,
@@ -124,6 +125,27 @@ function SceneBackground({scene}: {scene: VisualSceneSpec}) {
         }}
       />
     </>
+  );
+}
+
+function CreativeLayer({scene, overlay = false}: {scene: VisualSceneSpec; overlay?: boolean}) {
+  const relative = scene.creativeAsset?.relative;
+  if (!relative) {
+    return null;
+  }
+  return (
+    <AbsoluteFill
+      style={{
+        opacity: overlay ? 0.42 : 1,
+        mixBlendMode: overlay ? "screen" : "normal",
+      }}
+    >
+      <OffthreadVideo
+        src={publicAsset(relative)}
+        muted
+        style={{width: "100%", height: "100%", objectFit: "cover"}}
+      />
+    </AbsoluteFill>
   );
 }
 
@@ -379,12 +401,22 @@ function Subtitle({scene}: {scene: VisualSceneSpec}) {
 }
 
 export const VisualScene: React.FC<{scene: VisualSceneSpec}> = ({scene}) => {
+  const creativeReady = Boolean(scene.creativeAsset?.relative && scene.rendererStatus === "ready");
+  const creativeReplacement = creativeReady && scene.rendererResolved === "hyperframes";
+  const creativeOverlay = creativeReady && scene.rendererResolved === "hybrid";
   return (
     <AbsoluteFill style={{background: theme.bg, overflow: "hidden"}}>
-      <SceneBackground scene={scene} />
-      <MediaStage scene={scene} />
-      <Header scene={scene} />
-      <Callouts scene={scene} />
+      {creativeReplacement ? (
+        <CreativeLayer scene={scene} />
+      ) : (
+        <>
+          <SceneBackground scene={scene} />
+          <MediaStage scene={scene} />
+          {creativeOverlay ? <CreativeLayer scene={scene} overlay /> : null}
+          <Header scene={scene} />
+          <Callouts scene={scene} />
+        </>
+      )}
       <Subtitle scene={scene} />
     </AbsoluteFill>
   );

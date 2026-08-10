@@ -23,6 +23,7 @@
     railCollapsed: initialRailState(),
     selectedSceneId: "",
     draggedSceneId: "",
+    capabilities: null,
   };
 
   var app = document.getElementById("app");
@@ -76,6 +77,23 @@
 
   function outputs() {
     return state.project && Array.isArray(state.project.outputs) ? state.project.outputs : [];
+  }
+
+  function runs() {
+    return state.project && Array.isArray(state.project.runs) ? state.project.runs : [];
+  }
+
+  function capability(capabilityId) {
+    var list = state.capabilities && Array.isArray(state.capabilities.capabilities) ? state.capabilities.capabilities : [];
+    return list.find(function (item) { return item.id === capabilityId; }) || null;
+  }
+
+  function engineLabel(engine) {
+    return {auto: "自动", remotion: "Remotion", hyperframes: "HyperFrames", hybrid: "双引擎"}[engine] || "自动";
+  }
+
+  function engineStatusLabel(status) {
+    return {ready: "已就绪", prepared: "已准备", pending: "待执行", fallback: "安全回退", failed: "失败"}[status] || "待路由";
   }
 
   function assetById(assetId) {
@@ -344,12 +362,30 @@
       '<button class="director-button primary" type="button" data-action="render-video">生成成片</button>',
       "</div>",
       "</div>",
+      renderExecutionStrip(),
       '<div class="director-main">',
       renderScenePreview(scene),
       renderSceneEditor(scene),
       "</div>",
       renderSceneTimeline(list),
       "</section>",
+    ].join("");
+  }
+
+  function renderExecutionStrip() {
+    var remotion = capability("remotion.render_project");
+    var hyperframes = capability("hyperframes.render_scene");
+    var recent = runs()[0];
+    var completed = recent && Array.isArray(recent.steps) ? recent.steps.filter(function (step) {
+      return ["ready", "fallback", "skipped"].indexOf(step.status) >= 0;
+    }).length : 0;
+    var stepTotal = recent && Array.isArray(recent.steps) ? recent.steps.length : 0;
+    return [
+      '<div class="execution-strip" aria-label="本地执行能力">',
+      '<div><span class="engine-dot ' + h(remotion && remotion.status || "unknown") + '"></span><strong>Remotion</strong><em>' + h(remotion && remotion.status === "ready" ? "本机可用" : "未就绪") + '</em></div>',
+      '<div><span class="engine-dot ' + h(hyperframes && hyperframes.status || "unknown") + '"></span><strong>HyperFrames</strong><em>' + h(hyperframes ? (hyperframes.status === "ready" ? "本机可用" : hyperframes.status === "on_demand" ? "可按需启用" : "安全回退") : "检测中") + '</em></div>',
+      recent ? '<div class="latest-run"><span>' + h(recent.kind === "render_project" ? "最近成片" : "最近执行") + '</span><strong>' + h(engineStatusLabel(recent.status)) + '</strong><em>' + h(completed + " / " + stepTotal + " 步") + '</em></div>' : '<div class="latest-run"><span>执行账本</span><strong>尚未运行</strong><em>每一步都会保存在本机</em></div>',
+      '</div>',
     ].join("");
   }
 
@@ -372,6 +408,9 @@
     var imageOptions = assets("image").map(function (asset) {
       return '<option value="' + h(asset.id) + '" ' + (image && image.id === asset.id ? "selected" : "") + ">" + h(asset.title || "未命名画面") + "</option>";
     }).join("");
+    var engine = scene.engine || {};
+    var requested = scene.renderer || engine.requested || "auto";
+    var creative = engine.resolved === "hyperframes" || engine.resolved === "hybrid";
     return [
       '<form id="scene-editor-form" class="scene-editor" data-scene-id="' + h(scene.id) + '">',
       '<div class="scene-editor-head"><div><span>当前镜头</span><strong>' + h(scene.title || "未命名镜头") + '</strong></div><span class="scene-id">' + h(scene.id) + "</span></div>",
@@ -379,12 +418,16 @@
       '<label><span>镜头名称</span><input name="title" maxlength="80" value="' + h(scene.title || "") + '" /></label>',
       '<label><span>时长</span><div class="duration-field"><input name="duration_sec" type="number" min="0.5" max="600" step="0.1" value="' + h(Number(scene.duration_sec || 4).toFixed(1)) + '" /><em>秒</em></div></label>',
       "</div>",
+      '<div class="scene-engine-row">',
+      '<label class="scene-field"><span>执行引擎</span><select name="renderer"><option value="auto" ' + (requested === "auto" ? "selected" : "") + '>自动路由</option><option value="remotion" ' + (requested === "remotion" ? "selected" : "") + '>Remotion · 稳定模板</option><option value="hyperframes" ' + (requested === "hyperframes" ? "selected" : "") + '>HyperFrames · 创意动效</option><option value="hybrid" ' + (requested === "hybrid" ? "selected" : "") + '>双引擎 · 创意叠加</option></select></label>',
+      '<div class="engine-decision"><span>' + h(engineLabel(engine.resolved)) + ' · ' + h(engineStatusLabel(engine.status)) + '</span><p>' + h(engine.reason || "保存后由执行内核选择引擎") + '</p>' + (engine.error ? '<details><summary>回退原因</summary><p>' + h(short(engine.error, 420)) + '</p></details>' : '') + '</div>',
+      '</div>',
       '<label class="scene-field"><span>画面素材</span><select name="image_asset_id"><option value="">无画面</option>' + imageOptions + "</select></label>",
       '<label class="scene-field"><span>屏幕文字</span><textarea name="onscreen_text" rows="2" maxlength="220" placeholder="这一镜需要观众看到的文字">' + h(scene.onscreen_text || "") + "</textarea></label>",
       '<label class="scene-field"><span>旁白</span><textarea name="narration" rows="3" maxlength="500" placeholder="这一镜需要说出的内容">' + h(scene.narration || "") + "</textarea></label>",
       '<label class="scene-field"><span>镜头目的</span><input name="purpose" maxlength="120" value="' + h(scene.purpose || "") + '" placeholder="例如：建立问题、展示步骤、收束观点" /></label>',
       '<div class="scene-editor-actions">',
-      '<div><button class="text-action" type="button" data-action="duplicate-scene" data-scene-id="' + h(scene.id) + '">复制</button><button class="text-action danger" type="button" data-action="delete-scene" data-scene-id="' + h(scene.id) + '">删除</button></div>',
+      '<div><button class="text-action" type="button" data-action="duplicate-scene" data-scene-id="' + h(scene.id) + '">复制</button><button class="text-action danger" type="button" data-action="delete-scene" data-scene-id="' + h(scene.id) + '">删除</button>' + (creative ? '<button class="text-action engine-action" type="button" data-action="prepare-scene" data-scene-id="' + h(scene.id) + '">' + (engine.status === "fallback" ? "重试创意镜头" : "执行创意镜头") + '</button>' : '') + '</div>',
       '<button class="director-button primary" type="submit">保存镜头</button>',
       "</div>",
       "</form>",
@@ -398,13 +441,14 @@
       list.map(function (scene, index) {
         var image = sceneImage(scene);
         var selected = scene.id === state.selectedSceneId ? " selected" : "";
+        var engine = scene.engine || {};
         return [
           '<article class="scene-card' + selected + '" draggable="true" data-scene-card="' + h(scene.id) + '" role="listitem">',
           '<button class="scene-card-select" type="button" data-action="select-scene" data-scene-id="' + h(scene.id) + '">',
           '<span class="scene-number">' + h(String(index + 1).padStart(2, "0")) + "</span>",
           image ? '<img src="' + h(assetUrl(image)) + '" alt="" />' : '<span class="scene-card-empty">无画面</span>',
           '<strong>' + h(short(scene.onscreen_text || scene.title, 30)) + "</strong>",
-          '<span class="scene-duration">' + h(Number(scene.duration_sec || 0).toFixed(1)) + " 秒</span>",
+          '<span class="scene-duration">' + h(Number(scene.duration_sec || 0).toFixed(1)) + " 秒 · " + h(engineLabel(engine.resolved)) + "</span>",
           "</button>",
           '<div class="scene-card-order"><button type="button" data-action="move-scene-left" data-scene-id="' + h(scene.id) + '" aria-label="前移" ' + (index === 0 ? "disabled" : "") + '>前移</button><button type="button" data-action="move-scene-right" data-scene-id="' + h(scene.id) + '" aria-label="后移" ' + (index === list.length - 1 ? "disabled" : "") + ">后移</button></div>",
           "</article>",
@@ -499,6 +543,7 @@
         if (action === "move-scene-left") moveScene(button.getAttribute("data-scene-id"), -1);
         if (action === "move-scene-right") moveScene(button.getAttribute("data-scene-id"), 1);
         if (action === "render-video") renderVideo();
+        if (action === "prepare-scene") prepareScene(button.getAttribute("data-scene-id"));
       });
     });
     document.querySelectorAll("[data-scene-card]").forEach(function (card) {
@@ -649,6 +694,7 @@
       narration: String(data.get("narration") || "").trim(),
       subtitle: String(data.get("onscreen_text") || "").trim(),
       purpose: String(data.get("purpose") || "").trim(),
+      renderer: String(data.get("renderer") || "auto"),
       asset_ids: preservedIds,
       status: "approved",
     };
@@ -741,7 +787,7 @@
 
   function renderVideo() {
     if (!state.project || !scenes().length || state.busy) return;
-    setBusy(true, "Remotion 正在生成成片");
+    setBusy(true, "双引擎正在编排成片");
     api("/api/v2/projects/" + encodeURIComponent(state.project.id) + "/render", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
@@ -750,6 +796,21 @@
       rememberProject(data.project);
       if (data.output && data.output.status === "failed") throw new Error("视频生成失败，请查看渲染日志");
       toast("成片已生成");
+    }).catch(showError).finally(function () { setBusy(false); });
+  }
+
+  function prepareScene(sceneId) {
+    if (!state.project || !sceneId || state.busy) return;
+    setBusy(true, "正在执行创意镜头");
+    api("/api/v2/projects/" + encodeURIComponent(state.project.id) + "/scenes/" + encodeURIComponent(sceneId) + "/prepare", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({execute: true, allow_on_demand: false, timeout_sec: 180}),
+    }).then(function (data) {
+      rememberProject(data.project);
+      state.capabilities = data.capabilities || state.capabilities;
+      var task = data.tasks && data.tasks[0];
+      toast(task && task.status === "fallback" ? "创意引擎未就绪，已安全回退" : "创意镜头已准备");
     }).catch(showError).finally(function () { setBusy(false); });
   }
 
@@ -770,6 +831,14 @@
       if (selectFirst && !state.project && state.projects.length) return loadProject(state.projects[0].id);
       render();
       return null;
+    });
+  }
+
+  function loadCapabilities() {
+    return api("/api/v2/capabilities").then(function (registry) {
+      state.capabilities = registry;
+      render();
+      return registry;
     });
   }
 
@@ -796,5 +865,5 @@
     toast(error && error.message ? error.message : "操作失败");
   }
 
-  loadProjects(true).catch(showError);
+  Promise.all([loadCapabilities(), loadProjects(true)]).catch(showError);
 })();
