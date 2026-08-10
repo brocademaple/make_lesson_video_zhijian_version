@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -10,7 +11,7 @@ from ppt_course_deal.pipeline import transform_pptx
 
 app = typer.Typer(
     name="any2video",
-    help="any2video：把文字、图片、音频和课件素材组织为 Remotion 成片",
+    help="any2video：把文字、图片、音频和课件素材组织为本地双引擎成片",
     no_args_is_help=True,
     invoke_without_command=True,
 )
@@ -136,6 +137,67 @@ def cmd_clear_project_data(
         )
     if not yes:
         typer.echo("这是只读预览。确认无误后运行：any2video clear-project-data --yes")
+
+
+@app.command("capabilities")
+def cmd_capabilities(
+    as_json: bool = typer.Option(False, "--json", help="输出完整 JSON，供 Agent 或脚本读取"),
+) -> None:
+    """检查本机 Any2Video、Remotion、HyperFrames 与媒体工具能力。"""
+    from ppt_course_deal.execution_kernel import discover_capabilities
+    from ppt_course_deal.v2_workspace import renderer_root, workspace_root
+
+    registry = discover_capabilities(renderer_root(), workspace_root())
+    if as_json:
+        typer.echo(json.dumps(registry, ensure_ascii=False, indent=2))
+        return
+    for item in registry.get("capabilities") or []:
+        typer.echo(f"{item.get('status', 'unknown'):>11}  {item.get('id')}  {item.get('reason')}")
+
+
+@app.command("project-runs")
+def cmd_project_runs(
+    project_id: str = typer.Argument(..., help="V0.4 工作台 project_id"),
+    limit: int = typer.Option(10, "--limit", min=1, max=100, help="最多显示多少次运行"),
+    as_json: bool = typer.Option(False, "--json", help="输出完整 JSON"),
+) -> None:
+    """查看项目本地运行账本。"""
+    from ppt_course_deal.execution_kernel import list_runs
+    from ppt_course_deal.v2_workspace import ensure_project, project_dir
+
+    ensure_project(project_id)
+    runs = list_runs(project_dir(project_id), limit=limit)
+    if as_json:
+        typer.echo(json.dumps({"runs": runs}, ensure_ascii=False, indent=2))
+        return
+    if not runs:
+        typer.echo("暂无运行记录")
+        return
+    for run in runs:
+        typer.echo(f"{run.get('status', 'unknown'):>8}  {run.get('id')}  {run.get('kind')}  {run.get('created_at')}")
+
+
+@app.command("prepare-scenes")
+def cmd_prepare_scenes(
+    project_id: str = typer.Argument(..., help="V0.4 工作台 project_id"),
+    execute: bool = typer.Option(False, "--execute/--no-execute", help="是否实际调用 HyperFrames；默认只准备源码与 brief"),
+    allow_on_demand: bool = typer.Option(False, "--allow-on-demand", help="允许通过 npx 按需取得 HyperFrames CLI"),
+    timeout_sec: int = typer.Option(180, "--timeout", min=5, max=1200, help="每个创意镜头执行超时秒数"),
+) -> None:
+    """准备或执行项目中的 HyperFrames / Hybrid 创意镜头。"""
+    from ppt_course_deal.v2_workspace import PrepareScenesBody, prepare_creative_assets
+
+    result = prepare_creative_assets(
+        project_id,
+        PrepareScenesBody(
+            execute=execute,
+            allow_on_demand=allow_on_demand,
+            timeout_sec=timeout_sec,
+        ),
+    )
+    typer.secho(f"运行：{result['run']['id']} / {result['run']['status']}", fg=typer.colors.GREEN)
+    for task in result.get("tasks") or []:
+        typer.echo(f"{task.get('status', 'unknown'):>9}  {task.get('scene_id')}  {task.get('resolved')}")
 
 
 @app.command("remotion-input-props")

@@ -69,6 +69,11 @@ export type VisualSceneSpec = {
   durationSec?: number;
   asset?: VisualMaterial;
   audio?: VisualMaterial;
+  creativeAsset?: VisualMaterial;
+  rendererRequested?: "auto" | "remotion" | "hyperframes" | "hybrid" | string;
+  rendererResolved?: "remotion" | "hyperframes" | "hybrid" | string;
+  rendererStatus?: "pending" | "prepared" | "ready" | "fallback" | string;
+  rendererReason?: string;
   motion?: {
     preset?: "slow_push" | "zoom_in" | "pan_right" | "float" | string;
     scale?: number;
