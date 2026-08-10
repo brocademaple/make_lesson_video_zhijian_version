@@ -3,9 +3,9 @@ requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ppt-course-mvp"
+name = "any2video"
 version = "0.1.0"
-description = "PPT 课程化重构工具 MVP：将文字密集型培训 PPT 转为适合录课的结构化 PPT"
+description = "any2video：把文字、图片、音频和课件素材组织为可渲染视频"
 requires-python = ">=3.9"
 dependencies = [
     "pillow>=10,<12",
@@ -22,6 +22,7 @@ dependencies = [
 ]
 
 [project.scripts]
+any2video = "ppt_course_deal.cli:main"
 ppt-course = "ppt_course_deal.cli:main"
 
 [tool.setuptools.packages.find]

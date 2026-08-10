@@ -1,0 +1,214 @@
+<title>any2video 产品说明与实施状态</title>
+
+<callout emoji="✅" background-color="light-green" border-color="green">
+  <p><b>当前结论：</b>项目已于 2026-07-22 完成 any2video 品牌升级、V2 工作台 UI 重构和历史项目数据重置。新的主线是“创建项目 → 组织文字、图片和旁白 → 生成镜头 → Remotion 成片”，旧 Python 模块、<code>ppt-course</code> 命令和 <code>/api/v2</code> 接口继续兼容。</p>
+</callout>
+
+<h1>1. 文档信息</h1>
+<table>
+  <colgroup><col width="150"/><col width="560"/></colgroup>
+  <thead><tr><th background-color="light-gray">字段</th><th background-color="light-gray">当前内容</th></tr></thead>
+  <tbody>
+    <tr><td>产品名称</td><td><b>any2video</b></td></tr>
+    <tr><td>产品定位</td><td>面向个人和 AIGC 创作者的本地视频生成工作台</td></tr>
+    <tr><td>实施日期</td><td>2026-07-22</td></tr>
+    <tr><td>仓库目录</td><td><code>/Users/eee/Desktop/code/text2classvideo</code>，本次不改仓库目录与远程仓库名</td></tr>
+    <tr><td>Python 分发包</td><td><code>any2video 0.1.0</code></td></tr>
+    <tr><td>运行入口</td><td><code>any2video serve</code>；默认地址 <code>http://127.0.0.1:8765/</code></td></tr>
+    <tr><td>兼容入口</td><td><code>ppt-course</code>、<code>ppt_course_deal</code>、<code>ppt_course_rebuilder</code> 和 <code>/api/v2</code> 保持可用</td></tr>
+  </tbody>
+</table>
+
+<hr/>
+
+<h1>2. 本轮交付状态</h1>
+<grid>
+  <column width-ratio="0.333333">
+    <h2>品牌与接口</h2>
+    <checkbox done="true">页面、FastAPI、README、GitHub Pages 和辅助页面统一为 any2video</checkbox>
+    <checkbox done="true">新增 <code>any2video</code> CLI</checkbox>
+    <checkbox done="true">保留 <code>ppt-course</code> 兼容命令</checkbox>
+    <checkbox done="true">新增 ANY2VIDEO_* 环境变量并保留旧变量后备</checkbox>
+  </column>
+  <column width-ratio="0.333333">
+    <h2>创作工作台</h2>
+    <checkbox done="true">重构为项目栏、素材工作区、9:16 成片预览三栏</checkbox>
+    <checkbox done="true">项目栏可收起并持久化状态</checkbox>
+    <checkbox done="true">素材完整性、上传反馈、渲染状态和错误日志可见</checkbox>
+    <checkbox done="true">完成桌面、平板和移动端响应式适配</checkbox>
+  </column>
+  <column width-ratio="0.333334">
+    <h2>数据与安全</h2>
+    <checkbox done="true">新增安全清理命令，默认仅预览</checkbox>
+    <checkbox done="true">实际清理 520 个历史文件</checkbox>
+    <checkbox done="true">项目 API 已验证返回空列表</checkbox>
+    <checkbox done="true">配置、日志、环境文件和示例项目完整保留</checkbox>
+  </column>
+</grid>
+
+<hr/>
+
+<h1>3. 当前产品主线</h1>
+<p>any2video 现在以素材创作为核心，不再把 PPT 解析器、声音工具和 Remotion 控制台平铺成多个互相竞争的入口。历史 PPT/PDF 管线继续作为素材导入和兼容能力。</p>
+<whiteboard type="mermaid">flowchart LR
+  A[创建或选择项目] --&gt; B[输入文字]
+  A --&gt; C[上传图片]
+  A --&gt; D[上传旁白]
+  B --&gt; E[检查素材完整性]
+  C --&gt; E
+  D --&gt; E
+  E --&gt; F[生成镜头计划]
+  F --&gt; G[Remotion 渲染]
+  G --&gt; H[9比16 成片与历史版本]</whiteboard>
+<table>
+  <colgroup><col width="145"/><col width="260"/><col width="330"/></colgroup>
+  <thead><tr><th background-color="light-gray">区域</th><th background-color="light-gray">用户任务</th><th background-color="light-gray">设计结果</th></tr></thead>
+  <tbody>
+    <tr><td>项目栏</td><td>创建、切换和浏览项目</td><td>桌面常驻；可收起并记录状态；窄屏自动收起</td></tr>
+    <tr><td>素材工作区</td><td>组织文字、图片、旁白和生成动作</td><td>占据主要空间；移除机械编号和重复卡片；显示素材准备度</td></tr>
+    <tr><td>成片区</td><td>查看当前输出、渲染状态和历史版本</td><td>9:16 画面为视觉中心；文件路径和历史版本降为辅助信息</td></tr>
+  </tbody>
+</table>
+
+<hr/>
+
+<h1>4. UI 设计规范与响应式</h1>
+<callout emoji="ℹ️" background-color="light-blue" border-color="blue">
+  <p><b>设计参数：</b><code>DESIGN_VARIANCE 6</code> / <code>MOTION_INTENSITY 3</code> / <code>VISUAL_DENSITY 4</code>。整体采用冷白和雾灰背景、单一克制蓝色强调色、统一 8px 圆角与清晰层级，不引入新的前端框架或第三方图标库。</p>
+</callout>
+<table>
+  <thead><tr><th background-color="light-gray">视口</th><th background-color="light-gray">布局行为</th><th background-color="light-gray">验证结果</th></tr></thead>
+  <tbody>
+    <tr><td>1440px</td><td>项目栏、素材区、成片区三栏完整展示</td><td><span text-color="green">✓ 无横向溢出，无控制台错误</span></td></tr>
+    <tr><td>1024px</td><td>项目栏变为可呼出的浮动栏，主体保持清晰</td><td><span text-color="green">✓ 无横向溢出，无控制台错误</span></td></tr>
+    <tr><td>390px</td><td>单列工作流，生成动作随内容顺序排列</td><td><span text-color="green">✓ 无横向溢出，无控制台错误</span></td></tr>
+  </tbody>
+</table>
+<ul>
+  <li>1180px 以下自动收起项目栏。</li>
+  <li>768px 以下切换为单列工作流。</li>
+  <li>补齐键盘焦点、颜色对比、减少动效和减少透明效果适配。</li>
+  <li>项目栏状态使用 <code>any2video.ui.rail-collapsed.v1</code> 持久化。</li>
+</ul>
+
+<hr/>
+
+<h1>5. 公共接口与兼容约束</h1>
+<table>
+  <colgroup><col width="210"/><col width="175"/><col width="350"/></colgroup>
+  <thead><tr><th background-color="light-gray">接口</th><th background-color="light-gray">状态</th><th background-color="light-gray">说明</th></tr></thead>
+  <tbody>
+    <tr><td><code>any2video serve</code></td><td>新主命令</td><td>启动 FastAPI 与本地创作工作台</td></tr>
+    <tr><td><code>any2video --help</code></td><td>新主命令</td><td>展示 any2video CLI 帮助</td></tr>
+    <tr><td><code>any2video clear-project-data</code></td><td>新安全命令</td><td>默认预览；只有带 <code>--yes</code> 才删除</td></tr>
+    <tr><td><code>ppt-course</code></td><td>兼容保留</td><td>映射到同一个 Typer 应用</td></tr>
+    <tr><td><code>/api/v2</code></td><td>保持不变</td><td>请求和响应结构不变，仅更新 OpenAPI 产品标题与描述</td></tr>
+  </tbody>
+</table>
+<h2>环境变量优先级</h2>
+<table>
+  <thead><tr><th background-color="light-gray">新变量</th><th background-color="light-gray">旧变量后备</th><th background-color="light-gray">用途</th></tr></thead>
+  <tbody>
+    <tr><td><code>ANY2VIDEO_DATA_ROOT</code></td><td><code>PPT_COURSE_DATA</code></td><td>历史任务与素材数据根目录</td></tr>
+    <tr><td><code>ANY2VIDEO_WORKSPACE_ROOT</code></td><td><code>VIDEO_WORKSPACE_ROOT</code></td><td>V2 视频项目工作区</td></tr>
+    <tr><td><code>ANY2VIDEO_RENDERER_ROOT</code></td><td><code>VIDEO_RENDERER_ROOT</code></td><td>Remotion 渲染器根目录</td></tr>
+  </tbody>
+</table>
+
+<hr/>
+
+<h1>6. 数据重置结果</h1>
+<callout emoji="✅" background-color="light-green" border-color="green">
+  <p><b>已执行：</b>共清除 <b>520</b> 个历史项目、素材与渲染文件，合计 <b>144,446,340 字节</b>，约 138 MiB。清理后再次预览为 0 个文件、0 字节，<code>GET /api/v2/projects</code> 返回 <code>[]</code>。</p>
+</callout>
+<grid>
+  <column width-ratio="0.5">
+    <h2>已清空</h2>
+    <ul>
+      <li><code>ppt_course_data/tasks</code></li>
+      <li><code>ppt_course_data/audio_workspace</code></li>
+      <li><code>ppt_course_data/mvp_runs</code></li>
+      <li>导入源文件与公共素材缓存</li>
+      <li><code>video_workspace/projects</code></li>
+      <li>运行时 Remotion task、输出视频、<code>v2_assets</code> 与 <code>render_tasks</code></li>
+    </ul>
+  </column>
+  <column width-ratio="0.5">
+    <h2>已保留</h2>
+    <ul>
+      <li><code>external_apis.json</code> 与 MiniMax 连接日志</li>
+      <li>所有 <code>.env</code>、<code>.gitignore</code> 和 README</li>
+      <li><code>product-experience-demo</code></li>
+      <li><code>my-video-test1</code> 与 <code>task-2555-pages1-4</code> 示例</li>
+      <li>全部代码及用户原有未提交修改</li>
+    </ul>
+  </column>
+</grid>
+<p>清理器只接受仓库内白名单目录；执行前会校验目标边界并拒绝越界路径或未经认可的符号链接。外部自定义数据目录不会被迁移或删除。</p>
+
+<hr/>
+
+<h1>7. 验证证据</h1>
+<table>
+  <colgroup><col width="250"/><col width="175"/><col width="310"/></colgroup>
+  <thead><tr><th background-color="light-gray">检查项</th><th background-color="light-gray">结果</th><th background-color="light-gray">说明</th></tr></thead>
+  <tbody>
+    <tr><td>目标 Python 回归</td><td><span text-color="green">✓ 32 passed</span></td><td>另有 1 项按条件 skipped</td></tr>
+    <tr><td>品牌与清理保护测试</td><td><span text-color="green">✓ 4 passed</span></td><td>覆盖 CLI、环境变量优先级、白名单保留与符号链接拒绝</td></tr>
+    <tr><td>Remotion 静态与真实成片</td><td><span text-color="green">✓ 通过</span></td><td>ESLint、TypeScript 与真实 MP4 E2E 通过；成片为 H.264 1080×1920 30fps + AAC</td></tr>
+    <tr><td>浏览器响应式检查</td><td><span text-color="green">✓ 3 个视口通过</span></td><td>1440px、1024px、390px 均无溢出与控制台错误</td></tr>
+    <tr><td>配置文件保护</td><td><span text-color="green">✓ 哈希一致</span></td><td>API 配置、MiniMax 日志与示例项目清理前后未变化</td></tr>
+    <tr><td>Git 工作区保护</td><td><span text-color="green">✓ 无跟踪文件误删</span></td><td>原有未提交修改保持在原位</td></tr>
+  </tbody>
+</table>
+<callout emoji="⚠️" background-color="light-red" border-color="red">
+  <p><b>已知测试情况：</b>完整测试集结果为 78 passed、1 skipped、1 failed。唯一失败是既有导演布局断言期望 <code>rule_card</code>、实际得到 <code>full_slide</code>，位于本轮开始前已有的 director/video profile 修改逻辑，不属于本次品牌、UI 或清理改造范围。</p>
+</callout>
+
+<hr/>
+
+<h1>8. 本地运行与维护</h1>
+<pre lang="bash" caption="安装并启动 any2video"><code>python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+any2video serve</code></pre>
+<pre lang="bash" caption="安全清理项目数据"><code>any2video clear-project-data
+any2video clear-project-data --yes</code></pre>
+<pre lang="bash" caption="兼容命令"><code>ppt-course --help</code></pre>
+<p>清理命令第一次调用只输出文件数量与体积。确认目标正确后再使用 <code>--yes</code>；清理动作不可逆。</p>
+
+<hr/>
+
+<h1>9. 决策与后续</h1>
+<table>
+  <thead><tr><th background-color="light-gray">事项</th><th background-color="light-gray">当前决策</th><th background-color="light-gray">状态</th></tr></thead>
+  <tbody>
+    <tr><td>产品名称</td><td>统一使用 any2video</td><td><span text-color="green">已决定</span></td></tr>
+    <tr><td>产品范围</td><td>以个人素材成片工作台为主，PPT/PDF 作为兼容导入器</td><td><span text-color="green">已决定</span></td></tr>
+    <tr><td>仓库与内部包名</td><td>当前不改，降低渲染链路破坏风险</td><td><span text-color="green">已决定</span></td></tr>
+    <tr><td>导演布局断言</td><td>作为独立回归问题后续处理</td><td><span text-color="yellow">待处理</span></td></tr>
+    <tr><td>公网发布与多人协作</td><td>不在本轮交付范围</td><td>后续路线</td></tr>
+  </tbody>
+</table>
+
+<hr/>
+
+<h1>10. 界面证据</h1>
+<h2>10.1 any2video 最新工作台</h2>
+<p>下面附上本轮在空数据状态下验证过的桌面、平板和移动端截图。</p>
+
+<h2>10.2 历史界面基线</h2>
+<callout emoji="ℹ️" background-color="light-gray" border-color="gray">
+  <p>以下图片保留自 2026-07-11 版本，用于对照本轮 UI 重构前的页面结构；它们不再代表当前界面。</p>
+</callout>
+<img src="IGgBbbft2ouUaVx5kyjcS3ObnWh" width="900" height="562" name="01-home-project-library.png" caption="历史截图 1：首页结构"/>
+<img src="S90MbRBjAoQg57xsCiIcQGlYnwe" width="900" height="474" name="cursor-preview-structure.png" caption="历史截图 2：Cursor 预览"/>
+<img src="TyJvbxbR0omPZRxDOF0cU4LwnDh" width="900" height="562" name="02-workspace-material-stage.png" caption="历史截图 3：项目工作台"/>
+<img src="FWqVbk8EqoND5nxAkyjcDvlWnsb" width="900" height="562" name="03-director-stage.png" caption="历史截图 4：导演台"/>
+<img src="P2TcbLbzro3Id9x4JpNcEqdJnNg" width="900" height="562" name="06-audio-stage.png" caption="历史截图 5：声音轨"/>
+<img src="Q2z5buExsoS0cDxhHfDcibPSnQe" width="900" height="562" name="04-render-stage.png" caption="历史截图 6：成片线"/>
+<img src="ZJpUbynsUoiRLpxCEIPc3foNn1b" width="900" height="562" name="05-output-stage.png" caption="历史截图 7：作品库"/>
+
+<callout emoji="📌" background-color="light-yellow" border-color="yellow">
+  <p><b>文档口径：</b>本页以 2026-07-22 的本地代码、实际数据重置结果、自动化测试和浏览器截图为准。服务验证结束后已停止，当前需要运行时请执行 <code>any2video serve</code>。</p>
+</callout>

@@ -10,6 +10,7 @@ venv/
 ppt_course/user_data/
 ppt_course_deal/user_data/
 ppt_course_data/
+video_workspace/
 .env
 *.pptx
 !tests/fixtures/**/*.pptx
@@ -17,5 +18,10 @@ ppt_course_data/
 .claude/
 .gemini/
 **/.gemini/
-ppt_course_renderer/render_tasks/
+ppt_course_renderer/render_tasks/*
+!ppt_course_renderer/render_tasks/.gitignore
+!ppt_course_renderer/render_tasks/README.md
+!ppt_course_renderer/render_tasks/product-experience-demo/
+!ppt_course_renderer/render_tasks/product-experience-demo/*.json
 ppt_course_renderer/public/render_tasks
+ppt_course_renderer/public/v2_assets/

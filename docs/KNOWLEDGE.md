@@ -26,9 +26,9 @@
   - [8.5 常见误区与排障要点](#85-常见误区与排障要点)
 - [9. 可选延伸阅读（官方 / 项目）](#9-可选延伸阅读官方--项目)
 
-> **范围**：本文针对 **智课影擎工作台**（包 `ppt_course_deal`）：**第 1–6 节**为 **Web 整页预览** 与 `slide_render`（LibreOffice + Poppler）；**第 7 节**为 **页内「扣小图」**；**第 8 节**为 **Swagger UI / OpenAPI** 与 **`ppt-course serve`** 暴露的 HTTP API 文档原理。子目录 **`ppt_course_rebuilder/`** 若单独导出 PNG，见该子项目 `image_exporter` 与文档，与下述 `ppt_course_deal` 不是同一条代码路径。
+> **范围**：本文针对 **any2video 工作台**（兼容包 `ppt_course_deal`）：**第 1–6 节**为 **Web 整页预览** 与 `slide_render`（LibreOffice + Poppler）；**第 7 节**为 **页内「扣小图」**；**第 8 节**为 **Swagger UI / OpenAPI** 与 **`any2video serve`** 暴露的 HTTP API 文档原理。子目录 **`ppt_course_rebuilder/`** 若单独导出 PNG，见该子项目 `image_exporter` 与文档，与下述 `ppt_course_deal` 不是同一条代码路径。
 
-本文说明在 **智课影擎工作台** **Web 整页预览** 链路中，`LibreOffice` 与 **Poppler（`pdftoppm`）** 各自做什么，以及它们为何能还原「幻灯片画面」（像素图），并与 **文本抽取** 区分。
+本文说明在 **any2video 工作台** **Web 整页预览** 链路中，`LibreOffice` 与 **Poppler（`pdftoppm`）** 各自做什么，以及它们为何能还原「幻灯片画面」（像素图），并与 **文本抽取** 区分。
 
 ---
 

@@ -75,7 +75,7 @@ const palette = {
 };
 
 function profileId(profile?: RenderProfile): string {
-  return profile?.id || profile?.remotion?.theme || "quality";
+  return profile?.id || profile?.remotion?.theme || "knowledge";
 }
 
 function profileAccent(profile?: RenderProfile): string {
@@ -161,7 +161,7 @@ function RiskBadge({slide}: {slide: CourseDeckSlideSpec}) {
   const text =
     first?.quote ||
     (slide.riskFlags ?? []).slice(0, 2).join(" / ") ||
-    "高风险信息需核对原文";
+    "这里需要重点关注";
   return (
     <div
       style={{
@@ -180,7 +180,7 @@ function RiskBadge({slide}: {slide: CourseDeckSlideSpec}) {
       }}
     >
       <strong style={{color: palette.danger, marginRight: 10}}>
-        {slide.riskBadge?.label || "需核对原文"}
+        {slide.riskBadge?.label || "重点提示"}
       </strong>
       {cleanText(text, 82)}
     </div>
@@ -210,7 +210,7 @@ function EvidencePanel({slide}: {slide: CourseDeckSlideSpec}) {
           marginBottom: 12,
         }}
       >
-        {slide.evidencePanel?.title || "原文证据"}
+        {slide.evidencePanel?.title || "素材依据"}
       </div>
       {quotes.slice(0, 2).map((item, idx) => (
         <div
@@ -311,7 +311,7 @@ function SubtitleTrack({slide}: {slide: CourseDeckSlideSpec}) {
 }
 
 function ProfileCue({profile}: {profile?: RenderProfile}) {
-  const label = profile?.label || "规则质检片";
+  const label = profile?.label || "视频项目";
   const accent = profileAccent(profile);
   return (
     <div

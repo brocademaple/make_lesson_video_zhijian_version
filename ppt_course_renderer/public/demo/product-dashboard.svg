@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="900" viewBox="0 0 1280 900">
+  <rect width="1280" height="900" fill="#f6f7fb"/>
+  <rect x="40" y="40" width="1200" height="820" rx="34" fill="#ffffff" stroke="#d8deea"/>
+  <rect x="80" y="92" width="240" height="716" rx="26" fill="#111827"/>
+  <circle cx="122" cy="142" r="20" fill="#67e8f9"/>
+  <rect x="156" y="126" width="108" height="16" rx="8" fill="#e5e7eb"/>
+  <rect x="108" y="214" width="168" height="42" rx="14" fill="#263244"/>
+  <rect x="108" y="286" width="134" height="18" rx="9" fill="#6b7280"/>
+  <rect x="108" y="338" width="152" height="18" rx="9" fill="#6b7280"/>
+  <rect x="108" y="390" width="116" height="18" rx="9" fill="#6b7280"/>
+  <text x="370" y="150" fill="#111827" font-family="Inter, Arial" font-size="42" font-weight="800">AIGC Workspace</text>
+  <text x="370" y="198" fill="#6b7280" font-family="Inter, Arial" font-size="22">From idea to publishable creator assets</text>
+  <rect x="370" y="250" width="248" height="148" rx="24" fill="#eef6ff" stroke="#bfdbfe"/>
+  <text x="402" y="312" fill="#1d4ed8" font-family="Inter, Arial" font-size="24" font-weight="700">Drafts</text>
+  <text x="402" y="360" fill="#111827" font-family="Inter, Arial" font-size="48" font-weight="900">18</text>
+  <rect x="652" y="250" width="248" height="148" rx="24" fill="#f0fdf4" stroke="#bbf7d0"/>
+  <text x="684" y="312" fill="#15803d" font-family="Inter, Arial" font-size="24" font-weight="700">Ready</text>
+  <text x="684" y="360" fill="#111827" font-family="Inter, Arial" font-size="48" font-weight="900">7</text>
+  <rect x="934" y="250" width="248" height="148" rx="24" fill="#fff7ed" stroke="#fed7aa"/>
+  <text x="966" y="312" fill="#c2410c" font-family="Inter, Arial" font-size="24" font-weight="700">Variants</text>
+  <text x="966" y="360" fill="#111827" font-family="Inter, Arial" font-size="48" font-weight="900">42</text>
+  <rect x="370" y="448" width="812" height="310" rx="28" fill="#111827"/>
+  <path d="M420 690 C520 560, 610 635, 700 520 S915 462, 1110 610" fill="none" stroke="#67e8f9" stroke-width="16" stroke-linecap="round"/>
+  <circle cx="700" cy="520" r="18" fill="#fbbf24"/>
+  <text x="418" y="512" fill="#f8fafc" font-family="Inter, Arial" font-size="28" font-weight="800">Creator funnel</text>
+  <text x="418" y="552" fill="#9ca3af" font-family="Inter, Arial" font-size="18">Plan, split, render, publish</text>
+</svg>

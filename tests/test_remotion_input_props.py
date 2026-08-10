@@ -101,6 +101,7 @@ def test_create_render_task_writes_props_and_reports_status(
     assert result["total_frames"] == 180
     assert result["missing_audio_slide_indexes"] == [0, 1]
     assert "render_tasks/task-1/input-props.json" in result["render_command"]
+    assert "CourseDeck" in result["render_command"]
 
     status = rip.render_task_status(task_id, root=renderer_root)
     assert status["input_props_exists"] is True

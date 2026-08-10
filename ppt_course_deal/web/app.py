@@ -114,6 +114,7 @@ from ppt_course_deal.task_storage import (
     update_task_display_name,
 )
 from ppt_course_deal.video_profiles import video_profile
+from ppt_course_deal.v2_workspace import v2_router
 from ppt_course_deal.transcript_import import (
     MAX_SCRIPT_CHARS as TRANSCRIPT_IMPORT_MAX_CHARS,
     merge_with_resolutions,
@@ -392,13 +393,15 @@ def _source_type_label(source_type: Any) -> str:
 
 def _project_kind_label(project_kind: Any) -> str:
     labels = {
-        "quality": "质检规则",
-        "training": "培训课程",
-        "onboarding": "培训课程",
+        "quality": "知识讲解",
+        "training": "流程教学",
+        "onboarding": "流程教学",
         "retrospective": "作品复盘",
-        "product": "产品介绍",
+        "product": "产品体验",
         "knowledge": "知识讲解",
         "sop": "流程教学",
+        "workflow": "流程教学",
+        "freeform": "自由创作",
         "creative": "创意工作坊",
         "general": "视频项目",
     }
@@ -1105,11 +1108,12 @@ async def _app_lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     application = FastAPI(
-        title="个人影像工坊 API",
-        description="素材入仓、素材拆解、导演脚本、声音轨与 Remotion 成片的本地工作台 API",
+        title="any2video API",
+        description="把文字、图片、音频和课件素材组织为 Remotion 成片的本地工作台 API",
         version="0.1.0",
         lifespan=_app_lifespan,
     )
+    application.include_router(v2_router(get_max_upload_mb()))
 
     @application.get("/api/health")
     def health() -> Dict[str, Any]:
@@ -1122,7 +1126,7 @@ def create_app() -> FastAPI:
     @application.post("/api/parse")
     async def parse_api(
         file: UploadFile = File(...),
-        video_profile_id: str = Form(default="quality", alias="video_profile"),
+        video_profile_id: str = Form(default="knowledge", alias="video_profile"),
     ) -> dict:
         """解析整份 PPTX；若本机具备 LibreOffice + Poppler，则生成逐页 PNG 供预览。"""
         if not file.filename or not file.filename.lower().endswith(".pptx"):
@@ -2364,6 +2368,10 @@ def create_app() -> FastAPI:
         if not index_path.is_file():
             raise HTTPException(status_code=404, detail="前端资源未找到")
         return FileResponse(index_path, headers={"Cache-Control": "no-store, max-age=0"})
+
+    @application.get("/favicon.ico", include_in_schema=False)
+    def serve_favicon() -> Response:
+        return Response(status_code=204, headers={"Cache-Control": "public, max-age=86400"})
 
     @application.get("/remotion-guide")
     def serve_remotion_guide() -> FileResponse:

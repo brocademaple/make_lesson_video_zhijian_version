@@ -1,0 +1,91 @@
+{
+  "schema_version": "video_project.v1",
+  "title": "AIGC 创作者工作台体验",
+  "intent": "product_experience",
+  "format": "vertical_1080x1920",
+  "template_package": "ProductExperience",
+  "materials": [
+    {
+      "id": "dashboard",
+      "type": "screenshot",
+      "relative": "demo/product-dashboard.svg",
+      "label": "工作台首页"
+    },
+    {
+      "id": "variants",
+      "type": "screenshot",
+      "relative": "demo/product-detail.svg",
+      "label": "裂变方案面板"
+    }
+  ],
+  "storyline": ["开场", "展示素材工作台", "放大裂变入口", "总结体验"],
+  "scenes": [
+    {
+      "id": "scene-hero",
+      "title": "一个面向创作者的视频工作台",
+      "shot_type": "hero",
+      "asset_id": "dashboard",
+      "duration_sec": 4,
+      "onscreen_text": "把素材、脚本和视效组合成可复用的视频项目",
+      "narration": "这个工作台的核心不是一键生成，而是把素材、脚本和视效组合成可复用的视频项目。",
+      "motion": {"preset": "slow_push"},
+      "callouts": [{"label": "素材 + 意图 -> 镜头计划 -> 成片"}]
+    },
+    {
+      "id": "scene-dashboard",
+      "title": "先把内容拆成可剪辑的镜头",
+      "shot_type": "screen_focus",
+      "asset_id": "dashboard",
+      "duration_sec": 5,
+      "onscreen_text": "同一批素材，可以生成教程、复盘、种草等不同版本",
+      "narration": "第一步是把内容拆成镜头。每个镜头都能绑定素材、旁白、字幕和视效组件。",
+      "focus_rect": {"x": 52, "y": 25, "width": 42, "height": 18},
+      "effects": [
+        {"type": "focus.highlight_rect", "rect": {"x": 52, "y": 25, "width": 42, "height": 18}, "label": "版本池"}
+      ],
+      "callouts": [{"label": "镜头可以复用"}, {"label": "模板可以切换"}]
+    },
+    {
+      "id": "scene-variants",
+      "title": "LLM 负责裂变，但先落成可编辑计划",
+      "shot_type": "zoom_detail",
+      "asset_id": "variants",
+      "duration_sec": 5,
+      "onscreen_text": "生成多个视频方案，再选择一个进入 Remotion 渲染",
+      "narration": "大模型可以生成多个方案，但不会直接越过你去渲染。它先落成可审阅的 video project。",
+      "focus_rect": {"x": 55, "y": 26, "width": 34, "height": 46},
+      "effects": [
+        {"type": "camera.zoom_to", "rect": {"x": 55, "y": 26, "width": 34, "height": 46}, "scale": 1.65},
+        {"type": "focus.magnify_detail", "rect": {"x": 55, "y": 26, "width": 34, "height": 46}, "label": "A/B 方案"}
+      ],
+      "callouts": [{"label": "教程版"}, {"label": "创作者种草版"}, {"label": "快速演示版"}]
+    },
+    {
+      "id": "scene-takeaway",
+      "title": "固定模板提供稳定交付，裂变逻辑提供变化",
+      "shot_type": "takeaway",
+      "duration_sec": 4,
+      "onscreen_text": "稳定成片 + 多版本内容 = 创作者工作台",
+      "narration": "固定模板负责稳定交付，裂变逻辑负责内容变化。两者组合起来，才是适合个人创作者的视频工作台。",
+      "callouts": [{"label": "Remotion 统一合成"}, {"label": "HyperFrames 后续补创意镜头"}]
+    }
+  ],
+  "variants": [
+    {
+      "id": "primary",
+      "title": "AIGC 创作者工作台体验",
+      "angle": "理性解释版",
+      "pace": "balanced",
+      "template_package": "ProductExperience",
+      "scene_ids": ["scene-hero", "scene-dashboard", "scene-variants", "scene-takeaway"]
+    },
+    {
+      "id": "fast-demo",
+      "title": "30 秒看懂视频裂变工作台",
+      "angle": "快速演示版",
+      "pace": "fast",
+      "template_package": "ProductExperience",
+      "scene_ids": ["scene-hero", "scene-variants", "scene-takeaway"]
+    }
+  ]
+}

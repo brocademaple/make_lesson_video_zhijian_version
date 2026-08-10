@@ -9,8 +9,8 @@ from ppt_course_deal import __version__
 from ppt_course_deal.pipeline import transform_pptx
 
 app = typer.Typer(
-    name="ppt-course",
-    help="个人影像工坊：素材入仓、导演脚本、声音轨与 Remotion 成片",
+    name="any2video",
+    help="any2video：把文字、图片、音频和课件素材组织为 Remotion 成片",
     no_args_is_help=True,
     invoke_without_command=True,
 )
@@ -75,7 +75,7 @@ def cmd_serve(
         help="代码变更后自动重载（默认开启，避免新增接口后仍跑旧进程导致 404）；常驻可无 --no-reload",
     ),
 ) -> None:
-    """启动个人影像工坊 Web 工作台。"""
+    """启动 any2video 本地创作工作台。"""
     try:
         import uvicorn
     except ImportError as e:
@@ -105,6 +105,37 @@ def cmd_serve(
         port=port,
         reload=reload,
     )
+
+
+@app.command("clear-project-data")
+def cmd_clear_project_data(
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        help="确认永久删除列出的运行时项目数据；未提供时只预览",
+    ),
+) -> None:
+    """预览或清空项目、素材、音频、渲染任务和输出文件。"""
+    from ppt_course_deal.data_cleanup import cleanup_project_data
+
+    try:
+        report = cleanup_project_data(execute=yes)
+    except RuntimeError as exc:
+        typer.secho(f"拒绝清理：{exc}", fg=typer.colors.RED)
+        raise typer.Exit(1) from exc
+
+    mode = "已清理" if yes else "预览"
+    typer.secho(
+        f"{mode}：{report['file_count']} 个文件，{report['byte_count']} 字节",
+        fg=typer.colors.GREEN if yes else typer.colors.CYAN,
+    )
+    for target in report["targets"]:
+        typer.echo(
+            f"  {target['label']}：{target['file_count']} 个文件，"
+            f"{target['byte_count']} 字节，{target['path']}"
+        )
+    if not yes:
+        typer.echo("这是只读预览。确认无误后运行：any2video clear-project-data --yes")
 
 
 @app.command("remotion-input-props")
@@ -348,6 +379,37 @@ def cmd_hyperframes_tasks(
     typer.echo("creative_brief.json 与 asset_manifest.json 位于 render_tasks/<task>/creative_assets/<scene>/")
 
 
+@app.command("video-project-props")
+def cmd_video_project_props(
+    project_json: Path = typer.Argument(..., help="通用 video_project.json 路径", exists=True),
+    output: Path = typer.Option(..., "-o", "--output", help="输出 Remotion input-props.json"),
+    variant: str = typer.Option("primary", "--variant", help="选择 variants 中的版本 ID"),
+    fps: int = typer.Option(30, "--fps", help="Remotion fps"),
+    workspace_root: Optional[Path] = typer.Option(
+        None,
+        "-w",
+        "--workspace-root",
+        help="素材路径转相对路径时使用的工作区根目录；默认 video_project.json 所在目录",
+    ),
+) -> None:
+    """将通用 creator video_project.json 转成 Remotion input-props。"""
+    from ppt_course_deal.video_project import write_video_project_props
+
+    try:
+        props = write_video_project_props(
+            project_json,
+            output,
+            variant_id=variant,
+            fps=fps,
+            workspace_root=workspace_root,
+        )
+    except ValueError as e:
+        typer.secho(str(e), fg=typer.colors.RED)
+        raise typer.Exit(1) from e
+    typer.secho(f"已写入 {output}", fg=typer.colors.GREEN)
+    typer.echo(f"Composition：ProductExperienceVideo；镜头数：{len(props.get('scenes') or [])}")
+
+
 @app.command("demo-dual-engine")
 def cmd_demo_dual_engine(
     render: bool = typer.Option(
@@ -384,7 +446,7 @@ def cmd_import_pdf_task(
     pdf_path: Path = typer.Argument(..., help="输入 PDF 文件路径", exists=True),
     name: Optional[str] = typer.Option(None, "--name", help="项目库中显示的名称"),
     max_pages: int = typer.Option(16, "--max-pages", help="最多导入多少页；0 表示全部页"),
-    profile: str = typer.Option("training", "--profile", help="视频画像：knowledge/product/training/quality 等；旧 onboarding/sales 仍兼容"),
+    profile: str = typer.Option("knowledge", "--profile", help="视频画像：knowledge/product/workflow/freeform 等；旧 training/quality 仍兼容映射"),
     no_director: bool = typer.Option(False, "--no-director", help="只导入项目，不生成导演脚本"),
     no_render_plan: bool = typer.Option(False, "--no-render-plan", help="不生成 Remotion render_plan/input-props"),
 ) -> None:

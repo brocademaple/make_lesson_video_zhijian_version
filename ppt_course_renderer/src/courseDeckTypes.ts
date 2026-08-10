@@ -86,7 +86,7 @@ export type CourseDeckSlideSpec = {
   };
   /** 初版 scene-aware layout：full_slide / rule_card / split_panel / case_dialogue / summary。 */
   layout?: "full_slide" | "rule_card" | "split_panel" | "case_dialogue" | "summary" | string;
-  /** 高风险规则、金额、处罚等标记；模板仅做轻量提示，不改变原 PPT 证据。 */
+  /** 旧任务兼容字段：需要强调的注意事项标记。 */
   riskFlags?: string[];
   /** 导演希望屏幕上保留的主文本，Renderer 会按 layout 做不同密度呈现。 */
   onscreenText?: string;
@@ -98,7 +98,7 @@ export type CourseDeckSlideSpec = {
   highlights?: string[];
   /** 原文证据框，企业培训场景里用于保留规则和金额来源。 */
   evidencePanel?: EvidencePanel;
-  /** 风险核对条：处罚、金额、边界条件等必须可见。 */
+  /** 旧任务兼容字段：重点提示条。 */
   riskBadge?: RiskBadge;
   /** 章节/镜头转场意图。 */
   transition?: SceneTransition;

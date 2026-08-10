@@ -168,7 +168,7 @@
   var AUDIO_GEN_LS_KEY = "ppt_course_audio_gen_overrides";
   var HOME_PROFILE_LS_KEY = "zhike-home-video-profile";
   var HOME_PROFILE_VERSION_LS_KEY = "zhike-home-video-profile-version";
-  var HOME_PROFILE_VERSION = "2";
+  var HOME_PROFILE_VERSION = "3";
   var HOME_PROFILES = {
     knowledge: {
       title: "知识讲解",
@@ -185,46 +185,25 @@
       detail: "适合 Side Project 复盘、阶段汇报和个人内容沉淀，把材料组织成有起承转合的项目故事。",
     },
     product: {
-      title: "产品介绍",
-      prompt: "产品介绍：使用场景、核心能力和差异化价值优先呈现",
+      title: "产品体验",
+      prompt: "产品体验：界面路径、功能亮点和使用感受优先呈现",
       duration: "2-5 分钟",
-      motion: "场景演示 + 功能聚焦",
-      detail: "适合做产品 demo、功能发布、工具介绍和自媒体短视频，把素材转成更像作品的讲解片。",
+      motion: "界面变焦 + 功能聚焦",
+      detail: "适合做产品 demo、功能发布、工具介绍和自媒体短视频，把截图/录屏转成更有镜头感的体验片。",
     },
-    training: {
-      title: "培训课程",
-      prompt: "培训课程：术语解释、流程顺序和易错点优先讲清楚",
-      duration: "5-12 分钟",
-      motion: "步骤引导 + 章节转场",
-      detail: "适合新人培训、流程教学和内部宣讲，保留课件结构，同时把口播、字幕和节奏重排得更顺。",
-    },
-    quality: {
-      title: "质检规则",
-      prompt: "质检规则：风险点、案例和处罚口径优先保真",
-      duration: "3-5 分钟",
-      motion: "证据画面 + 风险标注",
-      detail: "这是保留的业务模板：适合制度、质检、合规课件，优先讲清红线、金额、处罚和原页证据。",
-    },
-    onboarding: {
-      title: "带新人",
-      prompt: "带新人：术语解释、流程顺序和易错点优先讲清楚",
-      duration: "5-8 分钟",
-      motion: "步骤引导 + 重点词入场",
-      detail: "上传后会把专业词、操作步骤和常见错误拆开讲，方便新人跟着课件快速入门。",
-    },
-    sop: {
-      title: "教流程",
-      prompt: "教流程：动作顺序、检查点和交付物优先拆开",
-      duration: "4-6 分钟",
-      motion: "横向流程 + 局部跟随",
-      detail: "上传后会按先后顺序拆动作、检查点和交付物，适合系统操作、流程说明和标准动作培训。",
-    },
-    sales: {
-      title: "产品介绍",
-      prompt: "产品介绍：卖点、异议处理和案例亮点优先提炼",
+    workflow: {
+      title: "流程教学",
+      prompt: "流程教学：操作顺序、界面变化和关键节点优先拆开",
       duration: "3-6 分钟",
-      motion: "价值聚焦 + 案例对照",
-      detail: "上传后会提炼卖点、客户异议和案例亮点，适合做成产品讲解、功能 demo 或业务案例视频。",
+      motion: "步骤引导 + 局部变焦",
+      detail: "适合工具教程、功能路径和工作流讲解，把操作过程拆成可跟随的镜头。",
+    },
+    freeform: {
+      title: "自由创作",
+      prompt: "自由创作：围绕一个主题自由组合素材、脚本、视效和节奏",
+      duration: "1-8 分钟",
+      motion: "混合素材 + 视效组合",
+      detail: "适合视觉随笔、观点短片和创意实验，后续可接入 LLM 生成多个版本。",
     },
   };
   var currentHomeProfile = readHomeProfile();
@@ -310,11 +289,11 @@
   })();
 
   var HELP_PRODUCT_BODY =
-    "个人影像工坊会把 PPT、PDF、图片和声音材料沉淀为作品项目：先做素材预览，再生成导演计划、声音轨和最终成片。PPTX 可直接上传；PDF 可用命令导入。";
+    "any2video 会把 PPT、PDF、图片和声音材料沉淀为作品项目：先做素材预览，再生成导演计划、声音轨和最终成片。PPTX 可直接上传；PDF 可用命令导入。";
   var HELP_UPLOAD_BODY =
     "首页优先展示**作品项目**；点击项目打开预览。上传解析后左侧切换为**素材缩略图**列表，右侧为整页预览，「当前页解析文本」可折叠查看抽取文本（默认展开）。";
   var HELP_CLI_BODY =
-    "可在终端执行命令行转换：ppt-course transform 输入.pptx，或用 ppt-course import-pdf-task 输入.pdf 把 PDF 入库。无需打开本页面。";
+    "可在终端执行命令行转换：any2video transform 输入.pptx，或用 any2video import-pdf-task 输入.pdf 把 PDF 入库。旧命令 ppt-course 继续兼容。";
   var HELP_TASK_LIST_BODY =
     "导入并成功解析后，文件副本与解析结果会保存在项目根目录下的 ppt_course_data/tasks/（每个作品项目一个子文件夹），并出现在首页**作品项目**区。点击某个项目会进入工作台预览（左侧为素材缩略图，右侧为大图和解析文本）。\n\n列表为空表示尚无记录；可在服务端设置环境变量 PPT_COURSE_DATA 改用其它数据根目录。";
   var HELP_AUDIO_SEGMENTS_BODY =
@@ -772,16 +751,18 @@
   function taskKindLabel(t) {
     var kind = String((t && t.project_kind) || "").toLowerCase();
     var labels = {
-      quality: "质检规则",
-      onboarding: "培训课程",
+      quality: "知识讲解",
+      onboarding: "流程教学",
       sop: "流程教学",
-      sales: "产品介绍",
+      sales: "产品体验",
       creative: "创意工作坊",
       general: "视频项目",
       knowledge: "知识讲解",
       retrospective: "作品复盘",
-      product: "产品介绍",
-      training: "培训课程",
+      product: "产品体验",
+      training: "流程教学",
+      workflow: "流程教学",
+      freeform: "自由创作",
     };
     return labels[kind] || "视频项目";
   }
@@ -941,6 +922,9 @@
         return "knowledge";
       }
       var saved = localStorage.getItem(HOME_PROFILE_LS_KEY);
+      if (saved === "quality") saved = "knowledge";
+      if (saved === "training" || saved === "onboarding" || saved === "sop") saved = "workflow";
+      if (saved === "sales") saved = "product";
       if (saved && HOME_PROFILES[saved]) return saved;
     } catch (_) {}
     return "knowledge";
@@ -1609,7 +1593,7 @@
       var riskItems = (slide.risk_items || [])
         .slice(0, 3)
         .map(function (item) {
-          return ((item && item.risk_type) || "risk") + "：" + ((item && item.quote) || "");
+          return ((item && item.risk_type) || "note") + "：" + ((item && item.quote) || "");
         })
         .join("\n");
         var assetTags = (slide.assets || [])
@@ -1883,7 +1867,7 @@
           "<p><strong>画面策略</strong>：" +
           escapeHtmlText((layout ? layout + " · " : "") + vs) +
           "</p>" +
-          "<p><strong>风险标记</strong>：" +
+          "<p><strong>注意事项</strong>：" +
           escapeHtmlText(rf || "—") +
           "</p>" +
           (callouts
@@ -1893,13 +1877,13 @@
               "</pre>"
             : "") +
           (riskItems
-            ? "<p><strong>风险证据</strong></p>" +
+            ? "<p><strong>重点依据</strong></p>" +
               '<pre class="director-scene-card__block">' +
               escapeHtmlText(riskItems) +
               "</pre>"
             : "") +
           (ev
-            ? "<p><strong>原文证据</strong></p>" +
+            ? "<p><strong>素材依据</strong></p>" +
               '<pre class="director-scene-card__block">' +
               escapeHtmlText(ev) +
               "</pre>"
@@ -2217,7 +2201,7 @@
     var outputReady = Boolean(data && data.output_video_exists);
     var explanation = (data && data.explanation) || {};
     var summary = explanation.summary || {};
-    var risks = Array.isArray(explanation.risks) ? explanation.risks : [];
+    var notices = Array.isArray(explanation.risks) ? explanation.risks : [];
     var renderPlanRaw = data && data.render_plan_raw ? JSON.stringify(data.render_plan_raw, null, 2) : "尚未生成 render_plan.json";
     var inputPropsRaw = data && data.input_props_raw ? JSON.stringify(data.input_props_raw, null, 2) : "尚未生成 input-props.json";
     remotionSummary.innerHTML =
@@ -2250,9 +2234,9 @@
       escapeHtmlText(String(summary.fallback_count || 0)) +
       "</b>回退</span>" +
       "</div>" +
-      (risks.length
+      (notices.length
         ? '<div class="render-explain__risks">' +
-          risks.map(function (risk) { return "<p>" + escapeHtmlText(risk) + "</p>"; }).join("") +
+          notices.map(function (notice) { return "<p>" + escapeHtmlText(notice) + "</p>"; }).join("") +
           "</div>"
         : "") +
       renderRenderTimeline(explanation) +
