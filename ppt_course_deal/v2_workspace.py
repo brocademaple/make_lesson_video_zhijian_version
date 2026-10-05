@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import threading
+from functools import wraps
 import math
 import mimetypes
 import os
@@ -21,6 +23,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from ppt_course_deal.scene_speech import (QuickPlanBody, SpeechBody, RestoreSpeechBody, generate_scene_speech, restore_scene_speech, speech_options, validate_speech)
 from ppt_course_deal.audio_duration import probe_audio_duration_seconds
 from ppt_course_deal.execution_kernel import (
     ENGINE_HYBRID,
@@ -48,6 +51,23 @@ DEFAULT_FPS = 30
 DEFAULT_NO_AUDIO_SECONDS = 4.0
 MAX_MVP_TEXT_CHARS = 300
 MAX_MVP_IMAGES = 8
+
+
+_PROJECT_LOCKS: dict[str, threading.RLock] = {}
+_LOCKS_GUARD = threading.Lock()
+
+
+def project_lock(project_id: str):
+    with _LOCKS_GUARD:
+        return _PROJECT_LOCKS.setdefault(project_id, threading.RLock())
+
+
+def locked_project(func):
+    @wraps(func)
+    def locked(project_id, *args, **kwargs):
+        with project_lock(project_id):
+            return func(project_id, *args, **kwargs)
+    return locked
 
 
 def workspace_root() -> Path:
@@ -89,7 +109,9 @@ def read_json(path: Path, default: Any) -> Any:
 
 def write_json(path: Path, data: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    temporary = path.with_name(path.name + "." + uuid4().hex + ".tmp")
+    temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    temporary.replace(path)
 
 
 def clean_text(value: Any, limit: int = 200) -> str:
@@ -548,7 +570,7 @@ def _latest_asset(items: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
     return items[-1] if items else None
 
 
-def _split_copy_for_images(text: str, image_count: int) -> tuple[list[str], list[str]]:
+def _split_copy_for_images(text: str, image_count: int, max_chars: int = 90, repeat: bool = True) -> tuple[list[str], list[str]]:
     normalized = text.strip()
     chunks = [part.strip() for part in re.split(r"(?:\r?\n)+|(?<=[。！？!?])\s*", normalized) if part.strip()]
     chunks = chunks or [normalized]
@@ -560,31 +582,34 @@ def _split_copy_for_images(text: str, image_count: int) -> tuple[list[str], list
             grouped.append("".join(chunks[start:end]))
         chunks = grouped
     elif len(chunks) < image_count:
-        chunks = [chunks[index % len(chunks)] for index in range(image_count)]
+        chunks = [chunks[index % len(chunks)] for index in range(image_count)] if repeat else chunks + [""] * (image_count - len(chunks))
 
     warnings = []
     result = []
     for index, chunk in enumerate(chunks[:image_count]):
-        shortened = clean_text(chunk, 90)
+        shortened = clean_text(chunk, max_chars)
         if shortened != " ".join(chunk.split()):
             warnings.append(f"第 {index + 1} 段屏幕文字已截断")
         result.append(shortened)
     return result, warnings
 
 
-def build_quick_scene_plan(project_id: str, fps: int = DEFAULT_FPS) -> dict[str, Any]:
+@locked_project
+def build_quick_scene_plan(project_id: str, fps: int = DEFAULT_FPS, audio_mode: str = "imported") -> dict[str, Any]:
     project = ensure_project(project_id)
     groups = _asset_groups(list_assets(project_id))
     text_asset = _latest_asset(groups.get("text", []))
     images = groups.get("image", [])
-    audio_asset = _latest_asset(groups.get("audio", []))
+    if audio_mode not in {"imported", "segments"}:
+        raise HTTPException(400, "配音方式仅支持 imported / segments")
+    audio_asset = _latest_asset([a for a in groups.get("audio", []) if a.get("role") != "scene_speech"])
 
     missing = []
     if not text_asset:
         missing.append("文字")
     if not images:
         missing.append("图片")
-    if not audio_asset:
+    if not audio_asset and audio_mode == "imported":
         missing.append("旁白音频")
     if missing:
         raise HTTPException(status_code=400, detail="缺少必需素材：" + "、".join(missing))
@@ -596,7 +621,7 @@ def build_quick_scene_plan(project_id: str, fps: int = DEFAULT_FPS) -> dict[str,
         raise HTTPException(status_code=400, detail="文字素材不能为空")
     if len(content) > MAX_MVP_TEXT_CHARS:
         raise HTTPException(status_code=400, detail=f"MVP 文本最多 {MAX_MVP_TEXT_CHARS} 字")
-    duration = audio_asset.get("duration_sec")
+    duration = audio_asset.get("duration_sec") if audio_mode == "imported" and audio_asset else 4.0 * len(images)
     if not isinstance(duration, (int, float)) or duration <= 0:
         raise HTTPException(status_code=400, detail="无法解析旁白音频时长，请上传有效的 MP3、WAV 或 M4A")
 
@@ -604,7 +629,7 @@ def build_quick_scene_plan(project_id: str, fps: int = DEFAULT_FPS) -> dict[str,
     base_frames, remainder = divmod(total_frames, len(images))
     if base_frames < 1:
         raise HTTPException(status_code=400, detail="旁白音频过短，无法分配给当前图片")
-    copy_segments, warnings = _split_copy_for_images(content, len(images))
+    copy_segments, warnings = _split_copy_for_images(content, len(images), max_chars=500 if audio_mode == "segments" else 90, repeat=audio_mode != "segments")
     scenes = []
     assigned_frames = 0
     for index, image in enumerate(images):
@@ -614,10 +639,10 @@ def build_quick_scene_plan(project_id: str, fps: int = DEFAULT_FPS) -> dict[str,
         scenes.append(
             {
                 "id": f"scene-{index + 1:03d}",
-                "title": clean_text(copy, 42),
+                "title": clean_text(copy or image.get("title"), 42),
                 "purpose": "自动图文口播",
                 "asset_ids": [text_asset["id"], image["id"]],
-                "onscreen_text": copy,
+                "onscreen_text": clean_text(copy or image.get("title"), 90),
                 "narration": copy,
                 "subtitle": copy,
                 "duration_frames": frames,
@@ -633,7 +658,8 @@ def build_quick_scene_plan(project_id: str, fps: int = DEFAULT_FPS) -> dict[str,
         "project_id": project_id,
         "generated_by": "quick_compose_v1",
         "primary_text_asset_id": text_asset["id"],
-        "primary_audio_asset_id": audio_asset["id"],
+        "primary_audio_asset_id": audio_asset["id"] if audio_mode == "imported" else "",
+        "audio_mode": audio_mode,
         "audio_duration_sec": round(float(duration), 6),
         "fps": fps,
         "total_frames": assigned_frames,
@@ -647,6 +673,7 @@ def build_quick_scene_plan(project_id: str, fps: int = DEFAULT_FPS) -> dict[str,
     return plan
 
 
+@locked_project
 def build_scene_plan(project_id: str) -> dict[str, Any]:
     project = ensure_project(project_id)
     brief = read_json(brief_path(project_id), {})
@@ -695,6 +722,7 @@ def build_scene_plan(project_id: str) -> dict[str, Any]:
     return plan
 
 
+@locked_project
 def update_scene(project_id: str, scene_id: str, body: SceneUpdateBody) -> dict[str, Any]:
     project = ensure_project(project_id)
     plan = read_json(scene_plan_path(project_id), {"schema_version": "scene_plan.v1", "scenes": []})
@@ -728,6 +756,8 @@ def update_scene(project_id: str, scene_id: str, body: SceneUpdateBody) -> dict[
     for key, value in updates.items():
         if value is not None:
             scene[key] = value
+    if scene.get("speech"):
+        scene["speech"]["stale"] = scene["speech"].get("text") != str(scene.get("narration") or "").strip()
     if "duration_sec" in updates and updates["duration_sec"] is not None:
         fps = int(plan.get("fps") or DEFAULT_FPS)
         scene["duration_frames"] = max(1, round(float(scene["duration_sec"]) * fps))
@@ -773,6 +803,7 @@ def _default_scene(project_id: str, scenes: list[dict[str, Any]]) -> dict[str, A
     }
 
 
+@locked_project
 def create_scene(project_id: str, body: SceneCreateBody) -> dict[str, Any]:
     project = ensure_project(project_id)
     plan = read_json(scene_plan_path(project_id), {"schema_version": "scene_plan.v2", "scenes": []})
@@ -801,6 +832,7 @@ def create_scene(project_id: str, body: SceneCreateBody) -> dict[str, Any]:
     return scene
 
 
+@locked_project
 def duplicate_scene(project_id: str, scene_id: str) -> dict[str, Any]:
     project = ensure_project(project_id)
     plan = read_json(scene_plan_path(project_id), {"schema_version": "scene_plan.v2", "scenes": []})
@@ -827,6 +859,7 @@ def duplicate_scene(project_id: str, scene_id: str) -> dict[str, Any]:
     raise HTTPException(status_code=404, detail="镜头不存在")
 
 
+@locked_project
 def delete_scene(project_id: str, scene_id: str) -> dict[str, Any]:
     project = ensure_project(project_id)
     plan = read_json(scene_plan_path(project_id), {"schema_version": "scene_plan.v2", "scenes": []})
@@ -846,6 +879,7 @@ def delete_scene(project_id: str, scene_id: str) -> dict[str, Any]:
     return {"deleted_scene_id": scene_id, "scene_count": len(remaining)}
 
 
+@locked_project
 def reorder_scenes(project_id: str, body: SceneOrderBody) -> list[dict[str, Any]]:
     project = ensure_project(project_id)
     plan = read_json(scene_plan_path(project_id), {"schema_version": "scene_plan.v2", "scenes": []})
@@ -1088,8 +1122,14 @@ def build_video_project(project_id: str, fps: int, no_audio_seconds: float) -> d
     scenes = plan.get("scenes") if isinstance(plan, dict) else []
     if not isinstance(scenes, list) or not scenes:
         raise HTTPException(status_code=400, detail="请先生成或创建 Scene")
+    validate_speech(plan)
     apply_scene_routes(scenes)
     assets = {asset["id"]: asset for asset in list_assets(project_id)}
+    if plan.get("audio_mode") == "segments":
+        for scene in scenes:
+            speech = scene.get("speech") or {}
+            if speech and not Path(str(assets.get(speech["asset_id"], {}).get("path") or "")).is_file():
+                raise HTTPException(409, "配音文件不存在，请重新生成后导出")
     materials = []
     converted_scenes = []
     for asset in assets.values():
@@ -1142,7 +1182,7 @@ def build_video_project(project_id: str, fps: int, no_audio_seconds: float) -> d
                 "renderer_resolved": engine.get("resolved") or ENGINE_REMOTION,
                 "renderer_status": engine.get("status") or "ready",
                 "renderer_reason": engine.get("reason") or "",
-                "duration_frames": raw.get("duration_frames"),
+                "duration_frames": raw.get("duration_frames") if int(plan.get("fps") or DEFAULT_FPS) == fps else math.ceil(float(duration) * fps),
                 "duration_sec": float(duration or no_audio_seconds),
                 "shot_type": "hero" if engine.get("resolved") == ENGINE_HYPERFRAMES else "screen_focus",
                 "onscreen_text": raw.get("onscreen_text") or raw.get("subtitle") or raw.get("title") or "",
@@ -1269,6 +1309,7 @@ def create_render_output(project_id: str, body: RenderBody) -> dict[str, Any]:
         build_quick_scene_plan(project_id, DEFAULT_FPS)
         current_plan = read_json(scene_plan_path(project_id), {"scenes": []})
         current_scenes = current_plan.get("scenes") if isinstance(current_plan, dict) else []
+    validate_speech(current_plan)
     if isinstance(current_scenes, list):
         apply_scene_routes(current_scenes)
     creative_scene_ids = [
@@ -1481,8 +1522,20 @@ def v2_router(max_upload_mb: int) -> APIRouter:
         return {"scene_plan": build_scene_plan(project_id), "project": detail_project(project_id)}
 
     @router.post("/projects/{project_id}/scene-plan/quick")
-    def post_quick_scene_plan(project_id: str) -> dict[str, Any]:
-        return {"scene_plan": build_quick_scene_plan(project_id), "project": detail_project(project_id)}
+    def post_quick_scene_plan(project_id: str, body: QuickPlanBody = QuickPlanBody()) -> dict[str, Any]:
+        return {"scene_plan": build_quick_scene_plan(project_id, audio_mode=body.audio_mode), "project": detail_project(project_id)}
+
+    @router.get("/speech-options")
+    def get_speech_options() -> dict[str, Any]:
+        return speech_options()
+
+    @router.post("/projects/{project_id}/scenes/{scene_id}/speech")
+    def post_scene_speech(project_id: str, scene_id: str, body: SpeechBody) -> dict[str, Any]:
+        return {"scene": generate_scene_speech(project_id, scene_id, body), "project": detail_project(project_id)}
+
+    @router.post("/projects/{project_id}/scenes/{scene_id}/speech/restore")
+    def post_restore_speech(project_id: str, scene_id: str, body: RestoreSpeechBody) -> dict[str, Any]:
+        return {"scene": restore_scene_speech(project_id, scene_id, body), "project": detail_project(project_id)}
 
     @router.post("/projects/{project_id}/scenes")
     def post_scene(project_id: str, body: SceneCreateBody) -> dict[str, Any]:

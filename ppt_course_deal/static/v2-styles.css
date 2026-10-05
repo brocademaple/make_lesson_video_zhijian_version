@@ -2120,3 +2120,16 @@ textarea:focus {
     -webkit-backdrop-filter: none;
   }
 }
+
+/* Per-scene speech stays next to the editable narration. */
+.speech-panel {padding:16px; border-radius:14px; background:var(--surface-soft, #f4f5f7); display:grid; gap:12px; min-width:0;}
+.speech-heading {display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px; font-size:13px;}
+.speech-heading span {color:#626978;}
+.speech-controls {display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px;}
+.speech-controls label {display:grid; gap:6px; min-width:0; font-size:12px;}
+.speech-controls select,.speech-history select {width:100%; min-width:0; padding:9px; border:1px solid #dfe2e7; border-radius:8px; background:white; font:inherit;}
+.speech-panel .audio-player {width:100%; min-width:0;}
+.speech-history {display:flex; gap:10px; align-items:center;}
+.speech-error {color:#a63224; font-size:13px; line-height:1.6; margin:0;}
+[hidden] {display:none !important;}
+@media (max-width:640px) {.speech-controls {grid-template-columns:1fr;} .speech-history {flex-direction:column; align-items:stretch;}}
