@@ -27,3 +27,4 @@ ppt_course_renderer/render_tasks/*
 !ppt_course_renderer/render_tasks/product-experience-demo/*.json
 ppt_course_renderer/public/render_tasks
 ppt_course_renderer/public/v2_assets/
+ppt_course_renderer/public/v2_creative/

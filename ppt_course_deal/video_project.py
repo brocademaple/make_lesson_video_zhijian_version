@@ -160,6 +160,8 @@ def _scene_to_props(
     material = materials.get(material_id, {}) if material_id else {}
     audio_id = clean_text(scene.get("audio_asset_id") or scene.get("audio_id"), limit=80)
     audio = materials.get(audio_id, {}) if audio_id else {}
+    creative_id = clean_text(scene.get("creative_asset_id"), limit=80)
+    creative_asset = materials.get(creative_id, {}) if creative_id else {}
     effects = scene.get("effects") if isinstance(scene.get("effects"), list) else []
     callouts = scene.get("callouts") if isinstance(scene.get("callouts"), list) else []
     return {
@@ -172,6 +174,11 @@ def _scene_to_props(
         "durationSec": round(float(duration_sec), 3),
         "asset": material,
         "audio": audio,
+        "creativeAsset": creative_asset,
+        "rendererRequested": clean_text(scene.get("renderer_requested") or "auto", limit=24),
+        "rendererResolved": clean_text(scene.get("renderer_resolved") or "remotion", limit=24),
+        "rendererStatus": clean_text(scene.get("renderer_status") or "ready", limit=24),
+        "rendererReason": clean_text(scene.get("renderer_reason"), limit=240),
         "motion": scene.get("motion") if isinstance(scene.get("motion"), dict) else {},
         "focusRect": scene.get("focus_rect") if isinstance(scene.get("focus_rect"), dict) else {},
         "effects": effects,

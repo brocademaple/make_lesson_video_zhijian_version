@@ -1,8 +1,31 @@
 # any2video
 
-面向个人 / AIGC 创作者的本地视频生成工作台：把文字、图片、音频和课件素材组织成镜头计划，再交给 **Remotion** 生成视频成片。
+面向个人 / AIGC 创作者的本地视频生成工作台：把文字、图片、音频和课件素材组织成可执行镜头计划，由 **Remotion + HyperFrames** 本地双引擎生成视频成片。
 
 详细已实现能力与版本说明见：**[docs/已实现功能说明.md](docs/已实现功能说明.md)**。
+
+2026-10-05 实际测试、GitHub 备份状态与开源对照见：[项目进度与继续投入判断](docs/2026-10-05-项目进度与继续投入判断.md)。macOS 可双击仓库中的 `启动-any2video.command`，它会选择 8878～8898 的空闲端口并用 Comet 打开工作台。
+
+## V0.5：逐镜配音（第一阶段）
+
+文字和图片即可生成镜头初稿，选择“按镜头生成配音”后，在导演台逐段选中文声音和语速、试听、重做，或用“补齐配音”生成缺少和过期的段落。默认使用需要联网的 Edge；已配置的 MiniMax 可选。生成成功会按实际音频长度更新镜头，旧配音保留并可恢复。修改旁白后，过期配音会阻止导出；生成失败保留原音频。
+
+开发阶段、验收结果和复现命令见 [分阶段开发与验收](docs/分阶段开发与验收.md)。逐句字幕、直接播放导演稿、材料导入和导出恢复列在后续阶段。
+
+## V0.4：本地智能执行内核
+
+V0.4 为每个镜头增加可解释的引擎决策：`auto` 会根据镜头位置、内容风险和表达目的，在 Remotion 稳定模板、HyperFrames 创意动效与双引擎叠加之间路由；导演也可逐镜覆盖。HyperFrames 未安装或执行失败时，创意源码仍会保存在本机，最终成片自动使用 Remotion 安全回退。
+
+每次“准备创意镜头”或“生成成片”都会写入 `video_workspace/projects/<project_id>/runs/run-*.json`，记录路由、创意镜头、渲染计划、最终渲染和文件验证状态。导演台会显示本机执行能力、路由原因、镜头状态和最近一次运行进度。
+
+```bash
+any2video capabilities
+any2video prepare-scenes <project_id>               # 只生成 HTML、DESIGN.md 与 brief
+any2video prepare-scenes <project_id> --execute     # 使用已安装的 HyperFrames
+any2video project-runs <project_id>
+```
+
+详细协议与目录见 [V0.4 本地执行内核](docs/v0.4-local-execution-kernel.md)。
 
 ## V0.3：可编辑导演台
 
@@ -15,7 +38,7 @@ V0.3 把“生成镜头初稿”与“生成成片”拆成两个明确阶段。
 3. 编辑、增删、复制或重排镜头并保存。
 4. 点“生成成片”，在右侧预览或打开生成的 MP4。
 
-V0.3 数据默认保存在 `video_workspace/projects/<project_id>/`；可通过 `ANY2VIDEO_WORKSPACE_ROOT` 覆盖。
+项目数据默认保存在 `video_workspace/projects/<project_id>/`；可通过 `ANY2VIDEO_WORKSPACE_ROOT` 覆盖。
 
 ---
 

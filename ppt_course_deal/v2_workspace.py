@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import threading
+from functools import wraps
 import math
 import mimetypes
 import os
@@ -21,7 +23,23 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from ppt_course_deal.scene_speech import (QuickPlanBody, SpeechBody, RestoreSpeechBody, generate_scene_speech, restore_scene_speech, speech_options, validate_speech)
 from ppt_course_deal.audio_duration import probe_audio_duration_seconds
+from ppt_course_deal.execution_kernel import (
+    ENGINE_HYBRID,
+    ENGINE_HYPERFRAMES,
+    ENGINE_REMOTION,
+    VALID_ENGINES,
+    apply_scene_routes,
+    capability_by_id,
+    create_run,
+    discover_capabilities,
+    finish_run,
+    hyperframes_command,
+    list_runs,
+    update_run_step,
+    write_hyperframes_scene,
+)
 from ppt_course_deal.video_project import write_video_project_props
 
 
@@ -33,6 +51,23 @@ DEFAULT_FPS = 30
 DEFAULT_NO_AUDIO_SECONDS = 4.0
 MAX_MVP_TEXT_CHARS = 300
 MAX_MVP_IMAGES = 8
+
+
+_PROJECT_LOCKS: dict[str, threading.RLock] = {}
+_LOCKS_GUARD = threading.Lock()
+
+
+def project_lock(project_id: str):
+    with _LOCKS_GUARD:
+        return _PROJECT_LOCKS.setdefault(project_id, threading.RLock())
+
+
+def locked_project(func):
+    @wraps(func)
+    def locked(project_id, *args, **kwargs):
+        with project_lock(project_id):
+            return func(project_id, *args, **kwargs)
+    return locked
 
 
 def workspace_root() -> Path:
@@ -74,7 +109,9 @@ def read_json(path: Path, default: Any) -> Any:
 
 def write_json(path: Path, data: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    temporary = path.with_name(path.name + "." + uuid4().hex + ".tmp")
+    temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    temporary.replace(path)
 
 
 def clean_text(value: Any, limit: int = 200) -> str:
@@ -146,6 +183,14 @@ def render_plan_path(project_id: str) -> Path:
 
 def outputs_dir(project_id: str) -> Path:
     return project_dir(project_id) / "outputs"
+
+
+def creative_assets_dir(project_id: str) -> Path:
+    return renderer_root() / "render_tasks" / f"v2-{project_id}" / "creative_assets"
+
+
+def creative_public_dir(project_id: str) -> Path:
+    return renderer_root() / "public" / "v2_creative" / project_id
 
 
 def output_meta_path(project_id: str, output_id: str) -> Path:
@@ -282,13 +327,17 @@ def list_projects() -> list[dict[str, Any]]:
 
 def detail_project(project_id: str) -> dict[str, Any]:
     project = ensure_project(project_id)
+    scene_plan = read_json(scene_plan_path(project_id), {"scenes": []})
+    if isinstance(scene_plan, dict) and isinstance(scene_plan.get("scenes"), list):
+        apply_scene_routes(scene_plan["scenes"])
     return {
         **project_summary(project),
         "assets": list_assets(project_id),
         "brief": read_json(brief_path(project_id), {}),
-        "scene_plan": read_json(scene_plan_path(project_id), {"scenes": []}),
+        "scene_plan": scene_plan,
         "render_plan": read_json(render_plan_path(project_id), {}),
         "outputs": list_outputs(project_id),
+        "runs": list_runs(project_dir(project_id), limit=12),
     }
 
 
@@ -330,6 +379,12 @@ class SceneCreateBody(SceneUpdateBody):
 
 class SceneOrderBody(BaseModel):
     scene_ids: list[str]
+
+
+class PrepareScenesBody(BaseModel):
+    execute: bool = True
+    allow_on_demand: bool = False
+    timeout_sec: int = Field(default=180, ge=5, le=60 * 20)
 
 
 class RenderPlanBody(BaseModel):
@@ -515,7 +570,7 @@ def _latest_asset(items: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
     return items[-1] if items else None
 
 
-def _split_copy_for_images(text: str, image_count: int) -> tuple[list[str], list[str]]:
+def _split_copy_for_images(text: str, image_count: int, max_chars: int = 90, repeat: bool = True) -> tuple[list[str], list[str]]:
     normalized = text.strip()
     chunks = [part.strip() for part in re.split(r"(?:\r?\n)+|(?<=[。！？!?])\s*", normalized) if part.strip()]
     chunks = chunks or [normalized]
@@ -527,31 +582,34 @@ def _split_copy_for_images(text: str, image_count: int) -> tuple[list[str], list
             grouped.append("".join(chunks[start:end]))
         chunks = grouped
     elif len(chunks) < image_count:
-        chunks = [chunks[index % len(chunks)] for index in range(image_count)]
+        chunks = [chunks[index % len(chunks)] for index in range(image_count)] if repeat else chunks + [""] * (image_count - len(chunks))
 
     warnings = []
     result = []
     for index, chunk in enumerate(chunks[:image_count]):
-        shortened = clean_text(chunk, 90)
+        shortened = clean_text(chunk, max_chars)
         if shortened != " ".join(chunk.split()):
             warnings.append(f"第 {index + 1} 段屏幕文字已截断")
         result.append(shortened)
     return result, warnings
 
 
-def build_quick_scene_plan(project_id: str, fps: int = DEFAULT_FPS) -> dict[str, Any]:
+@locked_project
+def build_quick_scene_plan(project_id: str, fps: int = DEFAULT_FPS, audio_mode: str = "imported") -> dict[str, Any]:
     project = ensure_project(project_id)
     groups = _asset_groups(list_assets(project_id))
     text_asset = _latest_asset(groups.get("text", []))
     images = groups.get("image", [])
-    audio_asset = _latest_asset(groups.get("audio", []))
+    if audio_mode not in {"imported", "segments"}:
+        raise HTTPException(400, "配音方式仅支持 imported / segments")
+    audio_asset = _latest_asset([a for a in groups.get("audio", []) if a.get("role") != "scene_speech"])
 
     missing = []
     if not text_asset:
         missing.append("文字")
     if not images:
         missing.append("图片")
-    if not audio_asset:
+    if not audio_asset and audio_mode == "imported":
         missing.append("旁白音频")
     if missing:
         raise HTTPException(status_code=400, detail="缺少必需素材：" + "、".join(missing))
@@ -563,7 +621,7 @@ def build_quick_scene_plan(project_id: str, fps: int = DEFAULT_FPS) -> dict[str,
         raise HTTPException(status_code=400, detail="文字素材不能为空")
     if len(content) > MAX_MVP_TEXT_CHARS:
         raise HTTPException(status_code=400, detail=f"MVP 文本最多 {MAX_MVP_TEXT_CHARS} 字")
-    duration = audio_asset.get("duration_sec")
+    duration = audio_asset.get("duration_sec") if audio_mode == "imported" and audio_asset else 4.0 * len(images)
     if not isinstance(duration, (int, float)) or duration <= 0:
         raise HTTPException(status_code=400, detail="无法解析旁白音频时长，请上传有效的 MP3、WAV 或 M4A")
 
@@ -571,7 +629,7 @@ def build_quick_scene_plan(project_id: str, fps: int = DEFAULT_FPS) -> dict[str,
     base_frames, remainder = divmod(total_frames, len(images))
     if base_frames < 1:
         raise HTTPException(status_code=400, detail="旁白音频过短，无法分配给当前图片")
-    copy_segments, warnings = _split_copy_for_images(content, len(images))
+    copy_segments, warnings = _split_copy_for_images(content, len(images), max_chars=500 if audio_mode == "segments" else 90, repeat=audio_mode != "segments")
     scenes = []
     assigned_frames = 0
     for index, image in enumerate(images):
@@ -581,25 +639,27 @@ def build_quick_scene_plan(project_id: str, fps: int = DEFAULT_FPS) -> dict[str,
         scenes.append(
             {
                 "id": f"scene-{index + 1:03d}",
-                "title": clean_text(copy, 42),
+                "title": clean_text(copy or image.get("title"), 42),
                 "purpose": "自动图文口播",
                 "asset_ids": [text_asset["id"], image["id"]],
-                "onscreen_text": copy,
+                "onscreen_text": clean_text(copy or image.get("title"), 90),
                 "narration": copy,
                 "subtitle": copy,
                 "duration_frames": frames,
                 "duration_sec": round(frames / fps, 6),
-                "renderer": "remotion",
+                "renderer": "auto",
                 "template": "image_narration",
                 "status": "approved",
             }
         )
+    apply_scene_routes(scenes)
     plan = {
         "schema_version": "scene_plan.v2",
         "project_id": project_id,
         "generated_by": "quick_compose_v1",
         "primary_text_asset_id": text_asset["id"],
-        "primary_audio_asset_id": audio_asset["id"],
+        "primary_audio_asset_id": audio_asset["id"] if audio_mode == "imported" else "",
+        "audio_mode": audio_mode,
         "audio_duration_sec": round(float(duration), 6),
         "fps": fps,
         "total_frames": assigned_frames,
@@ -613,6 +673,7 @@ def build_quick_scene_plan(project_id: str, fps: int = DEFAULT_FPS) -> dict[str,
     return plan
 
 
+@locked_project
 def build_scene_plan(project_id: str) -> dict[str, Any]:
     project = ensure_project(project_id)
     brief = read_json(brief_path(project_id), {})
@@ -631,7 +692,7 @@ def build_scene_plan(project_id: str) -> dict[str, Any]:
         audio_asset = audios[idx % len(audios)] if audios else None
         asset_ids = [a["id"] for a in [text_asset, image_asset, audio_asset] if a]
         seed = _scene_text_from(text_asset or image_asset, f"镜头 {idx + 1}")
-        renderer = "hyperframes" if idx == 0 and scene_count > 1 else "remotion"
+        renderer = "auto"
         scenes.append(
             {
                 "id": f"scene-{idx + 1:03d}",
@@ -647,8 +708,9 @@ def build_scene_plan(project_id: str) -> dict[str, Any]:
                 "status": "draft",
             }
         )
+    apply_scene_routes(scenes)
     plan = {
-        "schema_version": "scene_plan.v1",
+        "schema_version": "scene_plan.v2",
         "project_id": project_id,
         "generated_by": "heuristic_v1",
         "created_at": now_iso(),
@@ -660,6 +722,7 @@ def build_scene_plan(project_id: str) -> dict[str, Any]:
     return plan
 
 
+@locked_project
 def update_scene(project_id: str, scene_id: str, body: SceneUpdateBody) -> dict[str, Any]:
     project = ensure_project(project_id)
     plan = read_json(scene_plan_path(project_id), {"schema_version": "scene_plan.v1", "scenes": []})
@@ -681,18 +744,28 @@ def update_scene(project_id: str, scene_id: str, body: SceneUpdateBody) -> dict[
             "narration": "",
             "subtitle": "",
             "duration_sec": 4,
-            "renderer": "remotion",
+            "renderer": "auto",
             "template": "image_narration",
             "status": "draft",
         }
         scenes.append(scene)
     updates = body.model_dump(exclude_unset=True)
+    requested_renderer = updates.get("renderer")
+    if requested_renderer is not None and str(requested_renderer).strip().lower() not in VALID_ENGINES:
+        raise HTTPException(status_code=400, detail="renderer 仅支持 auto / remotion / hyperframes / hybrid")
     for key, value in updates.items():
         if value is not None:
             scene[key] = value
+    if scene.get("speech"):
+        scene["speech"]["stale"] = scene["speech"].get("text") != str(scene.get("narration") or "").strip()
     if "duration_sec" in updates and updates["duration_sec"] is not None:
         fps = int(plan.get("fps") or DEFAULT_FPS)
         scene["duration_frames"] = max(1, round(float(scene["duration_sec"]) * fps))
+    if set(updates).intersection({"title", "purpose", "asset_ids", "onscreen_text", "duration_sec", "renderer", "template"}):
+        scene.pop("creative_asset", None)
+        scene.pop("engine", None)
+    apply_scene_routes(scenes)
+    plan["schema_version"] = "scene_plan.v2"
     plan["scenes"] = scenes
     plan["updated_at"] = now_iso()
     write_json(scene_plan_path(project_id), plan)
@@ -724,12 +797,13 @@ def _default_scene(project_id: str, scenes: list[dict[str, Any]]) -> dict[str, A
         "narration": "",
         "subtitle": "",
         "duration_sec": DEFAULT_NO_AUDIO_SECONDS,
-        "renderer": "remotion",
+        "renderer": "auto",
         "template": "image_narration",
         "status": "draft",
     }
 
 
+@locked_project
 def create_scene(project_id: str, body: SceneCreateBody) -> dict[str, Any]:
     project = ensure_project(project_id)
     plan = read_json(scene_plan_path(project_id), {"schema_version": "scene_plan.v2", "scenes": []})
@@ -748,6 +822,7 @@ def create_scene(project_id: str, body: SceneCreateBody) -> dict[str, Any]:
                 insert_at = index + 1
                 break
     scenes.insert(insert_at, scene)
+    apply_scene_routes(scenes)
     plan["schema_version"] = "scene_plan.v2"
     plan["scenes"] = scenes
     plan["updated_at"] = now_iso()
@@ -757,6 +832,7 @@ def create_scene(project_id: str, body: SceneCreateBody) -> dict[str, Any]:
     return scene
 
 
+@locked_project
 def duplicate_scene(project_id: str, scene_id: str) -> dict[str, Any]:
     project = ensure_project(project_id)
     plan = read_json(scene_plan_path(project_id), {"schema_version": "scene_plan.v2", "scenes": []})
@@ -769,7 +845,10 @@ def duplicate_scene(project_id: str, scene_id: str) -> dict[str, Any]:
             duplicate["id"] = _new_scene_id(scenes)
             duplicate["title"] = clean_text(f"{item.get('title') or '镜头'} 副本", 80)
             duplicate["status"] = "draft"
+            duplicate.pop("creative_asset", None)
+            duplicate.pop("engine", None)
             scenes.insert(index + 1, duplicate)
+            apply_scene_routes(scenes)
             plan["schema_version"] = "scene_plan.v2"
             plan["scenes"] = scenes
             plan["updated_at"] = now_iso()
@@ -780,6 +859,7 @@ def duplicate_scene(project_id: str, scene_id: str) -> dict[str, Any]:
     raise HTTPException(status_code=404, detail="镜头不存在")
 
 
+@locked_project
 def delete_scene(project_id: str, scene_id: str) -> dict[str, Any]:
     project = ensure_project(project_id)
     plan = read_json(scene_plan_path(project_id), {"schema_version": "scene_plan.v2", "scenes": []})
@@ -790,6 +870,7 @@ def delete_scene(project_id: str, scene_id: str) -> dict[str, Any]:
     if len(remaining) == len(scenes):
         raise HTTPException(status_code=404, detail="镜头不存在")
     plan["schema_version"] = "scene_plan.v2"
+    apply_scene_routes(remaining)
     plan["scenes"] = remaining
     plan["updated_at"] = now_iso()
     write_json(scene_plan_path(project_id), plan)
@@ -798,6 +879,7 @@ def delete_scene(project_id: str, scene_id: str) -> dict[str, Any]:
     return {"deleted_scene_id": scene_id, "scene_count": len(remaining)}
 
 
+@locked_project
 def reorder_scenes(project_id: str, body: SceneOrderBody) -> list[dict[str, Any]]:
     project = ensure_project(project_id)
     plan = read_json(scene_plan_path(project_id), {"schema_version": "scene_plan.v2", "scenes": []})
@@ -811,12 +893,208 @@ def reorder_scenes(project_id: str, body: SceneOrderBody) -> list[dict[str, Any]
         raise HTTPException(status_code=400, detail="镜头顺序必须包含全部且仅包含现有镜头")
     ordered = [by_id[scene_id] for scene_id in body.scene_ids]
     plan["schema_version"] = "scene_plan.v2"
+    apply_scene_routes(ordered)
     plan["scenes"] = ordered
     plan["updated_at"] = now_iso()
     write_json(scene_plan_path(project_id), plan)
     project["status"] = "scene_plan_ready"
     save_project(project)
     return ordered
+
+
+def prepare_creative_assets(
+    project_id: str,
+    body: PrepareScenesBody,
+    *,
+    scene_ids: Optional[list[str]] = None,
+    run: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    project = ensure_project(project_id)
+    plan = read_json(scene_plan_path(project_id), {"schema_version": "scene_plan.v2", "scenes": []})
+    scenes = plan.get("scenes") if isinstance(plan, dict) else []
+    if not isinstance(scenes, list) or not scenes:
+        raise HTTPException(status_code=400, detail="请先生成镜头")
+    apply_scene_routes(scenes)
+    selected = {
+        str(scene.get("id") or "")
+        for scene in scenes
+        if isinstance(scene, dict)
+        and (not scene_ids or str(scene.get("id") or "") in scene_ids)
+        and str((scene.get("engine") or {}).get("resolved") or "")
+        in {ENGINE_HYPERFRAMES, ENGINE_HYBRID}
+    }
+    own_run = run is None
+    if run is None:
+        run = create_run(
+            project_dir(project_id),
+            project_id,
+            "prepare_creative_scenes",
+            ["route:scenes", *[f"creative:{scene_id}" for scene_id in sorted(selected)]],
+            {"execute": body.execute, "allow_on_demand": body.allow_on_demand},
+        )
+    update_run_step(
+        project_dir(project_id),
+        run,
+        "route:scenes",
+        "ready",
+        detail=f"已解析 {len(scenes)} 个镜头，其中 {len(selected)} 个需要创意执行器",
+    )
+    registry = discover_capabilities(renderer_root(), workspace_root())
+    capability = capability_by_id(registry, "hyperframes.render_scene")
+    command = hyperframes_command(registry, allow_on_demand=body.allow_on_demand)
+    assets = {asset["id"]: asset for asset in list_assets(project_id)}
+    width, height = (1920, 1080) if str(project.get("aspect_ratio") or "") == "16:9" else (1080, 1920)
+    tasks: list[dict[str, Any]] = []
+    for scene in scenes:
+        if not isinstance(scene, dict) or str(scene.get("id") or "") not in selected:
+            continue
+        scene_id = str(scene["id"])
+        step_id = f"creative:{scene_id}"
+        update_run_step(project_dir(project_id), run, step_id, "running", detail="正在准备 HyperFrames 场景")
+        image = _scene_primary_asset(scene, assets, "image")
+        image_path = Path(str(image.get("path") or "")) if image else None
+        target_dir = creative_assets_dir(project_id) / scene_id
+        try:
+            manifest = write_hyperframes_scene(
+                target_dir,
+                project,
+                scene,
+                image_path,
+                width=width,
+                height=height,
+                fps=int(plan.get("fps") or DEFAULT_FPS),
+            )
+            task = {
+                "scene_id": scene_id,
+                "requested": (scene.get("engine") or {}).get("requested"),
+                "resolved": (scene.get("engine") or {}).get("resolved"),
+                "status": "prepared",
+                "source_html": manifest["source_html"],
+                "clip_path": manifest["clip_path"],
+                "capability_status": capability.get("status") or "unavailable",
+            }
+            engine = scene.get("engine") if isinstance(scene.get("engine"), dict) else {}
+            engine["last_run_id"] = run["id"]
+            engine["artifact"] = manifest
+            existing_creative = scene.get("creative_asset") if isinstance(scene.get("creative_asset"), dict) else {}
+            existing_clip = Path(str(existing_creative.get("path") or "")) if existing_creative else None
+            if existing_clip and existing_clip.is_file() and existing_clip.stat().st_size > 0:
+                engine["status"] = "ready"
+                engine["error"] = ""
+                task["status"] = "ready"
+                task["reused"] = True
+                task["clip_relative"] = existing_creative.get("relative")
+                update_run_step(
+                    project_dir(project_id),
+                    run,
+                    step_id,
+                    "ready",
+                    detail="复用已生成的 HyperFrames 创意镜头",
+                    artifact={"kind": "hyperframes_clip", "path": str(existing_clip), "scene_id": scene_id, "reused": True},
+                )
+            elif not body.execute:
+                engine["status"] = "prepared"
+                update_run_step(
+                    project_dir(project_id),
+                    run,
+                    step_id,
+                    "ready",
+                    detail="创意源码与 brief 已准备，尚未执行 HyperFrames",
+                    artifact={"kind": "hyperframes_source", "path": manifest["source_html"], "scene_id": scene_id},
+                )
+            elif not command:
+                engine["status"] = "fallback"
+                engine["error"] = "HyperFrames CLI 未就绪"
+                task["status"] = "fallback"
+                task["fallback"] = ENGINE_REMOTION
+                update_run_step(
+                    project_dir(project_id),
+                    run,
+                    step_id,
+                    "fallback",
+                    detail="HyperFrames CLI 未就绪，最终成片使用 Remotion fallback",
+                    artifact={"kind": "hyperframes_source", "path": manifest["source_html"], "scene_id": scene_id},
+                )
+            else:
+                clip_path = Path(manifest["clip_path"])
+                process_env = os.environ.copy()
+                system_chrome = Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+                if "HYPERFRAMES_BROWSER_PATH" not in process_env and system_chrome.is_file():
+                    process_env["HYPERFRAMES_BROWSER_PATH"] = str(system_chrome)
+                result = subprocess.run(
+                    [*command, "render", "--output", str(clip_path), "--quality", "draft"],
+                    cwd=target_dir,
+                    env=process_env,
+                    capture_output=True,
+                    text=True,
+                    timeout=body.timeout_sec,
+                    check=False,
+                )
+                if result.returncode == 0 and clip_path.is_file() and clip_path.stat().st_size > 0:
+                    public_dir = creative_public_dir(project_id) / scene_id
+                    public_dir.mkdir(parents=True, exist_ok=True)
+                    public_clip = public_dir / "clip.mp4"
+                    shutil.copy2(clip_path, public_clip)
+                    relative = public_clip.relative_to(renderer_root() / "public").as_posix()
+                    creative_asset = {
+                        "id": f"creative-{scene_id}",
+                        "type": "recording",
+                        "relative": relative,
+                        "path": str(public_clip),
+                        "label": f"HyperFrames · {scene.get('title') or scene_id}",
+                        "exists": True,
+                    }
+                    scene["creative_asset"] = creative_asset
+                    engine["status"] = "ready"
+                    engine["error"] = ""
+                    engine["artifact"] = {**manifest, "clip_relative": relative}
+                    task["status"] = "ready"
+                    task["clip_relative"] = relative
+                    update_run_step(
+                        project_dir(project_id),
+                        run,
+                        step_id,
+                        "ready",
+                        detail="HyperFrames 创意镜头已生成",
+                        artifact={"kind": "hyperframes_clip", "path": str(public_clip), "scene_id": scene_id},
+                    )
+                else:
+                    error = clean_text((result.stderr or result.stdout or "HyperFrames 执行失败")[-1600:], 1600)
+                    engine["status"] = "fallback"
+                    engine["error"] = error
+                    task["status"] = "fallback"
+                    task["fallback"] = ENGINE_REMOTION
+                    task["error"] = error
+                    update_run_step(
+                        project_dir(project_id),
+                        run,
+                        step_id,
+                        "fallback",
+                        detail="HyperFrames 执行失败，最终成片使用 Remotion fallback",
+                    )
+            scene["engine"] = engine
+            tasks.append(task)
+        except (OSError, subprocess.SubprocessError) as exc:
+            engine = scene.get("engine") if isinstance(scene.get("engine"), dict) else {}
+            engine["status"] = "fallback"
+            engine["error"] = str(exc)
+            engine["last_run_id"] = run["id"]
+            scene["engine"] = engine
+            tasks.append({"scene_id": scene_id, "status": "fallback", "fallback": ENGINE_REMOTION, "error": str(exc)})
+            update_run_step(
+                project_dir(project_id),
+                run,
+                step_id,
+                "fallback",
+                detail=f"创意执行异常，使用 Remotion fallback：{exc}",
+            )
+    plan["schema_version"] = "scene_plan.v2"
+    plan["scenes"] = scenes
+    plan["routing_updated_at"] = now_iso()
+    write_json(scene_plan_path(project_id), plan)
+    if own_run:
+        finish_run(project_dir(project_id), run, "ready")
+    return {"tasks": tasks, "run": run, "capabilities": registry, "scene_plan": plan}
 
 
 def aspect_format(aspect_ratio: str) -> str:
@@ -844,7 +1122,14 @@ def build_video_project(project_id: str, fps: int, no_audio_seconds: float) -> d
     scenes = plan.get("scenes") if isinstance(plan, dict) else []
     if not isinstance(scenes, list) or not scenes:
         raise HTTPException(status_code=400, detail="请先生成或创建 Scene")
+    validate_speech(plan)
+    apply_scene_routes(scenes)
     assets = {asset["id"]: asset for asset in list_assets(project_id)}
+    if plan.get("audio_mode") == "segments":
+        for scene in scenes:
+            speech = scene.get("speech") or {}
+            if speech and not Path(str(assets.get(speech["asset_id"], {}).get("path") or "")).is_file():
+                raise HTTPException(409, "配音文件不存在，请重新生成后导出")
     materials = []
     converted_scenes = []
     for asset in assets.values():
@@ -867,6 +1152,20 @@ def build_video_project(project_id: str, fps: int, no_audio_seconds: float) -> d
             continue
         image = _scene_primary_asset(raw, assets, "image")
         audio = _scene_primary_asset(raw, assets, "audio")
+        engine = raw.get("engine") if isinstance(raw.get("engine"), dict) else {}
+        creative = raw.get("creative_asset") if isinstance(raw.get("creative_asset"), dict) else {}
+        creative_id = ""
+        if creative.get("exists") and creative.get("relative"):
+            creative_id = str(creative.get("id") or f"creative-{raw.get('id') or idx + 1}")
+            materials.append(
+                {
+                    "id": creative_id,
+                    "type": "recording",
+                    "relative": str(creative["relative"]),
+                    "label": str(creative.get("label") or "HyperFrames 创意镜头"),
+                    "alt": str(raw.get("onscreen_text") or raw.get("title") or ""),
+                }
+            )
         duration = raw.get("duration_sec")
         if not isinstance(duration, (int, float)) or duration <= 0:
             duration = audio.get("duration_sec") if audio else no_audio_seconds
@@ -878,17 +1177,24 @@ def build_video_project(project_id: str, fps: int, no_audio_seconds: float) -> d
                 "title": raw.get("title") or f"Scene {idx + 1}",
                 "asset_id": image.get("id") if image else "",
                 "audio_asset_id": audio.get("id") if audio else "",
-                "duration_frames": raw.get("duration_frames"),
+                "creative_asset_id": creative_id,
+                "renderer_requested": engine.get("requested") or raw.get("renderer") or "auto",
+                "renderer_resolved": engine.get("resolved") or ENGINE_REMOTION,
+                "renderer_status": engine.get("status") or "ready",
+                "renderer_reason": engine.get("reason") or "",
+                "duration_frames": raw.get("duration_frames") if int(plan.get("fps") or DEFAULT_FPS) == fps else math.ceil(float(duration) * fps),
                 "duration_sec": float(duration or no_audio_seconds),
-                "shot_type": "hero" if raw.get("renderer") == "hyperframes" else "screen_focus",
+                "shot_type": "hero" if engine.get("resolved") == ENGINE_HYPERFRAMES else "screen_focus",
                 "onscreen_text": raw.get("onscreen_text") or raw.get("subtitle") or raw.get("title") or "",
                 "narration": raw.get("narration") or raw.get("subtitle") or "",
-                "renderer": raw.get("renderer") or "remotion",
+                "renderer": engine.get("resolved") or ENGINE_REMOTION,
                 "template": raw.get("template") or "image_narration",
                 "callouts": [{"label": raw.get("purpose") or "镜头目的"}] if raw.get("purpose") else [],
-                "creative_asset_needed": raw.get("renderer") == "hyperframes",
+                "creative_asset_needed": engine.get("resolved") in {ENGINE_HYPERFRAMES, ENGINE_HYBRID},
             }
         )
+        if engine.get("status") == "fallback":
+            warnings.append(f"{raw.get('id') or idx + 1} 的 HyperFrames 创意镜头未就绪，使用 Remotion fallback")
     video_project = {
         "schema_version": "video_project.v2",
         "title": project.get("title") or "未命名视频",
@@ -909,7 +1215,7 @@ def build_video_project(project_id: str, fps: int, no_audio_seconds: float) -> d
         "render_notes": {
             "fps": fps,
             "warnings": warnings,
-            "hyperframes_policy": "MVP quick compose uses Remotion only.",
+            "hyperframes_policy": "Creative scenes use prepared HyperFrames clips when ready and fall back to Remotion safely.",
         },
     }
     write_json(video_project_path(project_id), video_project)
@@ -997,37 +1303,76 @@ def create_render_output(project_id: str, body: RenderBody) -> dict[str, Any]:
     project = ensure_project(project_id)
     output_id = str(uuid4())
     output_video_path = renderer_root() / "render_tasks" / f"v2-{project_id}" / "out" / f"{output_id}.mp4"
-    if body.execute:
+    current_plan = read_json(scene_plan_path(project_id), {"scenes": []})
+    current_scenes = current_plan.get("scenes") if isinstance(current_plan, dict) else []
+    if not isinstance(current_scenes, list) or not current_scenes:
+        build_quick_scene_plan(project_id, DEFAULT_FPS)
         current_plan = read_json(scene_plan_path(project_id), {"scenes": []})
         current_scenes = current_plan.get("scenes") if isinstance(current_plan, dict) else []
-        if not isinstance(current_scenes, list) or not current_scenes:
-            build_quick_scene_plan(project_id, DEFAULT_FPS)
+    validate_speech(current_plan)
+    if isinstance(current_scenes, list):
+        apply_scene_routes(current_scenes)
+    creative_scene_ids = [
+        str(scene.get("id") or "")
+        for scene in current_scenes
+        if isinstance(scene, dict)
+        and str((scene.get("engine") or {}).get("resolved") or "") in {ENGINE_HYPERFRAMES, ENGINE_HYBRID}
+    ]
+    run = create_run(
+        project_dir(project_id),
+        project_id,
+        "render_project" if body.execute else "plan_project",
+        [
+            "route:scenes",
+            *[f"creative:{scene_id}" for scene_id in creative_scene_ids],
+            "build:render-plan",
+            "render:remotion",
+            "verify:output",
+        ],
+        {"output_id": output_id, "execute": body.execute},
+    )
+    try:
+        prepare_creative_assets(
+            project_id,
+            PrepareScenesBody(
+                execute=body.execute,
+                allow_on_demand=str(os.environ.get("ANY2VIDEO_HYPERFRAMES_ON_DEMAND") or "").lower() in {"1", "true", "yes"},
+                timeout_sec=min(body.timeout_sec, 60 * 20),
+            ),
+            run=run,
+        )
+        update_run_step(project_dir(project_id), run, "build:render-plan", "running", detail="正在生成统一渲染计划")
         plan = build_render_plan(
             project_id,
             RenderPlanBody(fps=DEFAULT_FPS, no_audio_seconds=DEFAULT_NO_AUDIO_SECONDS),
             output_video_path=output_video_path,
         )
-    else:
-        plan = read_json(render_plan_path(project_id), None)
-        if not isinstance(plan, dict):
-            plan = build_render_plan(project_id, RenderPlanBody(), output_video_path=output_video_path)
-    output = {
-        "schema_version": "output_version.v1",
-        "id": output_id,
-        "project_id": project_id,
-        "status": "rendering" if body.execute else "planned",
-        "video_path": str(output_video_path),
-        "render_command": plan.get("render_command"),
-        "duration_sec": plan.get("duration_sec"),
-        "log": "Remotion rendering" if body.execute else "render not executed",
-        "created_at": now_iso(),
-        "created_at_ns": time.time_ns(),
-    }
-    write_json(output_meta_path(project_id, output_id), output)
-    if body.execute:
-        output_video_path.parent.mkdir(parents=True, exist_ok=True)
-        started = time.time()
-        try:
+        update_run_step(
+            project_dir(project_id),
+            run,
+            "build:render-plan",
+            "ready",
+            detail=f"渲染计划共 {len(plan.get('props', {}).get('scenes') or [])} 个镜头",
+            artifact={"kind": "render_plan", "path": str(render_plan_path(project_id))},
+        )
+        output = {
+            "schema_version": "output_version.v2",
+            "id": output_id,
+            "project_id": project_id,
+            "run_id": run["id"],
+            "status": "rendering" if body.execute else "planned",
+            "video_path": str(output_video_path),
+            "render_command": plan.get("render_command"),
+            "duration_sec": plan.get("duration_sec"),
+            "log": "Remotion rendering" if body.execute else "render not executed",
+            "created_at": now_iso(),
+            "created_at_ns": time.time_ns(),
+        }
+        write_json(output_meta_path(project_id, output_id), output)
+        if body.execute:
+            update_run_step(project_dir(project_id), run, "render:remotion", "running", detail="Remotion 正在组装最终时间线")
+            output_video_path.parent.mkdir(parents=True, exist_ok=True)
+            started = time.time()
             result = subprocess.run(
                 [
                     "npx",
@@ -1050,20 +1395,62 @@ def create_render_output(project_id: str, body: RenderBody) -> dict[str, Any]:
             output["log"] = (result.stdout + "\n" + result.stderr).strip() or (
                 "Render completed" if ready else f"Remotion exited with code {result.returncode}"
             )
-        except subprocess.TimeoutExpired as exc:
-            output["status"] = "failed"
-            stdout = exc.stdout.decode(errors="replace") if isinstance(exc.stdout, bytes) else (exc.stdout or "")
-            stderr = exc.stderr.decode(errors="replace") if isinstance(exc.stderr, bytes) else (exc.stderr or "")
-            output["log"] = f"渲染超时（{body.timeout_sec}s）\n{stdout}\n{stderr}".strip()
-        except OSError as exc:
-            output["status"] = "failed"
-            output["log"] = f"无法启动 Remotion：{exc}"
-        output["elapsed_sec"] = round(time.time() - started, 3)
-        project["status"] = "render_ready" if output["status"] == "ready" else "render_failed"
+            update_run_step(
+                project_dir(project_id),
+                run,
+                "render:remotion",
+                "ready" if ready else "failed",
+                detail="最终 MP4 已生成" if ready else f"Remotion 退出码 {result.returncode}",
+                artifact={"kind": "video", "path": str(output_video_path), "output_id": output_id} if ready else None,
+            )
+            update_run_step(
+                project_dir(project_id),
+                run,
+                "verify:output",
+                "ready" if ready else "failed",
+                detail=f"文件大小 {output_video_path.stat().st_size} 字节" if ready else "未得到有效 MP4",
+            )
+            output["elapsed_sec"] = round(time.time() - started, 3)
+            project["status"] = "render_ready" if ready else "render_failed"
+            save_project(project)
+            finish_run(project_dir(project_id), run, "ready" if ready else "failed", "" if ready else output["log"][-1600:])
+        else:
+            update_run_step(project_dir(project_id), run, "render:remotion", "skipped", detail="仅生成计划")
+            update_run_step(project_dir(project_id), run, "verify:output", "skipped", detail="尚未执行渲染")
+            finish_run(project_dir(project_id), run, "ready")
+        write_json(output_meta_path(project_id, output_id), output)
+        output["file_url"] = f"/api/v2/projects/{project_id}/outputs/{output_id}/file"
+        return output
+    except subprocess.TimeoutExpired as exc:
+        stdout = exc.stdout.decode(errors="replace") if isinstance(exc.stdout, bytes) else (exc.stdout or "")
+        stderr = exc.stderr.decode(errors="replace") if isinstance(exc.stderr, bytes) else (exc.stderr or "")
+        message = f"渲染超时（{body.timeout_sec}s）\n{stdout}\n{stderr}".strip()
+        update_run_step(project_dir(project_id), run, "render:remotion", "failed", detail=message[-1600:])
+        update_run_step(project_dir(project_id), run, "verify:output", "failed", detail="渲染超时")
+        finish_run(project_dir(project_id), run, "failed", message[-1600:])
+        project["status"] = "render_failed"
         save_project(project)
-    write_json(output_meta_path(project_id, output_id), output)
-    output["file_url"] = f"/api/v2/projects/{project_id}/outputs/{output_id}/file"
-    return output
+        output = {
+            "schema_version": "output_version.v2",
+            "id": output_id,
+            "project_id": project_id,
+            "run_id": run["id"],
+            "status": "failed",
+            "video_path": str(output_video_path),
+            "duration_sec": None,
+            "log": message,
+            "created_at": now_iso(),
+            "created_at_ns": time.time_ns(),
+        }
+        write_json(output_meta_path(project_id, output_id), output)
+        output["file_url"] = f"/api/v2/projects/{project_id}/outputs/{output_id}/file"
+        return output
+    except HTTPException as exc:
+        finish_run(project_dir(project_id), run, "failed", str(exc.detail))
+        raise
+    except Exception as exc:
+        finish_run(project_dir(project_id), run, "failed", str(exc))
+        raise HTTPException(status_code=500, detail=f"本地执行失败：{exc}") from exc
 
 
 def v2_router(max_upload_mb: int) -> APIRouter:
@@ -1078,9 +1465,18 @@ def v2_router(max_upload_mb: int) -> APIRouter:
     def get_projects() -> dict[str, Any]:
         return {"projects": list_projects(), "workspace_root": str(workspace_root())}
 
+    @router.get("/capabilities")
+    def get_capabilities() -> dict[str, Any]:
+        return discover_capabilities(renderer_root(), workspace_root())
+
     @router.get("/projects/{project_id}")
     def get_project(project_id: str) -> dict[str, Any]:
         return detail_project(project_id)
+
+    @router.get("/projects/{project_id}/runs")
+    def get_project_runs(project_id: str) -> dict[str, Any]:
+        ensure_project(project_id)
+        return {"runs": list_runs(project_dir(project_id), limit=50)}
 
     @router.post("/projects/{project_id}/assets")
     async def post_asset(
@@ -1126,8 +1522,20 @@ def v2_router(max_upload_mb: int) -> APIRouter:
         return {"scene_plan": build_scene_plan(project_id), "project": detail_project(project_id)}
 
     @router.post("/projects/{project_id}/scene-plan/quick")
-    def post_quick_scene_plan(project_id: str) -> dict[str, Any]:
-        return {"scene_plan": build_quick_scene_plan(project_id), "project": detail_project(project_id)}
+    def post_quick_scene_plan(project_id: str, body: QuickPlanBody = QuickPlanBody()) -> dict[str, Any]:
+        return {"scene_plan": build_quick_scene_plan(project_id, audio_mode=body.audio_mode), "project": detail_project(project_id)}
+
+    @router.get("/speech-options")
+    def get_speech_options() -> dict[str, Any]:
+        return speech_options()
+
+    @router.post("/projects/{project_id}/scenes/{scene_id}/speech")
+    def post_scene_speech(project_id: str, scene_id: str, body: SpeechBody) -> dict[str, Any]:
+        return {"scene": generate_scene_speech(project_id, scene_id, body), "project": detail_project(project_id)}
+
+    @router.post("/projects/{project_id}/scenes/{scene_id}/speech/restore")
+    def post_restore_speech(project_id: str, scene_id: str, body: RestoreSpeechBody) -> dict[str, Any]:
+        return {"scene": restore_scene_speech(project_id, scene_id, body), "project": detail_project(project_id)}
 
     @router.post("/projects/{project_id}/scenes")
     def post_scene(project_id: str, body: SceneCreateBody) -> dict[str, Any]:
@@ -1149,6 +1557,20 @@ def v2_router(max_upload_mb: int) -> APIRouter:
     @router.put("/projects/{project_id}/scene-order")
     def put_scene_order(project_id: str, body: SceneOrderBody) -> dict[str, Any]:
         return {"scenes": reorder_scenes(project_id, body), "project": detail_project(project_id)}
+
+    @router.post("/projects/{project_id}/creative-scenes/prepare")
+    def post_prepare_creative_scenes(project_id: str, body: PrepareScenesBody) -> dict[str, Any]:
+        result = prepare_creative_assets(project_id, body)
+        return {**result, "project": detail_project(project_id)}
+
+    @router.post("/projects/{project_id}/scenes/{scene_id}/prepare")
+    def post_prepare_scene(project_id: str, scene_id: str, body: PrepareScenesBody) -> dict[str, Any]:
+        plan = read_json(scene_plan_path(project_id), {"scenes": []})
+        scenes = plan.get("scenes") if isinstance(plan, dict) else []
+        if not any(isinstance(scene, dict) and scene.get("id") == scene_id for scene in scenes or []):
+            raise HTTPException(status_code=404, detail="镜头不存在")
+        result = prepare_creative_assets(project_id, body, scene_ids=[scene_id])
+        return {**result, "project": detail_project(project_id)}
 
     @router.post("/projects/{project_id}/render-plan")
     def post_render_plan(project_id: str, body: RenderPlanBody) -> dict[str, Any]:

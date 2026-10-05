@@ -23,6 +23,10 @@
     railCollapsed: initialRailState(),
     selectedSceneId: "",
     draggedSceneId: "",
+    capabilities: null,
+    voiceMode: "segments",
+    speechOptions: null,
+    speechError: "",
   };
 
   var app = document.getElementById("app");
@@ -66,6 +70,7 @@
 
   function latest(kind) {
     var list = assets(kind);
+    if (kind === "audio") list = list.filter(function (a) { return a.role !== "scene_speech"; });
     return list.length ? list[list.length - 1] : null;
   }
 
@@ -76,6 +81,23 @@
 
   function outputs() {
     return state.project && Array.isArray(state.project.outputs) ? state.project.outputs : [];
+  }
+
+  function runs() {
+    return state.project && Array.isArray(state.project.runs) ? state.project.runs : [];
+  }
+
+  function capability(capabilityId) {
+    var list = state.capabilities && Array.isArray(state.capabilities.capabilities) ? state.capabilities.capabilities : [];
+    return list.find(function (item) { return item.id === capabilityId; }) || null;
+  }
+
+  function engineLabel(engine) {
+    return {auto: "自动", remotion: "Remotion", hyperframes: "HyperFrames", hybrid: "双引擎"}[engine] || "自动";
+  }
+
+  function engineStatusLabel(status) {
+    return {ready: "已就绪", prepared: "已准备", pending: "待执行", fallback: "安全回退", failed: "失败"}[status] || "待路由";
   }
 
   function assetById(assetId) {
@@ -241,7 +263,8 @@
       ].join("");
     }
     var text = latest("text");
-    var audio = latest("audio");
+    var imported = assets("audio").filter(function (a) { return a.role !== "scene_speech"; });
+    var audio = imported.length ? imported[imported.length - 1] : null;
     var images = assets("image");
     var hasScenes = scenes().length > 0;
     return [
@@ -272,7 +295,7 @@
       '<div class="readiness" aria-label="素材完整性">',
       readinessItem("文字", Boolean(text), text ? "已保存" : "待添加"),
       readinessItem("画面", images.length > 0 && images.length <= 8, images.length ? images.length + " 张" : "待添加"),
-      readinessItem("旁白", Boolean(audio && audio.duration_sec), audio && audio.duration_sec ? audio.duration_sec.toFixed(1) + " 秒" : "待添加"),
+      readinessItem("旁白", state.voiceMode === "segments" || Boolean(audio && audio.duration_sec), state.voiceMode === "segments" ? "逐镜配音" : audio && audio.duration_sec ? audio.duration_sec.toFixed(1) + " 秒" : "待添加"),
       "</div>",
     ].join("");
   }
@@ -310,9 +333,13 @@
     return [
       '<section class="input-section audio-section">',
       '<div class="input-heading"><div><span class="material-index">C</span><h3>旁白</h3><p>音频时长决定视频长度</p></div><span id="audio-draft-state">' + h(audio && audio.duration_sec ? audio.duration_sec.toFixed(1) + " 秒" : "待添加") + "</span></div>",
+      '<label class="scene-field"><span>配音方式</span><select id="voice-mode"><option value="segments" ' + (state.voiceMode === "segments" ? "selected" : "") + '>按镜头生成配音</option><option value="imported" ' + (state.voiceMode === "imported" ? "selected" : "") + '>上传整段旁白</option></select></label>',
+      '<p id="generated-voice-hint" class="muted" ' + (state.voiceMode !== "segments" ? "hidden" : "") + '>先生成分镜，再逐段选声音、试听或重做。</p>',
+      '<div id="imported-voice-input" ' + (state.voiceMode === "segments" ? "hidden" : "") + '>',
       '<label class="file-drop audio-drop" for="quick-audio"><strong>选择音频</strong><span>MP3、WAV 或 M4A</span></label>',
       '<input class="visually-hidden" id="quick-audio" name="audio" type="file" accept="audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/x-m4a,.mp3,.wav,.m4a" />',
       audio ? '<audio class="audio-player" controls src="' + h(assetUrl(audio)) + '"></audio>' : '<div class="empty inline-empty audio-empty">尚未添加旁白</div>',
+      "</div>",
       "</section>",
     ].join("");
   }
@@ -321,7 +348,7 @@
     var missing = [];
     if (!text) missing.push("文字");
     if (!images.length) missing.push("图片");
-    if (!audio || !audio.duration_sec) missing.push("旁白");
+    if (state.voiceMode !== "segments" && (!audio || !audio.duration_sec)) missing.push("旁白");
     return [
       '<section class="generate-bar">',
       '<div><span class="generate-label">分镜</span><h3>根据素材生成镜头初稿</h3><p id="generate-hint">' + h(missing.length ? "还需要：" + missing.join("、") : (scenes().length ? "重新生成会替换当前导演稿" : "素材已齐，可以生成镜头")) + "</p></div>",
@@ -340,16 +367,35 @@
       '<div class="director-toolbar">',
       '<div><h3>镜头导演</h3><p>' + h(list.length) + " 个镜头，约 " + h(total.toFixed(1)) + " 秒</p></div>",
       '<div class="director-actions">',
+      '<button class="director-button" type="button" data-action="generate-all-speech">补齐配音</button>',
       '<button class="director-button" type="button" data-action="add-scene">新增镜头</button>',
       '<button class="director-button primary" type="button" data-action="render-video">生成成片</button>',
       "</div>",
       "</div>",
+      renderExecutionStrip(),
       '<div class="director-main">',
       renderScenePreview(scene),
       renderSceneEditor(scene),
       "</div>",
       renderSceneTimeline(list),
       "</section>",
+    ].join("");
+  }
+
+  function renderExecutionStrip() {
+    var remotion = capability("remotion.render_project");
+    var hyperframes = capability("hyperframes.render_scene");
+    var recent = runs()[0];
+    var completed = recent && Array.isArray(recent.steps) ? recent.steps.filter(function (step) {
+      return ["ready", "fallback", "skipped"].indexOf(step.status) >= 0;
+    }).length : 0;
+    var stepTotal = recent && Array.isArray(recent.steps) ? recent.steps.length : 0;
+    return [
+      '<div class="execution-strip" aria-label="本地执行能力">',
+      '<div><span class="engine-dot ' + h(remotion && remotion.status || "unknown") + '"></span><strong>Remotion</strong><em>' + h(remotion && remotion.status === "ready" ? "本机可用" : "未就绪") + '</em></div>',
+      '<div><span class="engine-dot ' + h(hyperframes && hyperframes.status || "unknown") + '"></span><strong>HyperFrames</strong><em>' + h(hyperframes ? (hyperframes.status === "ready" ? "本机可用" : hyperframes.status === "on_demand" ? "可按需启用" : "安全回退") : "检测中") + '</em></div>',
+      recent ? '<div class="latest-run"><span>' + h(recent.kind === "render_project" ? "最近成片" : "最近执行") + '</span><strong>' + h(engineStatusLabel(recent.status)) + '</strong><em>' + h(completed + " / " + stepTotal + " 步") + '</em></div>' : '<div class="latest-run"><span>执行账本</span><strong>尚未运行</strong><em>每一步都会保存在本机</em></div>',
+      '</div>',
     ].join("");
   }
 
@@ -372,23 +418,47 @@
     var imageOptions = assets("image").map(function (asset) {
       return '<option value="' + h(asset.id) + '" ' + (image && image.id === asset.id ? "selected" : "") + ">" + h(asset.title || "未命名画面") + "</option>";
     }).join("");
+    var engine = scene.engine || {};
+    var requested = scene.renderer || engine.requested || "auto";
+    var creative = engine.resolved === "hyperframes" || engine.resolved === "hybrid";
     return [
       '<form id="scene-editor-form" class="scene-editor" data-scene-id="' + h(scene.id) + '">',
       '<div class="scene-editor-head"><div><span>当前镜头</span><strong>' + h(scene.title || "未命名镜头") + '</strong></div><span class="scene-id">' + h(scene.id) + "</span></div>",
       '<div class="scene-fields two-column">',
       '<label><span>镜头名称</span><input name="title" maxlength="80" value="' + h(scene.title || "") + '" /></label>',
-      '<label><span>时长</span><div class="duration-field"><input name="duration_sec" type="number" min="0.5" max="600" step="0.1" value="' + h(Number(scene.duration_sec || 4).toFixed(1)) + '" /><em>秒</em></div></label>',
+      '<label><span>时长</span><div class="duration-field"><input name="duration_sec" type="number" min="0.5" max="600" step="0.001" value="' + h(Number(scene.duration_sec || 4).toFixed(3)) + '" /><em>秒</em></div></label>',
       "</div>",
+      '<div class="scene-engine-row">',
+      '<label class="scene-field"><span>执行引擎</span><select name="renderer"><option value="auto" ' + (requested === "auto" ? "selected" : "") + '>自动路由</option><option value="remotion" ' + (requested === "remotion" ? "selected" : "") + '>Remotion · 稳定模板</option><option value="hyperframes" ' + (requested === "hyperframes" ? "selected" : "") + '>HyperFrames · 创意动效</option><option value="hybrid" ' + (requested === "hybrid" ? "selected" : "") + '>双引擎 · 创意叠加</option></select></label>',
+      '<div class="engine-decision"><span>' + h(engineLabel(engine.resolved)) + ' · ' + h(engineStatusLabel(engine.status)) + '</span><p>' + h(engine.reason || "保存后由执行内核选择引擎") + '</p>' + (engine.error ? '<details><summary>回退原因</summary><p>' + h(short(engine.error, 420)) + '</p></details>' : '') + '</div>',
+      '</div>',
       '<label class="scene-field"><span>画面素材</span><select name="image_asset_id"><option value="">无画面</option>' + imageOptions + "</select></label>",
       '<label class="scene-field"><span>屏幕文字</span><textarea name="onscreen_text" rows="2" maxlength="220" placeholder="这一镜需要观众看到的文字">' + h(scene.onscreen_text || "") + "</textarea></label>",
       '<label class="scene-field"><span>旁白</span><textarea name="narration" rows="3" maxlength="500" placeholder="这一镜需要说出的内容">' + h(scene.narration || "") + "</textarea></label>",
+      renderSpeechPanel(scene),
       '<label class="scene-field"><span>镜头目的</span><input name="purpose" maxlength="120" value="' + h(scene.purpose || "") + '" placeholder="例如：建立问题、展示步骤、收束观点" /></label>',
       '<div class="scene-editor-actions">',
-      '<div><button class="text-action" type="button" data-action="duplicate-scene" data-scene-id="' + h(scene.id) + '">复制</button><button class="text-action danger" type="button" data-action="delete-scene" data-scene-id="' + h(scene.id) + '">删除</button></div>',
+      '<div><button class="text-action" type="button" data-action="duplicate-scene" data-scene-id="' + h(scene.id) + '">复制</button><button class="text-action danger" type="button" data-action="delete-scene" data-scene-id="' + h(scene.id) + '">删除</button>' + (creative ? '<button class="text-action engine-action" type="button" data-action="prepare-scene" data-scene-id="' + h(scene.id) + '">' + (engine.status === "fallback" ? "重试创意镜头" : "执行创意镜头") + '</button>' : '') + '</div>',
       '<button class="director-button primary" type="submit">保存镜头</button>',
       "</div>",
       "</form>",
     ].join("");
+  }
+
+  function renderSpeechPanel(scene) {
+    var speech = scene.speech || {};
+    var versions = scene.speech_versions || [];
+    var voices = state.speechOptions && state.speechOptions.voices || {"zh-CN-XiaoxiaoNeural": "晓晓 · 女声", "zh-CN-YunxiNeural": "云希 · 男声", "zh-CN-XiaoyiNeural": "晓伊 · 女声"};
+    var imported = state.project.scene_plan.primary_audio_asset_id;
+    return '<section class="speech-panel"><div class="speech-heading"><strong>镜头配音</strong><span id="speech-status">' + h(speech.asset_id ? (speech.stale ? "旁白已修改，请重做" : "已配音 · " + speech.duration_sec.toFixed(2) + " 秒") : "待配音") + '</span></div>' +
+      (imported ? '<p class="muted">生成逐镜配音后，成片切换到逐镜声音。原整段音频保留，其他镜头需补齐配音。</p>' : '') +
+      '<div class="speech-controls"><label><span>服务</span><select id="speech-provider"><option value="edge_tts">Edge · 在线中文配音</option>' + (state.speechOptions && state.speechOptions.minimax_available ? '<option value="minimax">MiniMax · 已配置，按服务计费</option>' : '') + '</select></label>' +
+      '<label id="edge-voice-field"><span>声音</span><select id="speech-voice">' + Object.keys(voices).map(function (v) { return '<option value="' + h(v) + '" ' + (speech.voice === v ? "selected" : "") + '>' + h(voices[v]) + '</option>'; }).join('') + '</select></label>' +
+      '<label><span>语速</span><select id="speech-speed">' + [0.75, 1, 1.25, 1.5].map(function (v) { return '<option value="' + v + '" ' + ((speech.speed || 1) === v ? "selected" : "") + '>' + v + ' 倍</option>'; }).join('') + '</select></label></div>' +
+      '<button class="director-button" type="button" data-action="generate-speech">' + (speech.asset_id ? '重做这一段' : '生成这一段') + '</button>' +
+      (speech.asset_id ? '<audio class="audio-player" controls preload="metadata" src="' + h(assetUrl(assetById(speech.asset_id))) + '"></audio>' : '') +
+      (versions.length > 1 ? '<div class="speech-history"><select id="speech-version" aria-label="配音历史版本">' + versions.map(function (v, i) { return '<option value="' + h(v.asset_id) + '" ' + (v.asset_id === speech.asset_id ? 'selected' : '') + '>版本 ' + (i + 1) + ' · ' + h(short(v.text, 28)) + '</option>'; }).join('') + '</select><button class="text-action" type="button" data-action="restore-speech">恢复声音与旁白</button></div>' : '') +
+      (state.speechError ? '<p class="speech-error" role="alert">' + h(state.speechError) + '</p>' : '') + '</section>';
   }
 
   function renderSceneTimeline(list) {
@@ -398,13 +468,14 @@
       list.map(function (scene, index) {
         var image = sceneImage(scene);
         var selected = scene.id === state.selectedSceneId ? " selected" : "";
+        var engine = scene.engine || {};
         return [
           '<article class="scene-card' + selected + '" draggable="true" data-scene-card="' + h(scene.id) + '" role="listitem">',
           '<button class="scene-card-select" type="button" data-action="select-scene" data-scene-id="' + h(scene.id) + '">',
           '<span class="scene-number">' + h(String(index + 1).padStart(2, "0")) + "</span>",
           image ? '<img src="' + h(assetUrl(image)) + '" alt="" />' : '<span class="scene-card-empty">无画面</span>',
           '<strong>' + h(short(scene.onscreen_text || scene.title, 30)) + "</strong>",
-          '<span class="scene-duration">' + h(Number(scene.duration_sec || 0).toFixed(1)) + " 秒</span>",
+          '<span class="scene-duration">' + h(Number(scene.duration_sec || 0).toFixed(1)) + " 秒 · " + h(engineLabel(engine.resolved)) + "</span>",
           "</button>",
           '<div class="scene-card-order"><button type="button" data-action="move-scene-left" data-scene-id="' + h(scene.id) + '" aria-label="前移" ' + (index === 0 ? "disabled" : "") + '>前移</button><button type="button" data-action="move-scene-right" data-scene-id="' + h(scene.id) + '" aria-label="后移" ' + (index === list.length - 1 ? "disabled" : "") + ">后移</button></div>",
           "</article>",
@@ -483,6 +554,20 @@
     if (text) text.addEventListener("input", syncDraftState);
     if (images) images.addEventListener("change", syncDraftState);
     if (audio) audio.addEventListener("change", syncDraftState);
+    var mode = document.getElementById("voice-mode");
+    if (mode) mode.addEventListener("change", function () {
+      state.voiceMode = mode.value;
+      document.getElementById("imported-voice-input").hidden = mode.value === "segments";
+      document.getElementById("generated-voice-hint").hidden = mode.value !== "segments";
+      syncDraftState();
+    });
+    var provider = document.getElementById("speech-provider");
+    if (provider) provider.addEventListener("change", function () { document.getElementById("edge-voice-field").hidden = provider.value !== "edge_tts"; });
+    var narration = sceneEditor && sceneEditor.querySelector('[name="narration"]');
+    if (narration) narration.addEventListener("input", function () {
+      var speech = selectedScene().speech;
+      if (speech) document.getElementById("speech-status").textContent = narration.value.trim() !== speech.text ? "旁白已修改，请重做" : "配音与旁白一致";
+    });
 
     document.querySelectorAll("[data-project-id]").forEach(function (button) {
       button.addEventListener("click", function () { loadProject(button.getAttribute("data-project-id")); });
@@ -498,7 +583,11 @@
         if (action === "delete-scene") deleteScene(button.getAttribute("data-scene-id"));
         if (action === "move-scene-left") moveScene(button.getAttribute("data-scene-id"), -1);
         if (action === "move-scene-right") moveScene(button.getAttribute("data-scene-id"), 1);
+        if (action === "generate-speech") generateSpeech(false);
+        if (action === "generate-all-speech") generateSpeech(true);
+        if (action === "restore-speech") restoreSpeech();
         if (action === "render-video") renderVideo();
+        if (action === "prepare-scene") prepareScene(button.getAttribute("data-scene-id"));
       });
     });
     document.querySelectorAll("[data-scene-card]").forEach(function (card) {
@@ -544,7 +633,7 @@
     var totalImages = assets("image").length + draftImages;
     var hasText = Boolean(latest("text") || draftText);
     var hasImages = totalImages > 0 && totalImages <= 8;
-    var hasAudio = Boolean((latest("audio") && latest("audio").duration_sec) || draftAudio);
+    var hasAudio = state.voiceMode === "segments" || Boolean((latest("audio") && latest("audio").duration_sec) || draftAudio);
 
     if (textCount) textCount.textContent = draftText.length + " / 300";
     if (imageCount) imageCount.textContent = totalImages + " / 8";
@@ -569,6 +658,8 @@
       body: JSON.stringify({title: title, aspect_ratio: "9:16", platform: "短视频", style: "clean", target_duration_sec: 30}),
     }).then(function (project) {
       rememberProject(project);
+      state.voiceMode = "segments";
+      state.speechError = "";
       return loadProjects(false);
     }).then(function () {
       toast("项目已创建");
@@ -614,7 +705,7 @@
     chain.then(function () {
       state.busyLabel = "正在生成镜头初稿";
       updateBusyLabel();
-      return api("/api/v2/projects/" + encodeURIComponent(state.project.id) + "/scene-plan/quick", {method: "POST"});
+      return api("/api/v2/projects/" + encodeURIComponent(state.project.id) + "/scene-plan/quick", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({audio_mode: state.voiceMode})});
     }).then(function (data) {
       rememberProject(data.project);
       state.selectedSceneId = scenes().length ? scenes()[0].id : "";
@@ -628,10 +719,9 @@
     render();
   }
 
-  function onSaveScene(event) {
-    event.preventDefault();
-    if (!state.project || state.busy) return;
-    var form = event.currentTarget;
+  function saveCurrentScene() {
+    var form = document.getElementById("scene-editor-form");
+    if (!form) return Promise.resolve();
     var sceneId = form.getAttribute("data-scene-id");
     var scene = scenes().find(function (item) { return item.id === sceneId; });
     if (!scene) return;
@@ -647,21 +737,56 @@
       duration_sec: Number(data.get("duration_sec") || 4),
       onscreen_text: String(data.get("onscreen_text") || "").trim(),
       narration: String(data.get("narration") || "").trim(),
-      subtitle: String(data.get("onscreen_text") || "").trim(),
+      subtitle: String(data.get("narration") || "").trim(),
       purpose: String(data.get("purpose") || "").trim(),
+      renderer: String(data.get("renderer") || "auto"),
       asset_ids: preservedIds,
       status: "approved",
     };
-    setBusy(true, "正在保存镜头");
-    api("/api/v2/projects/" + encodeURIComponent(state.project.id) + "/scenes/" + encodeURIComponent(sceneId), {
+    return api("/api/v2/projects/" + encodeURIComponent(state.project.id) + "/scenes/" + encodeURIComponent(sceneId), {
       method: "PUT",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify(payload),
     }).then(function (response) {
       rememberProject(response.project);
       state.selectedSceneId = sceneId;
-      toast("镜头已保存");
-    }).catch(showError).finally(function () { setBusy(false); });
+    });
+  }
+
+  function onSaveScene(event) {
+    event.preventDefault();
+    if (state.busy) return;
+    var saved = saveCurrentScene();
+    setBusy(true, "正在保存镜头");
+    saved.then(function () { toast("镜头已保存"); }).catch(showError).finally(function () { setBusy(false); });
+  }
+
+  function generateSpeech(all) {
+    if (!state.project || state.busy) return;
+    var body = {provider: document.getElementById("speech-provider").value, voice: document.getElementById("speech-voice").value, speed: Number(document.getElementById("speech-speed").value)};
+    var id = state.selectedSceneId;
+    state.speechError = "";
+    var chain = saveCurrentScene();
+    setBusy(true, "正在保存旁白并生成配音");
+    chain.then(function () {
+      var targets = all ? scenes().filter(function (s) { return s.narration && (!s.speech || s.speech.text !== s.narration.trim()); }) : scenes().filter(function (s) { return s.id === id; });
+      var work = Promise.resolve();
+      targets.forEach(function (s, i) {
+        work = work.then(function () {
+          state.busyLabel = "正在配音 " + (i + 1) + " / " + targets.length + " · " + s.title;
+          updateBusyLabel();
+          return api("/api/v2/projects/" + state.project.id + "/scenes/" + s.id + "/speech", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+        }).then(function (r) { rememberProject(r.project); });
+      });
+      return work;
+    }).then(function () { toast("配音已保存，镜头时长已同步"); }).catch(function (e) { state.speechError = e.message; showError(e); }).finally(function () { setBusy(false); });
+  }
+
+  function restoreSpeech() {
+    if (state.busy) return;
+    var aid = document.getElementById("speech-version").value;
+    setBusy(true, "正在恢复配音版本");
+    api("/api/v2/projects/" + state.project.id + "/scenes/" + state.selectedSceneId + "/speech/restore", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({asset_id: aid})}).then(function (r) { rememberProject(r.project); toast("原旁白、声音和时长已恢复"); }).catch(showError).finally(function () { setBusy(false); });
   }
 
   function addScene() {
@@ -741,15 +866,31 @@
 
   function renderVideo() {
     if (!state.project || !scenes().length || state.busy) return;
-    setBusy(true, "Remotion 正在生成成片");
-    api("/api/v2/projects/" + encodeURIComponent(state.project.id) + "/render", {
+    var saved = saveCurrentScene();
+    setBusy(true, "正在编排成片");
+    saved.then(function () { return api("/api/v2/projects/" + encodeURIComponent(state.project.id) + "/render", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({execute: true, timeout_sec: 300}),
-    }).then(function (data) {
+    }); }).then(function (data) {
       rememberProject(data.project);
       if (data.output && data.output.status === "failed") throw new Error("视频生成失败，请查看渲染日志");
       toast("成片已生成");
+    }).catch(showError).finally(function () { setBusy(false); });
+  }
+
+  function prepareScene(sceneId) {
+    if (!state.project || !sceneId || state.busy) return;
+    setBusy(true, "正在执行创意镜头");
+    api("/api/v2/projects/" + encodeURIComponent(state.project.id) + "/scenes/" + encodeURIComponent(sceneId) + "/prepare", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({execute: true, allow_on_demand: false, timeout_sec: 180}),
+    }).then(function (data) {
+      rememberProject(data.project);
+      state.capabilities = data.capabilities || state.capabilities;
+      var task = data.tasks && data.tasks[0];
+      toast(task && task.status === "fallback" ? "创意引擎未就绪，已安全回退" : "创意镜头已准备");
     }).catch(showError).finally(function () { setBusy(false); });
   }
 
@@ -773,11 +914,21 @@
     });
   }
 
+  function loadCapabilities() {
+    return api("/api/v2/capabilities").then(function (registry) {
+      state.capabilities = registry;
+      render();
+      return registry;
+    });
+  }
+
   function loadProject(projectId) {
     if (!projectId) return Promise.resolve();
     setBusy(true, "正在打开项目");
     return api("/api/v2/projects/" + encodeURIComponent(projectId)).then(function (project) {
       rememberProject(project);
+      state.voiceMode = project.scene_plan.audio_mode || (project.scene_plan.primary_audio_asset_id ? "imported" : "segments");
+      state.speechError = "";
       state.selectedSceneId = project.scene_plan && project.scene_plan.scenes && project.scene_plan.scenes.length ? project.scene_plan.scenes[0].id : "";
     }).catch(showError).finally(function () { setBusy(false); });
   }
@@ -796,5 +947,5 @@
     toast(error && error.message ? error.message : "操作失败");
   }
 
-  loadProjects(true).catch(showError);
+  Promise.all([api("/api/v2/speech-options").then(function (o) { state.speechOptions = o; }), loadCapabilities(), loadProjects(true)]).catch(showError);
 })();
